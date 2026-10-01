@@ -11,3 +11,9 @@ services:
         value: production
       - key: FRONTEND_ORIGINS
         sync: false
+      - key: MINHLE_PASSWORD_HASH
+        sync: false
+      - key: HAIYEN_PASSWORD_HASH
+        sync: false
+      - key: SESSION_SAME_SITE
+        value: Lax

@@ -2,7 +2,14 @@
 
 Frontend production: [homie-ecru.vercel.app](https://homie-ecru.vercel.app). Project Vercel `pp-5f37/homie` kết nối với `katan-chan/Homie`, production branch `main`.
 
-Frontend hiện là website tĩnh. Backend Node.js mới chỉ cung cấp `GET /api/health`, chưa có lưu dữ liệu hoặc xác thực. Không cần cài thư viện bên ngoài. Dùng Node.js 22.
+Frontend là website tĩnh; backend có health, auth/session và public profile API. Không cần thư viện ngoài, dùng Node.js 22. Thay đổi auth/profile hiện mới kiểm tra local, chưa publish. Xem [contract](authentication.md).
+
+## Điều kiện trước khi deploy auth/profile
+
+- Đặt MINHLE_PASSWORD_HASH và HAIYEN_PASSWORD_HASH trong secret environment server; không đặt ở Vercel frontend/public env. Local .env không được tự gửi lên hosting.
+- Chọn proxy /api cùng origin hoặc domain frontend/API cùng site để cookie SameSite=Lax hoạt động. Vercel mặc định và Render mặc định khác site: chỉ đặt PUBLIC_API_BASE_URL chưa đủ. SESSION_SAME_SITE=None yêu cầu Secure production và browser cho phép cookie cross-site; không là đảm bảo tương thích mọi browser.
+- Cấp storage bền cho PROFILE_DATA_DIR hoặc đổi sang store bền đã được quyết định. render.yaml vẫn là plan free, không có disk bền; không bật edit production rồi kỳ vọng file .data tồn tại qua thay thế instance. Không tự đổi gói trả phí.
+- Session giữ RAM một instance; restart cần đăng nhập lại. Profile file chỉ hỗ trợ một process ghi. Rate limit socket-IP sau reverse proxy cần đánh giá trước production.
 
 ## 1. Render
 
@@ -18,7 +25,7 @@ Lưu URL thực tế Render cấp, ví dụ `https://your-api.onrender.com`, và
 
 Import cùng repo, Root Directory để mặc định (root). `vercel.json` chọn Other, chạy `npm run build` và xuất bản `dist/`.
 
-Có thể deploy frontend trước mà chưa đặt URL backend; `API_BASE_URL` sẽ rỗng trên Vercel và giao diện hiện chưa gọi API. Khi backend sẵn sàng, trong Environment Variables đặt `PUBLIC_API_BASE_URL` bằng URL Render thực tế, không có `/api` phía sau. Chọn các môi trường cần dùng, rồi redeploy. Biến này công khai với trình duyệt; không dùng để chứa secret.
+Có thể deploy garden tĩnh trước; hồ sơ/login cần backend. API_BASE_URL rỗng gọi /api trên origin frontend, nên phải có proxy khi dùng cấu hình đó. Khi chọn API origin riêng, đặt PUBLIC_API_BASE_URL bằng origin HTTPS thực tế, không có /api; xử lý cookie topology như phần trên và redeploy. Biến này công khai; không chứa secret.
 
 Kết nối project Vercel với repository GitHub và đặt Production Branch là `main`. Mỗi lần push hoặc merge vào `main`, Vercel tự build và cập nhật website production; không cần GitHub Actions riêng. Trang đã mở trên trình duyệt cần refresh để nhận bản mới.
 
@@ -37,11 +44,11 @@ if (!response.ok) throw new Error(`API returned ${response.status}`);
 const health = await response.json();
 ```
 
-Giao diện hiện chưa gọi API vì chưa có tính năng cần dữ liệu.
+js/auth.js gọi API với credentials: include. Mutation gửi X-Requested-With: Homie và JSON nếu có body. Profile GET công khai, PUT chỉ owner. Không dùng fetch mặc định không credentials cho session hoặc mutation.
 
 ## Chạy local
 
-Sao chép `.env.example` thành `.env`, chạy `npm run dev:backend` và `npm run dev` trong hai terminal. Mở `http://localhost:8000/`. `npm run build` dùng biến môi trường của tiến trình; nó không tự đọc `.env`. Để build với `.env`, chạy `node --env-file=.env scripts/build.js`.
+Nếu chưa có .env, dùng .env.example làm cấu trúc và provision hai salted hash bằng hashPassword trong backend/auth.js; không ghi đè .env đang chứa hash. Chạy npm run dev:backend và npm run dev trong hai terminal. Mở http://localhost:8000/ hoặc http://127.0.0.1:8000/; source config local chọn API hostname khớp frontend. npm run build không tự đọc .env; node --env-file=.env scripts/build.js đọc env nhưng chỉ xuất config API public vào dist.
 
 Kiểm tra build bằng `npm run build` và backend bằng `GET /api/health`.
 

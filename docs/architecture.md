@@ -1,8 +1,10 @@
-# Kiến trúc frontend
+# Kiến trúc hiện tại
 
-Frontend đã triển khai gồm hai tab: `garden` (vườn hoa toàn cảnh có hai Loopy) và `dashboard` (Góc ghi chép giữ chỗ). Tính năng chi tiết sẽ do người dùng thiết kế sau.
+Frontend có bốn tab: garden, dashboard, minhle và haiyen. Garden và hai hồ sơ công khai; dashboard giữ chỗ riêng tư. Chỉ người đăng nhập đúng tài khoản sửa phần chữ trong hồ sơ của mình; ảnh/bố cục chỉnh bằng code riêng. Tính năng ghi chép sẽ do người dùng thiết kế sau.
 
-Ưu tiên **HTML + CSS + JavaScript ES modules**. Chưa cần framework, event bus, hệ plugin hoặc backend. Một registry và một module cho mỗi tab đủ để thêm/bỏ các góc vườn.
+Frontend dùng **HTML + CSS + JavaScript ES modules**. Backend Node.js native có auth/session và public profile API; session RAM và file profile cho một process. Một registry và một module cho mỗi tab đủ để thêm/bỏ các góc vườn; chưa cần framework hoặc hệ plugin. Auth dùng EventTarget riêng để cập nhật UI danh tính, không phải event bus tổng quát.
+
+Quy tắc thực hiện nằm trong [AGENTS.md](../AGENTS.md), [interface](interfaces.md), [quy tắc code và kiểm tra](contributing.md), [bộ skills đề xuất](skills.md). Tài liệu này mô tả cấu trúc; interfaces.md là nguồn chi tiết cho hợp đồng module.
 
 ## Cấu trúc đang chạy
 
@@ -12,17 +14,29 @@ styles.css
 js/
   app.js                  # hash routing, render và cleanup
   routing.js              # resolver và fallback
+  config.js               # API origin public, thay khi build
+  auth.js                 # cookie API client và trạng thái danh tính
+  login.js                # form đăng nhập
+  profile.js              # UI chữ công khai + owner edit dùng chung
   tabs.js                 # registry duy nhất
   tabs/
     garden.js
     dashboard.js
+    minhle.js              # cấu hình bố cục/ảnh Minh Lê bằng code
+    haiyen.js              # cấu hình bố cục/ảnh Hải Yến bằng code
 assets/
   flowers/                # WebP từ PNG đã duyệt, giữ alpha
   characters/             # atlas Loopy WebP
   typography/             # lettering WebP
+  brand/                  # logo raster, nguồn và prompt
+backend/server.js         # HTTP health/auth/profiles, CORS/CSRF
+backend/auth.js           # scrypt, session và rate limit
+backend/profiles.js       # validate text và ghi file atomic
+tests/                    # Node HTTP và browser CDP
+scripts/build.js          # xuất frontend vào dist/
 ```
 
-Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.html` ở root là frontend production; `concept/index.html` cùng PNG gốc trong `concept/assets/` giữ làm reference. Không cần framework hoặc build.
+Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.html` ở root là nguồn frontend; `concept/index.html` cùng PNG gốc trong `concept/assets/` giữ làm reference. Local chạy trực tiếp qua HTTP; build tạo `dist/` để deploy, không chỉnh output bằng tay.
 
 ## Registry
 
@@ -30,12 +44,16 @@ Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.
 export const tabs = [
   { id: 'garden', label: 'Vườn hoa', enabled: true,
     load: () => import('./tabs/garden.js') },
-  { id: 'dashboard', label: 'Góc ghi chép', enabled: true,
+  { id: 'dashboard', label: 'Góc ghi chép', enabled: true, requiresAuth: true,
     load: () => import('./tabs/dashboard.js') },
+  { id: 'minhle', label: 'Minh Lê', enabled: true,
+    load: () => import('./tabs/minhle.js') },
+  { id: 'haiyen', label: 'Hải Yến', enabled: true,
+    load: () => import('./tabs/haiyen.js') },
 ];
 ```
 
-ID ổn định, không dấu và duy nhất. Thứ tự mảng là thứ tự điều hướng. Module xuất `render(container, { signal })` và trả về một hàm cleanup. Không cần nhiều loại plugin hoặc một framework registry riêng.
+ID ổn định, không dấu và duy nhất. Thứ tự mảng là thứ tự điều hướng. Module xuất `render(container, { signal })`; quy ước module mới là trả cleanup đồng bộ, app hiện cũng hỗ trợ Promise. Xem chữ ký và ownership tại [interfaces.md](interfaces.md). Không cần nhiều loại plugin hoặc một framework registry riêng.
 
 **Thêm:** tạo module, thêm một mục registry. **Tắt:** đặt `enabled: false`. **Bỏ:** xóa mục registry và module giao diện nếu không còn dùng. Giữ dữ liệu và asset cho đến khi có quyết định xóa riêng.
 
@@ -43,7 +61,7 @@ ID ổn định, không dấu và duy nhất. Thứ tự mảng là thứ tự �
 
 Dùng `#garden` và `#dashboard`; Back/Forward hoạt động qua hash. Hash trống, sai hoặc trỏ tới tab tắt được sửa bằng `history.replaceState` về garden nếu bật, nếu không về tab bật đầu tiên. Nếu tất cả đều tắt, hiển thị trạng thái trống.
 
-Khi chuyển tab, abort listener/fetch của tab cũ, gọi cleanup cho timer, observer hoặc chuyển động rồi render tab mới. Với import bất đồng bộ, kiểm tra số lần điều hướng trước khi render để tránh tab tải chậm ghi đè tab vừa chọn. Lỗi tải có thông báo và nút thử lại. Listener hash của app chỉ đăng ký một lần.
+Khi chuyển tab, app abort tab cũ và chờ disposal của session ngay trước nó. Đây không phải serialization toàn cục của các cleanup bất đồng bộ khi đổi nhanh nhiều tab; module mới ưu tiên render/cleanup đồng bộ. Async render phải settle sớm khi abort, cleanup chỉ chạm tài nguyên của session. Chi tiết tại interfaces.md. Với import bất đồng bộ, kiểm tra số lần điều hướng trước khi render để tránh tab tải chậm ghi đè tab vừa chọn. Lỗi tải có thông báo và nút thử lại. Listener hash của app chỉ đăng ký một lần.
 
 Module tải lazy bằng import. `garden.render` dựng DOM và trả cleanup ngay, ảnh tải độc lập không chặn đổi tab. Image error có retry; lettering error hiện h1 text. Retry lỗi import reload trang, giữ hash để xóa module failure cache; lỗi render thử render lại. Panel nhận focus bằng Tab, skip link focus main và không đổi hash.
 
@@ -55,7 +73,7 @@ Hai tab lấy nhãn từ registry, nằm trong sidebar bên trái trên cả des
 
 ## Dữ liệu và xuất bản
 
-Website tĩnh không tự lưu note hoặc đồng bộ hai người. Chưa chọn nơi lưu dữ liệu trong giai đoạn bố cục này. Khi cần, phân biệt nội dung repository, trạng thái chỉ trên trình duyệt và nội dung có backend/xác thực thật.
+Ghi chép chưa có lưu trữ hoặc đồng bộ. Hồ sơ có API thực: public GET, PUT chỉ owner, cookie HttpOnly; text lưu file trong PROFILE_DATA_DIR ngoài dist. Session RAM mất khi backend restart. File local tồn tại qua restart, nhưng deploy phải chọn storage bền thực tế; xem [authentication.md](authentication.md).
 
 GitHub Pages phục vụ tệp tĩnh; project site thường có đường dẫn `https://<owner>.github.io/<repository>/`. Dùng asset tương đối như `./assets/flowers/example.png`, tránh đường dẫn bắt đầu bằng `/`. Không đưa secret vào tệp tải về trình duyệt. Ẩn tab không tạo quyền truy cập riêng tư. [GitHub Docs: What is GitHub Pages?](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [GitHub Docs: Creating a site](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 

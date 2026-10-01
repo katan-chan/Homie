@@ -1,4 +1,38 @@
 :root{--paper:#fff7f1;--ink:#654355;--muted:#796171;--accent:#985a74;--line:#e6cfd6}
+
+/* Account content stays independent of the decorative homepage canvases. */
+.account-controls{margin-top:32px;padding-top:20px;border-top:1px solid var(--line)}
+.account-name{font-weight:600;margin:0 0 12px}
+.auth-page,.profile-page{position:relative;max-width:760px;margin:120px auto 48px}
+.account-card{position:relative;z-index:1;padding:36px;border:1px solid #e1c8d4;border-radius:24px;background:#fffaf4ed;box-shadow:0 12px 40px #6543550b}
+.account-card h1{margin:8px 0 20px;font:500 clamp(32px,5vw,46px)/1.15 Georgia,"Times New Roman",serif;letter-spacing:-1px;color:var(--profile-accent,var(--ink))}
+.page-eyebrow{margin:0;font-size:12px;letter-spacing:.8px;color:var(--muted)}
+.account-description,.profile-bio{color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.profile-name{overflow-wrap:anywhere}
+.account-card form{display:grid;gap:10px;max-width:520px;margin-top:28px}
+.account-card label{font-size:14px;font-weight:600}
+.account-card input,.account-card textarea{width:100%;min-width:0;min-height:48px;padding:12px 14px;border:1px solid #d8bdc9;border-radius:12px;background:#fffdf9;color:var(--ink);font:inherit}
+.account-card textarea{resize:vertical}
+.account-card input:focus-visible,.account-card textarea:focus-visible{outline:3px solid #9d5671;outline-offset:2px}
+.primary-button,.secondary-button{min-height:44px;padding:10px 18px;border:1px solid var(--line);border-radius:12px;font:inherit}
+.primary-button{background:var(--profile-accent,var(--accent));color:white;border-color:transparent}
+.secondary-button{background:#fff9f3;color:var(--ink)}
+button:disabled{cursor:wait;opacity:.6}
+.form-message{min-height:1.6em;margin:8px 0 0;font-size:14px;overflow-wrap:anywhere}
+.login-error{color:#9c3c53}
+.form-actions,.profile-actions{display:flex;flex-wrap:wrap;gap:10px}
+.profile-actions{margin-top:24px}
+.profile-card{min-height:280px}
+.profile-garden{position:fixed;inset:0;z-index:0;pointer-events:none}
+.profile-garden .garden-status{pointer-events:auto}
+.profile--minhle .account-card{border-color:#ccd4bd}
+.profile-editor .auth-page{margin:24px 0 0}
+.profile-editor .account-card{padding:20px;box-shadow:none}
+@media(max-width:600px){
+ .auth-page,.profile-page{margin:100px auto 32px}
+ .account-card{padding:24px 20px;border-radius:20px}
+ .account-card h1{font-size:34px}
+}
 *{box-sizing:border-box}
 body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 10% 35%,#efbfd180,transparent 55%),radial-gradient(ellipse at 100% 48%,#f6d6bc80,transparent 55%),linear-gradient(180deg,#f1d9e3,#fae9df 48%,#e2e4d0);color:var(--ink);font:16px/1.6 ui-rounded,"Avenir Next",system-ui,sans-serif}
 button,a{font:inherit;-webkit-tap-highlight-color:transparent}button{cursor:pointer}a{color:inherit}
@@ -50,7 +84,7 @@ main:focus{outline:none}
 .garden-status button,.retry-button{min-height:44px;padding:8px 16px;margin:8px 0 0;border:1px solid var(--line);border-radius:12px;background:var(--accent);color:white}
 .route-status{position:relative;margin:56px auto;padding:24px;max-width:560px;text-align:center}
 .route-status p{margin:0 0 12px}
-.tab-panel{min-width:0}
+.tab-panel{min-width:0;display:flow-root}
 .title-fallback{display:block;font-size:clamp(30px,5vw,58px);line-height:1.2;color:#8a425e}
 .garden-title:has(.title-fallback){padding-top:40px}
 @media(max-width:600px){.route-status{padding-bottom:100px}.title-fallback{font-size:clamp(30px,8.5vw,40px)}}

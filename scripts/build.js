@@ -12,5 +12,8 @@ await mkdir('dist', { recursive: true });
 for (const path of ['index.html', 'styles.css', 'js', 'assets']) {
   await cp(path, `dist/${path}`, { recursive: true });
 }
-await writeFile('dist/js/config.js', `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`);
+const config = !process.env.PUBLIC_API_BASE_URL && !process.env.VERCEL
+  ? "export const API_BASE_URL = ['localhost', '127.0.0.1'].includes(location.hostname) ? `http://${location.hostname}:3001` : '';\n"
+  : `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
+await writeFile('dist/js/config.js', config);
 console.log('Frontend built in dist/');

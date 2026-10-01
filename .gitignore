@@ -21,6 +21,7 @@ coverage/
 .vercel/
 
 # Runtime logs
+.data/
 *.log
 
 # Agent work artifacts

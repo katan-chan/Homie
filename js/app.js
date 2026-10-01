@@ -1,5 +1,7 @@
 import { tabs } from './tabs.js';
 import { resolveTab } from './routing.js';
+import { authEvents, getUser, logout, refreshSession } from './auth.js';
+import { renderLogin } from './login.js';
 
 const navigation = document.querySelector('#tabs');
 const content = document.querySelector('#content');
@@ -18,7 +20,7 @@ sidebar.addEventListener('close', () => {
 });
 sidebar.addEventListener('keydown', (event) => {
   if (event.key !== 'Tab') return;
-  const controls = [...sidebar.querySelectorAll('button')].filter((button) => button.tabIndex >= 0);
+  const controls = [...sidebar.querySelectorAll('button')].filter((button) => button.tabIndex >= 0 && !button.disabled);
   const first = controls[0];
   const last = controls.at(-1);
   if (event.shiftKey && document.activeElement === first) {
@@ -37,8 +39,45 @@ const activeTabs = tabs.filter((tab) => tab.enabled);
 const buttons = new Map();
 let sequence = 0;
 let current = null;
+const accountControls = document.querySelector('#account-controls');
+function updateAccountControls() {
+  accountControls.replaceChildren();
+  const user = getUser();
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'secondary-button';
+  if (user) {
+    const name = document.createElement('p');
+    name.className = 'account-name';
+    name.textContent = user.displayName;
+    accountControls.append(name);
+    button.classList.add('logout-button');
+    button.textContent = 'Đăng xuất';
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await logout();
+        await navigate(true);
+        if (sidebar.open) document.querySelector('.menu-close').focus();
+      } catch {
+        button.disabled = false;
+        message.textContent = 'Chưa đăng xuất được. Hãy thử lại.';
+      }
+    });
+  } else {
+    button.textContent = 'Đăng nhập';
+    button.addEventListener('click', () => choose(activeTabs.find((tab) => tab.requiresAuth)));
+  }
+  const message = document.createElement('p');
+  message.className = 'form-message';
+  message.setAttribute('role', 'status');
+  accountControls.append(button, message);
+}
+authEvents.addEventListener('change', updateAccountControls);
+updateAccountControls();
 
 function choose(tab) {
+  if (!tab) return;
   if (location.hash === `#${tab.id}`) return;
   location.hash = tab.id;
 }
@@ -154,7 +193,22 @@ async function navigate(retry = false) {
   if (request !== sequence) return;
 
   let moduleLoaded = false;
+  let moduleAttempted = false;
   try {
+    if (tab.requiresAuth) {
+      const user = await refreshSession({ signal: session.controller.signal });
+      if (request !== sequence || session.controller.signal.aborted) return;
+      if (!user) {
+        session.renderPromise = Promise.resolve(renderLogin(panel, {
+          signal: session.controller.signal,
+          onSuccess: () => navigate(true),
+        }));
+        panel.removeAttribute('aria-busy');
+        panel.classList.add('is-entering');
+        return;
+      }
+    }
+    moduleAttempted = true;
     const module = await tab.load();
     moduleLoaded = true;
     if (request !== sequence || session.controller.signal.aborted) return;
@@ -172,9 +226,10 @@ async function navigate(retry = false) {
     console.error('Tab could not be opened:', error);
     // A failed import can remain cached in a browser's module map.
     // Reloading on import failure clears that map while preserving the hash.
-    showStatus(panel, 'Không thể mở góc này. Bạn có thể thử lại.', true, !moduleLoaded);
+    showStatus(panel, 'Không thể mở góc này. Bạn có thể thử lại.', true, moduleAttempted && !moduleLoaded);
   }
 }
 
 window.addEventListener('hashchange', () => navigate());
 navigate();
+refreshSession().catch(() => {});

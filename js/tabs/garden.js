@@ -1,10 +1,10 @@
 // The approved concept's compositor, scoped to this tab's lifetime.
-export function render(container, { signal } = {}) {
+export function render(container, { signal, showTitle = true, showCharacters = true } = {}) {
   if (signal?.aborted) return () => {};
 
-  container.innerHTML = `<section class="garden-page" aria-label="Khung cảnh vườn hoa với Loopy ngồi bên trái và Loopy ngủ bên phải">
+  container.innerHTML = `<section class="garden-page" aria-label="${showCharacters ? 'Khung cảnh vườn hoa với Loopy ngồi bên trái và Loopy ngủ bên phải' : 'Khung cảnh vườn hoa'}">
     <canvas id="garden-canvas" aria-hidden="true"></canvas>
-    <h1 class="garden-title"><span class="title-fallback">Vườn của chúng mình.</span><img class="title-lettering" alt="" aria-hidden="true" width="1536" height="1024" hidden></h1>
+    ${showTitle ? '<h1 class="garden-title"><span class="title-fallback">Vườn của chúng mình.</span><img class="title-lettering" alt="" aria-hidden="true" width="1536" height="1024" hidden></h1>' : ''}
     <canvas id="garden-foreground" aria-hidden="true"></canvas>
     <div class="garden-status" role="status" aria-live="polite"><span></span><button type="button" hidden>Thử tải lại ảnh</button></div>
   </section>`;
@@ -21,7 +21,7 @@ export function render(container, { signal } = {}) {
     { path: 'flowers/handdrawn-spires.webp', label: 'hoa cao' },
     { path: 'characters/loopy-trio.webp', label: 'Loopy' },
     { path: 'typography/center-title.webp', label: 'tiêu đề' },
-  ].map(asset => ({ ...asset, state: 'loading', image: null }));
+  ].map((asset, index) => ({ ...asset, state: (index === 2 && !showCharacters) || (index === 3 && !showTitle) ? 'skipped' : 'loading', image: null }));
   let disposed = false;
   let frame = null;
 
@@ -173,7 +173,7 @@ export function render(container, { signal } = {}) {
   observer.observe(canvas);
   retry.addEventListener('click', retryFailed);
   signal?.addEventListener('abort', cleanup, { once: true });
-  assets.forEach(load);
+  assets.filter(asset => asset.state !== 'skipped').forEach(load);
   scheduleDraw();
   return cleanup;
 }
