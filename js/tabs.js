@@ -1,6 +1,7 @@
 export const tabs = [
   {
     id: 'garden',
+    background: { showCharacters: true },
     label: 'Vườn hoa',
     enabled: true,
     load: () => import('./tabs/garden.js'),

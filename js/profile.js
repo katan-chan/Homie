@@ -1,6 +1,5 @@
 import { apiRequest, authEvents, getUser, updateUserProfile } from './auth.js';
 import { renderLogin } from './login.js';
-import { render as renderGarden } from './tabs/garden.js';
 
 export function renderProfile(container, { signal }, definition) {
   if (signal.aborted) return () => {};
@@ -17,10 +16,6 @@ export function renderProfile(container, { signal }, definition) {
       <div class="profile-editor"></div>
       <p class="profile-status form-message" role="status"></p>
     </div>`;
-  const backdrop = document.createElement('div');
-  backdrop.className = 'profile-garden';
-  const cleanupGarden = renderGarden(backdrop, { signal, showTitle: false, showCharacters: false });
-  section.prepend(backdrop);
   container.replaceChildren(section);
   const title = section.querySelector('.profile-name');
   const bio = section.querySelector('.profile-bio');
@@ -171,7 +166,6 @@ export function renderProfile(container, { signal }, definition) {
   loadProfile();
   return () => {
     disposed = true;
-    cleanupGarden();
     loginCleanup?.();
     section.remove();
   };

@@ -11,6 +11,7 @@ Tài liệu mô tả code hiện tại, kèm quy ước cho module mới. Các t
  * @property {string} label Nhãn tiếng Việt hiển thị trong sidebar.
  * @property {boolean} enabled Có tham gia điều hướng hay không.
  * @property {boolean} [requiresAuth] Chỉ render UI sau khi app xác minh session; mặc định false.
+ * @property {{showCharacters?: boolean}} [background] Tùy chỉnh nền chung; mặc định vườn hoa không Loopy.
  * @property {() => Promise<TabModule>} load Import module khi cần.
  *
  * @typedef {Object} TabModule
@@ -63,8 +64,10 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 
 | Chủ sở hữu | Trách nhiệm |
 | --- | --- |
-| index.html + js/app.js | Shell, dialog/sidebar, tabpanel, lựa chọn tab, focus, loading và lỗi import/render |
-| js/tabs/garden.js | Hai canvas, tải ảnh độc lập, image retry, lettering fallback, resize và cleanup |
+| index.html + js/app.js | Shell, nền mặc định, dialog/sidebar, tabpanel, lựa chọn tab, focus, loading và lỗi import/render |
+| js/background.js | Hai canvas dùng chung, tải ảnh độc lập, image retry, resize và cleanup của shell |
+| js/tabs/garden.js | Tiêu đề, lettering fallback và cleanup nội dung homepage |
+| js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
 | js/tabs/dashboard.js | UI giữ chỗ của dashboard |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
@@ -72,7 +75,9 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 
 Garden chỉ redraw khi tải ảnh hoặc resize. Giữ thứ tự lớp xa/giữa/tiền cảnh và khoảng trống tiêu đề. Không thêm vòng animation liên tục nếu chưa có yêu cầu.
 
-Garden render nhận thêm showTitle/showCharacters, mặc định true cho homepage. Hai profile dùng cùng compositor với cả hai false làm nền vườn toàn viewport, chỉ tải ảnh hoa. Profile gọi cleanup của scene khi unmount; ResizeObserver cập nhật canvas khi cửa sổ thay đổi, không resize bằng vòng lặp. CSS panel flow-root ngăn margin thẻ hồ sơ tạo scrollbar thừa; viewport có scrollbar thật vẫn được vẽ theo clientWidth.
+Shell mount nền một lần bằng mountBackground(container, { signal }) trong js/background.js. Hàm trả cleanup có phương thức update(background); app truyền field background của mục registry đang chọn vào đó. Không khai báo background thì vẫn có vườn hoa toàn viewport, showCharacters mặc định false. Homepage khai báo background: { showCharacters: true } để giữ hai Loopy đã duyệt. Tab mới không cần import renderer, thêm canvas hoặc khai báo nền riêng. Không có chế độ tắt nền.
+
+Nền tồn tại qua chuyển tab, cả màn hình yêu cầu đăng nhập và lỗi tải module; cleanup của tab chỉ dọn nội dung tab. Signal nền thuộc vòng đời shell, không dùng signal của tab. ResizeObserver cập nhật canvas khi cửa sổ thay đổi, không resize bằng vòng lặp. CSS panel flow-root ngăn margin thẻ hồ sơ tạo scrollbar thừa; viewport có scrollbar thật vẫn được vẽ theo clientWidth.
 
 ## Cấu hình và backend
 

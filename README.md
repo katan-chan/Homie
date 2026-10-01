@@ -24,7 +24,8 @@ styles.css                  theme và responsive
 js/app.js                   hash routing, focus, lifecycle, error/retry
 js/routing.js               chọn tab và fallback
 js/tabs.js                  registry
-js/tabs/garden.js           canvas và image loading
+js/background.js            canvas nền dùng chung, image loading và resize
+js/tabs/garden.js           tiêu đề và lettering homepage
 js/tabs/dashboard.js        chỗ dành cho thiết kế ghi chép sau
 js/auth.js                  auth client dùng cookie, trạng thái danh tính
 js/login.js                 form đăng nhập
@@ -54,11 +55,11 @@ Tạo module xuất `render(container, { signal })`, trả về cleanup; signal 
 }
 ```
 
-ID không dấu, duy nhất, ổn định. Thứ tự registry là thứ tự navigation. Tắt bằng enabled: false; bỏ bằng cách xóa mục và module. Không sửa router. Reload sau khi thay registry. Nếu garden bị tắt, hash lạ về tab bật đầu tiên; tất cả tắt thì hiện trạng thái trống.
+ID không dấu, duy nhất, ổn định. Thứ tự registry là thứ tự navigation. Tab mới tự có nền vườn hoa do shell quản lý; không thêm canvas vào module. Field background tùy chọn trong registry hiện hỗ trợ showCharacters, mặc định false; homepage đặt true. Tắt bằng enabled: false; bỏ bằng cách xóa mục và module. Không sửa router. Reload sau khi thay registry. Nếu garden bị tắt, hash lạ về tab bật đầu tiên; tất cả tắt thì hiện trạng thái trống.
 
 ## Phạm vi hiện tại
 
-Góc ghi chép vẫn giữ chỗ; chưa có CRUD note hoặc đồng bộ. Hai tài khoản cố định minhle/haiyen đã có auth local, profile riêng và quyền sửa theo owner. Nút Edit chỉ sửa tên hiển thị/giới thiệu; bố cục, hình và trang trí chỉnh bằng code. Cả hai hồ sơ có nền vườn hoa theo viewport và ResizeObserver. Homepage giữ cảnh đã duyệt.
+Góc ghi chép vẫn giữ chỗ; chưa có CRUD note hoặc đồng bộ. Hai tài khoản cố định minhle/haiyen đã có auth local, profile riêng và quyền sửa theo owner. Nút Edit chỉ sửa tên hiển thị/giới thiệu; bố cục, hình và trang trí chỉnh bằng code. Mọi tab dùng nền vườn hoa của shell, tự resize theo viewport bằng ResizeObserver. Homepage giữ cảnh đã duyệt.
 
 [Ba bảng chữ](concept/typography.html) là concept PNG, chưa phải font. Tiêu đề dùng lettering đã duyệt, chữ giao diện dùng font có sẵn trên máy.
 

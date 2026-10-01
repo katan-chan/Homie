@@ -13,6 +13,7 @@ index.html
 styles.css
 js/
   app.js                  # hash routing, render và cleanup
+  background.js           # nền vườn chung của shell, canvas và resize
   routing.js              # resolver và fallback
   config.js               # API origin public, thay khi build
   auth.js                 # cookie API client và trạng thái danh tính
@@ -20,7 +21,7 @@ js/
   profile.js              # UI chữ công khai + owner edit dùng chung
   tabs.js                 # registry duy nhất
   tabs/
-    garden.js
+    garden.js             # tiêu đề và lettering homepage
     dashboard.js
     minhle.js              # cấu hình bố cục/ảnh Minh Lê bằng code
     haiyen.js              # cấu hình bố cục/ảnh Hải Yến bằng code
@@ -42,7 +43,7 @@ Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.
 
 ```js
 export const tabs = [
-  { id: 'garden', label: 'Vườn hoa', enabled: true,
+  { id: 'garden', label: 'Vườn hoa', enabled: true, background: { showCharacters: true },
     load: () => import('./tabs/garden.js') },
   { id: 'dashboard', label: 'Góc ghi chép', enabled: true, requiresAuth: true,
     load: () => import('./tabs/dashboard.js') },
@@ -53,7 +54,7 @@ export const tabs = [
 ];
 ```
 
-ID ổn định, không dấu và duy nhất. Thứ tự mảng là thứ tự điều hướng. Module xuất `render(container, { signal })`; quy ước module mới là trả cleanup đồng bộ, app hiện cũng hỗ trợ Promise. Xem chữ ký và ownership tại [interfaces.md](interfaces.md). Không cần nhiều loại plugin hoặc một framework registry riêng.
+ID ổn định, không dấu và duy nhất. Thứ tự mảng là thứ tự điều hướng. Module xuất `render(container, { signal })`; quy ước module mới là trả cleanup đồng bộ, app hiện cũng hỗ trợ Promise. Mọi tab tự kế thừa nền vườn từ shell; field background chỉ tùy chỉnh showCharacters, mặc định false. Xem chữ ký và ownership tại [interfaces.md](interfaces.md). Không cần nhiều loại plugin hoặc một framework registry riêng.
 
 **Thêm:** tạo module, thêm một mục registry. **Tắt:** đặt `enabled: false`. **Bỏ:** xóa mục registry và module giao diện nếu không còn dùng. Giữ dữ liệu và asset cho đến khi có quyết định xóa riêng.
 
@@ -65,7 +66,7 @@ Khi chuyển tab, app abort tab cũ và chờ disposal của session ngay trư�
 
 Module tải lazy bằng import. `garden.render` dựng DOM và trả cleanup ngay, ảnh tải độc lập không chặn đổi tab. Image error có retry; lettering error hiện h1 text. Retry lỗi import reload trang, giữ hash để xóa module failure cache; lỗi render thử render lại. Panel nhận focus bằng Tab, skip link focus main và không đổi hash.
 
-Homepage là cảnh trang trí toàn viewport; canvas ghép ảnh WebP từ PNG đã duyệt, không vẽ cánh hoa SVG hoặc hình học. Hai canvas tạo lớp xa/giữa và tiền cảnh; Loopy ngồi phía sau hoa trái và Loopy ngủ phía trước ở phải. ResizeObserver và requestAnimationFrame chỉ vẽ khi resize/tải ảnh, được dọn khi rời tab. Không animation loop, logic tưới, bộ lọc, nhập liệu hoặc ghi chép mẫu.
+Shell mount nền vườn một lần trong js/background.js, độc lập vòng đời từng tab. Hai canvas ghép ảnh WebP từ PNG đã duyệt thành lớp xa/giữa và tiền cảnh, không vẽ cánh hoa SVG hoặc hình học. Tab mới tự có nền này, kể cả màn hình đăng nhập hoặc lỗi tải module. Homepage bật hai Loopy qua registry: Loopy ngồi phía sau hoa trái và Loopy ngủ phía trước ở phải; module garden chỉ render tiêu đề. ResizeObserver và requestAnimationFrame chỉ vẽ khi resize/tải ảnh hoặc đổi cấu hình nền; canvas được giữ qua chuyển tab và dọn khi shell kết thúc. Không animation loop, logic tưới, bộ lọc, nhập liệu hoặc ghi chép mẫu.
 
 ## Mobile
 

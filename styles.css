@@ -23,8 +23,11 @@ button:disabled{cursor:wait;opacity:.6}
 .form-actions,.profile-actions{display:flex;flex-wrap:wrap;gap:10px}
 .profile-actions{margin-top:24px}
 .profile-card{min-height:280px}
-.profile-garden{position:fixed;inset:0;z-index:0;pointer-events:none}
-.profile-garden .garden-status{pointer-events:auto}
+#app-background{position:fixed;inset:0;z-index:0;pointer-events:none}
+#app-background .garden-status{pointer-events:auto}
+.garden-content{position:fixed;inset:0;pointer-events:none}
+.garden-content .garden-status{pointer-events:auto}
+.shell{position:relative;z-index:1}
 .profile--minhle .account-card{border-color:#ccd4bd}
 .profile-editor .auth-page{margin:24px 0 0}
 .profile-editor .account-card{padding:20px;box-shadow:none}

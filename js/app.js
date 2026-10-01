@@ -2,6 +2,13 @@ import { tabs } from './tabs.js';
 import { resolveTab } from './routing.js';
 import { authEvents, getUser, logout, refreshSession } from './auth.js';
 import { renderLogin } from './login.js';
+import { mountBackground } from './background.js';
+
+const backgroundController = new AbortController();
+const background = mountBackground(document.querySelector('#app-background'), { signal: backgroundController.signal });
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) backgroundController.abort();
+});
 
 const navigation = document.querySelector('#tabs');
 const content = document.querySelector('#content');
@@ -170,6 +177,7 @@ async function navigate(retry = false) {
     button.tabIndex = selected ? 0 : -1;
   }
   document.body.dataset.tab = tab?.id ?? '';
+  background.update(tab?.background);
   const panel = document.createElement('section');
   panel.className = 'tab-panel';
   if (tab) {

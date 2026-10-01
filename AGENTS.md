@@ -15,6 +15,7 @@
 - Giữ HTML/CSS/JavaScript ES modules và Node.js native hiện tại. Thêm dependency hoặc framework phải có nhu cầu cụ thể và giải thích chi phí.
 - Registry duy nhất: js/tabs.js. Tab xuất render(container, { signal }) và trả cleanup. Không viết nhánh riêng cho một tab trong router.
 - App sở hữu hash, panel, focus và việc abort/dispose. Tab chỉ sở hữu DOM bên trong container và tài nguyên của chính nó.
+- Shell sở hữu nền vườn chung trong js/background.js; mọi tab hiện có và tab mới tự kế thừa. Chỉ khai báo background trong registry khi cần tùy chỉnh (hiện có showCharacters). Tab không tự mount canvas/nền toàn trang hoặc import renderer nền.
 - Cleanup phải an toàn khi gọi lại. Callback bất đồng bộ không được cập nhật DOM/canvas sau abort hoặc cleanup.
 - Asset dùng đường dẫn tương đối hoặc new URL(..., import.meta.url). Không sửa dist/ bằng tay; build tạo lại thư mục này.
 - Backend có health/auth/profile API. Mọi write hồ sơ phải kiểm tra session, owner và CSRF; registry requiresAuth chỉ khóa UI, không thay quyền server. Không coi CORS là xác thực. Không đưa secret hoặc dữ liệu riêng tư vào frontend. Profile là nội dung công khai.
