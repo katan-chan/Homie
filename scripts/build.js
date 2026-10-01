@@ -1,11 +1,9 @@
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 
-if (process.env.VERCEL && !process.env.PUBLIC_API_BASE_URL) {
-  throw new Error('Set PUBLIC_API_BASE_URL in Vercel before deploying.');
-}
-const apiBaseUrl = (process.env.PUBLIC_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
-const url = new URL(apiBaseUrl);
-if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+// Frontend can deploy independently while the backend is not configured.
+const apiBaseUrl = (process.env.PUBLIC_API_BASE_URL || (process.env.VERCEL ? '' : 'http://localhost:3001')).replace(/\/+$/, '');
+const url = apiBaseUrl ? new URL(apiBaseUrl) : null;
+if (url && (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/')) {
   throw new Error('PUBLIC_API_BASE_URL must be an HTTP(S) origin, e.g. https://your-backend.onrender.com');
 }
 

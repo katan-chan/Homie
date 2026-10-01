@@ -16,7 +16,9 @@ Lưu URL thực tế Render cấp, ví dụ `https://your-api.onrender.com`, và
 
 Import cùng repo, Root Directory để mặc định (root). `vercel.json` chọn Other, chạy `npm run build` và xuất bản `dist/`.
 
-Trong Environment Variables, đặt `PUBLIC_API_BASE_URL` bằng URL Render thực tế, không có `/api` phía sau. Chọn các môi trường cần dùng, rồi deploy hoặc redeploy. Biến này công khai với trình duyệt; không dùng để chứa secret. Build trên Vercel sẽ dừng nếu thiếu URL.
+Có thể deploy frontend trước mà chưa đặt URL backend; `API_BASE_URL` sẽ rỗng trên Vercel và giao diện hiện chưa gọi API. Khi backend sẵn sàng, trong Environment Variables đặt `PUBLIC_API_BASE_URL` bằng URL Render thực tế, không có `/api` phía sau. Chọn các môi trường cần dùng, rồi redeploy. Biến này công khai với trình duyệt; không dùng để chứa secret.
+
+Kết nối project Vercel với repository GitHub và đặt Production Branch là `main`. Mỗi lần push hoặc merge vào `main`, Vercel tự build và cập nhật website production; không cần GitHub Actions riêng. Trang đã mở trên trình duyệt cần refresh để nhận bản mới.
 
 Sau khi có domain Vercel, cập nhật `FRONTEND_ORIGINS` trên Render. Nếu dùng domain riêng, thêm origin đó. CORS chỉ giới hạn đọc qua trình duyệt, không thay thế xác thực.
 
