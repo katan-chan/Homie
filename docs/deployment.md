@@ -1,5 +1,7 @@
 # Deploy frontend trên Vercel, backend trên Render
 
+Frontend production: [homie-ecru.vercel.app](https://homie-ecru.vercel.app). Project Vercel `pp-5f37/homie` kết nối với `katan-chan/Homie`, production branch `main`.
+
 Frontend hiện là website tĩnh. Backend Node.js mới chỉ cung cấp `GET /api/health`, chưa có lưu dữ liệu hoặc xác thực. Không cần cài thư viện bên ngoài. Dùng Node.js 22.
 
 ## 1. Render
