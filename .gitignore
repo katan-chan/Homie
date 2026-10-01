@@ -1,0 +1,29 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+# Dependencies, build output and test coverage
+node_modules/
+dist/
+coverage/
+.cache/
+
+# Local environment and secrets (keep the shared template)
+.env
+.env.*
+!.env.example
+
+# Local deployment metadata
+.vercel/
+
+# Runtime logs
+*.log
+
+# Agent work artifacts
+docs/superpowers/
+docs/verification.md
+docs/previews/

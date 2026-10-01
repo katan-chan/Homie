@@ -1,0 +1,149 @@
+import { tabs } from './tabs.js';
+import { resolveTab } from './routing.js';
+
+const navigation = document.querySelector('#tabs');
+const content = document.querySelector('#content');
+const activeTabs = tabs.filter((tab) => tab.enabled);
+const buttons = new Map();
+let sequence = 0;
+let current = null;
+
+function choose(tab) {
+  if (location.hash === `#${tab.id}`) return;
+  location.hash = tab.id;
+}
+
+for (const tab of activeTabs) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'tab-button';
+  button.id = `tab-${tab.id}`;
+  button.textContent = tab.label;
+  button.setAttribute('role', 'tab');
+  button.setAttribute('aria-controls', `panel-${tab.id}`);
+  button.setAttribute('aria-selected', 'false');
+  button.tabIndex = -1;
+  button.addEventListener('click', () => choose(tab));
+  button.addEventListener('keydown', (event) => {
+    const index = activeTabs.indexOf(tab);
+    let next;
+    if (event.key === 'ArrowRight') next = (index + 1) % activeTabs.length;
+    if (event.key === 'ArrowLeft') next = (index - 1 + activeTabs.length) % activeTabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = activeTabs.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    buttons.get(activeTabs[next].id).focus();
+    choose(activeTabs[next]);
+  });
+  buttons.set(tab.id, button);
+  navigation.append(button);
+}
+
+document.querySelector('a.skip').addEventListener('click', (event) => {
+  event.preventDefault();
+  content.focus();
+});
+
+function showStatus(panel, message, retry = false, reload = false) {
+  const status = document.createElement('div');
+  status.className = 'route-status';
+  status.setAttribute('role', retry ? 'alert' : 'status');
+  const text = document.createElement('p');
+  text.textContent = message;
+  status.append(text);
+  if (retry) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'retry-button';
+    button.textContent = 'Thử lại';
+    button.addEventListener('click', () => reload ? location.reload() : navigate(true));
+    status.append(button);
+  }
+  panel.replaceChildren(status);
+}
+
+function dispose(session) {
+  if (!session) return Promise.resolve();
+  session.controller.abort();
+  session.disposal ??= (async () => {
+    try {
+      const cleanup = await session.renderPromise;
+      if (typeof cleanup === 'function') await cleanup();
+    } catch (error) {
+      console.error('Tab cleanup failed:', error);
+    }
+  })();
+  return session.disposal;
+}
+
+async function navigate(retry = false) {
+  const tab = resolveTab(tabs, location.hash);
+  if (tab && location.hash !== `#${tab.id}`) {
+    history.replaceState(null, '', `#${tab.id}`);
+  }
+  if (!retry && current?.tab === tab) return;
+
+  const request = ++sequence;
+  const previous = current;
+  const hadContentFocus = content.contains(document.activeElement);
+  const hadTabFocus = navigation.contains(document.activeElement);
+  current = {
+    tab,
+    controller: new AbortController(),
+    renderPromise: null,
+  };
+  const session = current;
+
+  for (const [id, button] of buttons) {
+    const selected = id === tab?.id;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  document.body.dataset.tab = tab?.id ?? '';
+  const panel = document.createElement('section');
+  panel.className = 'tab-panel';
+  if (tab) {
+    panel.id = `panel-${tab.id}`;
+    panel.tabIndex = 0;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `tab-${tab.id}`);
+  }
+  content.replaceChildren(panel);
+  if (hadTabFocus && tab) buttons.get(tab.id).focus();
+  else if (hadContentFocus) content.focus();
+  if (!tab) {
+    showStatus(panel, 'Chưa có góc nào được mở.');
+    await dispose(previous);
+    return;
+  }
+
+  panel.setAttribute('aria-busy', 'true');
+  showStatus(panel, 'Đang mở góc vườn…');
+  await dispose(previous);
+  if (request !== sequence) return;
+
+  let moduleLoaded = false;
+  try {
+    const module = await tab.load();
+    moduleLoaded = true;
+    if (request !== sequence || session.controller.signal.aborted) return;
+    panel.replaceChildren();
+    session.renderPromise = Promise.resolve(module.render(panel, {
+      signal: session.controller.signal,
+    }));
+    await session.renderPromise;
+    if (request !== sequence) return;
+    panel.removeAttribute('aria-busy');
+  } catch (error) {
+    if (request !== sequence || session.controller.signal.aborted) return;
+    panel.removeAttribute('aria-busy');
+    console.error('Tab could not be opened:', error);
+    // A failed import can remain cached in a browser's module map.
+    // Reloading on import failure clears that map while preserving the hash.
+    showStatus(panel, 'Không thể mở góc này. Bạn có thể thử lại.', true, !moduleLoaded);
+  }
+}
+
+window.addEventListener('hashchange', () => navigate());
+navigate();

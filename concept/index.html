@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f1d9e3">
+<title>Vườn của chúng mình · Concept</title>
+<style>
+:root{--paper:#fff7f1;--ink:#654355;--muted:#796171;--green:#985a74;--line:#e6cfd6}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 10% 35%,#efbfd180,transparent 55%),radial-gradient(ellipse at 100% 48%,#f6d6bc80,transparent 55%),linear-gradient(180deg,#f1d9e3,#fae9df 48%,#e2e4d0);color:var(--ink);font:16px/1.6 ui-rounded,"Avenir Next",system-ui,sans-serif}
+button,a{font:inherit;-webkit-tap-highlight-color:transparent}button{cursor:pointer}a{color:inherit}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:3px solid #9d5671;outline-offset:4px}
+[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:16px;background:white;padding:12px;z-index:10}.skip:focus{top:12px}
+.shell{max-width:1180px;margin:auto;padding:0 32px}
+header{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:24px 0 16px}
+.brand{text-decoration:none;font-weight:750;font-size:16px;letter-spacing:-.3px;background:#fffcf5e8;border-radius:14px;padding:5px 12px}
+.demo{font-size:10px;background:#fffcf5e8;border-radius:20px;padding:5px 10px;color:var(--muted);white-space:nowrap}
+nav{position:relative;z-index:3;display:flex;gap:5px;width:max-content;max-width:100%;margin:0 auto;padding:5px;border:1px solid var(--line);border-radius:17px;background:var(--paper)}
+nav button{min-height:46px;border:0;border-radius:12px;padding:10px 28px;color:var(--muted);background:transparent;font-size:14px}
+nav button[aria-selected=true]{background:var(--green);color:white;font-weight:650}
+.garden-page{position:fixed;inset:0;isolation:isolate}
+#garden-canvas,#garden-foreground{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#garden-canvas{z-index:0}#garden-foreground{z-index:3}
+.garden-page:before{content:"";position:absolute;inset:45% 0 0;background:radial-gradient(ellipse at 50% 95%,#a8c38d65,transparent 70%)}
+.garden-title{position:absolute;z-index:4;top:18%;left:50%;transform:translateX(-50%);text-align:center;width:min(580px,72%);margin:0;font-family:Georgia,"Times New Roman",serif;font-size:clamp(36px,4.7vw,60px);font-weight:500;line-height:1.16;letter-spacing:-1.5px;text-wrap:balance}
+.title-lettering{display:block;width:100%;height:auto}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.garden-title em{color:#a77383}
+.dashboard{padding:55px 0;position:relative}
+.dashboard h1{font-family:Georgia,"Times New Roman",serif;font-size:40px;font-weight:500;line-height:1.2;letter-spacing:-1px;margin:0 0 20px}
+.dashboard p{max-width:520px;color:var(--muted)}
+#asset-status{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:5;width:min(500px,calc(100% - 32px));background:var(--paper);padding:14px;border-radius:14px;font-size:13px}
+@media(max-width:600px){
+.shell{padding:0 16px}
+header{padding:14px 0 8px}.brand{font-size:13px;padding:5px 9px}.demo{font-size:9px}
+nav{position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:calc(100% - 32px);max-width:440px;z-index:5;box-shadow:0 5px 26px #32493515;padding:6px}
+nav button{flex:1;min-height:50px;padding:10px 8px;font-size:14px}
+.garden-title{top:17%;width:min(88%,380px);font-size:clamp(30px,8.5vw,40px);letter-spacing:-1px}
+.dashboard{padding:36px 4px calc(110px + env(safe-area-inset-bottom,0px))}
+.dashboard h1{font-size:34px}
+}
+@media(max-height:500px){.garden-title{top:30%;font-size:28px}}
+</style>
+</head>
+<body>
+<a class="skip" href="#content">Đến nội dung</a>
+<div class="shell">
+<header><a class="brand" href="#garden">Vườn của chúng mình</a><span class="demo">Concept</span></header>
+<nav id="tabs" role="tablist" aria-label="Không gian của chúng mình"></nav>
+<p id="asset-status" role="status" hidden>Chưa tải được ảnh trang trí. Hãy tải lại trang để thử lại.</p>
+<main id="content" tabindex="-1"></main>
+<noscript><p>Bật JavaScript để xem concept.</p></noscript>
+</div>
+<script>
+// Registry only controls navigation; the garden is a decorative scene.
+const tabs=[
+ {id:'garden',label:'Vườn hoa',render:()=>'<section class="garden-page" aria-label="Khung cảnh vườn hoa với Loopy ngồi bên trái và Loopy ngủ bên phải"><canvas id="garden-canvas" aria-hidden="true"></canvas><h1 class="garden-title"><span class="sr-only">Vườn của chúng mình.</span><img class="title-lettering" src="./assets/typography/center-title.png" alt="" aria-hidden="true" width="1536" height="1024"></h1><canvas id="garden-foreground" aria-hidden="true"></canvas></section>'},
+ {id:'dashboard',label:'Góc ghi chép',render:()=>'<section class="dashboard"><h1>Góc ghi chép.</h1><p>Không gian dành cho ghi chú, kỷ niệm và nhật ký. Bố cục và tính năng sẽ do bạn thiết kế sau.</p></section>'}
+];
+const nav=document.querySelector('#tabs'),main=document.querySelector('main');
+document.querySelector('.skip').addEventListener('click',e=>{e.preventDefault();main.focus()});
+nav.innerHTML=tabs.map(t=>'<button id="tab-'+t.id+'" role="tab" data-tab="'+t.id+'" aria-controls="panel-'+t.id+'">'+t.label+'</button>').join('');
+function select(id,focus=false){
+ const tab=tabs.find(t=>t.id===id)||tabs[0];
+ if(id!==tab.id)history.replaceState(null,'','#'+tab.id);
+ document.body.dataset.space=tab.id;
+ nav.querySelectorAll('button').forEach(b=>{const active=b.dataset.tab===tab.id;b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1});
+ main.innerHTML='<div id="panel-'+tab.id+'" role="tabpanel" aria-labelledby="tab-'+tab.id+'" tabindex="0">'+tab.render()+'</div>';
+ main.querySelectorAll('img').forEach(img=>img.addEventListener('error',()=>document.querySelector('#asset-status').hidden=false,{once:true}));
+ drawGarden();
+ if(focus)document.querySelector('#tab-'+tab.id).focus();
+}
+function go(id){if(location.hash==='#'+id)select(id);else location.hash=id}
+nav.addEventListener('click',e=>{const button=e.target.closest('[data-tab]');if(button)go(button.dataset.tab)});
+nav.addEventListener('keydown',e=>{
+ const i=tabs.findIndex(t=>t.id===e.target.dataset.tab);if(i<0)return;
+ const next={ArrowRight:(i+1)%tabs.length,ArrowLeft:(i-1+tabs.length)%tabs.length,Home:0,End:tabs.length-1}[e.key];
+ if(next===undefined)return;e.preventDefault();go(tabs[next].id);select(tabs[next].id,true);
+});
+addEventListener('hashchange',()=>select(location.hash.slice(1)));
+const flowerImages=['./assets/flowers/handdrawn-meadow.png','./assets/flowers/handdrawn-spires.png'].map(src=>{
+ const image=new Image();image.onload=drawGarden;image.onerror=()=>document.querySelector('#asset-status').hidden=false;image.src=src;return image;
+});
+const loopyTrio=new Image();
+loopyTrio.onload=drawGarden;
+loopyTrio.onerror=()=>document.querySelector('#asset-status').hidden=false;
+loopyTrio.src='./assets/characters/loopy-trio.png';
+function drawGarden(){
+ const canvas=document.querySelector('#garden-canvas');if(!canvas)return;
+ const {width:w,height:h}=canvas.getBoundingClientRect();if(!w||!h)return;
+ const dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
+ let c=canvas.getContext('2d');c.scale(dpr,dpr);
+ const foreground=document.querySelector('#garden-foreground');
+ foreground.width=canvas.width;foreground.height=canvas.height;
+ const front=foreground.getContext('2d');front.scale(dpr,dpr);
+ const draw=(image,x,bottom,height,alpha=1,flip=false)=>{
+  if(!image.complete||!image.naturalWidth)return;
+  const width=height*image.naturalWidth/image.naturalHeight;c.globalAlpha=alpha;
+  c.save();c.translate(x+(flip?width:0),bottom-height);c.scale(flip?-1:1,1);
+  c.drawImage(image,0,0,width,height);c.restore();c.globalAlpha=1;
+ };
+ const mobile=w<600;
+ // Connected leaf bases with regular spacing. The crescent has one tall
+ // left shoulder and a shorter tapered right tip, rather than a U outline.
+ const meadow=flowerImages[0],spires=flowerImages[1];
+ const bed=(height,baseline,alpha)=>{
+  if(!meadow.naturalWidth)return;
+  const width=height*meadow.naturalWidth/meadow.naturalHeight;
+  const count=Math.max(2,Math.ceil(w/(width*.78*.62)));
+  const step=w/count;
+  for(let i=-1;i<=count;i++){
+   const t=(i+.5)/count;
+   const taper=1-.22*Math.max(0,Math.min(1,t));
+   const localHeight=height*taper,localWidth=width*taper;
+   const curve=.025*Math.sin(Math.PI*(t+.12));
+   draw(meadow,(i+.5)*step-localWidth/2,h*(baseline+curve),localHeight,alpha);
+  }
+ };
+ // Distance reads through scale and contrast, not just CSS z-index.
+ c.filter='blur(.7px)';
+ bed(h*(mobile?.42:.50),mobile?.89:.92,.44);
+ c.filter='none';
+ const sideHeight=h*(mobile?.74:.92);
+ const sideWidth=sideHeight*2/3,sideVisible=mobile?w*.18:Math.min(w*.20,290);
+ // Character centers follow the crescent from its raised left shoulder
+ // down toward the low right tip: seated behind flowers, sleeping in front.
+ const poses=mobile?[[.22,.63,.13],[.83,.89,.12]]:[[.19,.70,.18],[.82,.92,.19]];
+ const figure=(i)=>{
+  if(!loopyTrio.complete||!loopyTrio.naturalWidth)return;
+  const [x,bottom,scale]=poses[i];
+  const frames=[[0,1/3],[.603333,.396667]];
+  const [offset,fraction]=frames[i],sw=loopyTrio.naturalWidth*fraction,sh=loopyTrio.naturalHeight;
+  const height=mobile?Math.min(h*scale,w*.25):h*scale;
+  const width=height*sw/sh,left=w*x-width/2,top=h*bottom-height;
+  c.save();c.filter='blur(3px)';c.fillStyle='#3f604020';
+  c.beginPath();c.ellipse(w*x,h*bottom-4,width*.30,Math.max(3,height*.025),0,0,Math.PI*2);c.fill();c.restore();
+  c.drawImage(loopyTrio,offset*loopyTrio.naturalWidth,0,sw,sh,left,top,width,height);
+ };
+ figure(0);
+ draw(spires,sideVisible-sideWidth,h*1.02,sideHeight,1,true);
+ draw(spires,w-sideVisible*.80,h*1.05,sideHeight*.68);
+ bed(h*(mobile?.48:.63),mobile?1.02:1.07,.94);
+ // Near flowers sit above the characters but remain low enough to leave faces clear.
+ c=front;
+ bed(h*(mobile?.24:.32),mobile?1.08:1.10,1);
+ figure(1);
+}
+let resizeTimer;
+addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(drawGarden,120)});
+select(location.hash.slice(1));
+</script>
+</body>
+</html>
