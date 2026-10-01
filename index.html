@@ -12,11 +12,16 @@
 <body>
 <a class="skip" href="#content">Đến nội dung</a>
 <div class="shell">
-<header><a class="brand" href="#garden">Vườn của chúng mình</a></header>
-<nav id="tabs" role="tablist" aria-label="Không gian của chúng mình"></nav>
+<header class="site-header">
+<button class="menu-toggle" type="button" aria-label="Mở menu" aria-controls="sidebar" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+<div class="brand"><img src="./assets/brand/garden-logo.webp" width="48" height="48" alt=""><span>Vườn của<br>chúng mình</span></div>
+</header>
+<dialog id="sidebar" aria-labelledby="sidebar-title">
+<div class="sidebar-heading"><h2 id="sidebar-title">Góc của chúng mình</h2><button class="menu-close" type="button" aria-label="Đóng menu">×</button></div>
+<nav id="tabs" role="tablist" aria-orientation="vertical" aria-label="Không gian của chúng mình"></nav>
+</dialog>
 <main id="content" tabindex="-1"></main>
 <noscript><section class="route-status"><h1>Vườn của chúng mình</h1><p>Bật JavaScript để xem vườn hoa và chuyển giữa các không gian.</p></section></noscript>
 </div>
 </body>
 </html>
-

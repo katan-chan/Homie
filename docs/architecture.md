@@ -51,7 +51,7 @@ Homepage là cảnh trang trí toàn viewport; canvas ghép ảnh WebP từ PNG 
 
 ## Mobile
 
-Hai tab lấy nhãn từ registry. Điện thoại dùng thanh dưới có safe-area; desktop dùng thanh trên. Nút chạm cao ít nhất 44 px, hai nhãn nằm trên một hàng, vùng cuối nội dung chừa đủ khoảng trống để thanh điều hướng không che thao tác. Bố cục dashboard chưa chốt, sẽ do người dùng thiết kế sau.
+Hai tab lấy nhãn từ registry, nằm trong sidebar bên trái trên cả desktop và điện thoại. Nút menu mở native dialog; chọn tab giữ menu mở. Nút đóng, Escape hoặc bấm backdrop đóng menu và trả focus về nút mở. Điều hướng dọc bằng ArrowUp/ArrowDown, Home/End; Tab giữ focus trong dialog. Nội dung tab hiện dần trong 320 ms, màu tab đổi trong 220 ms; tắt hiệu ứng khi prefers-reduced-motion được bật. Nút chạm cao ít nhất 44 px, có safe-area trên điện thoại. Logo raster vẽ tay ở `assets/brand/` đi cùng tên vườn và không có thao tác điều hướng. Bố cục dashboard chưa chốt, sẽ do người dùng thiết kế sau.
 
 ## Dữ liệu và xuất bản
 

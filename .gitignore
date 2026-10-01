@@ -26,4 +26,5 @@ coverage/
 # Agent work artifacts
 docs/superpowers/
 docs/verification.md
+docs/*-verification.md
 docs/previews/

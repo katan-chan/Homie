@@ -3,6 +3,36 @@ import { resolveTab } from './routing.js';
 
 const navigation = document.querySelector('#tabs');
 const content = document.querySelector('#content');
+const sidebar = document.querySelector('#sidebar');
+const menuToggle = document.querySelector('.menu-toggle');
+menuToggle.addEventListener('click', () => {
+  sidebar.showModal();
+  menuToggle.setAttribute('aria-expanded', 'true');
+  navigation.querySelector('[aria-selected="true"]')?.focus();
+});
+document.querySelector('.menu-close').addEventListener('click', () => sidebar.close());
+sidebar.addEventListener('close', () => {
+  if (sidebar.open) return;
+  menuToggle.setAttribute('aria-expanded', 'false');
+  menuToggle.focus();
+});
+sidebar.addEventListener('keydown', (event) => {
+  if (event.key !== 'Tab') return;
+  const controls = [...sidebar.querySelectorAll('button')].filter((button) => button.tabIndex >= 0);
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+sidebar.addEventListener('click', (event) => {
+  const bounds = sidebar.getBoundingClientRect();
+  if (event.target === sidebar && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) sidebar.close();
+});
 const activeTabs = tabs.filter((tab) => tab.enabled);
 const buttons = new Map();
 let sequence = 0;
@@ -27,8 +57,8 @@ for (const tab of activeTabs) {
   button.addEventListener('keydown', (event) => {
     const index = activeTabs.indexOf(tab);
     let next;
-    if (event.key === 'ArrowRight') next = (index + 1) % activeTabs.length;
-    if (event.key === 'ArrowLeft') next = (index - 1 + activeTabs.length) % activeTabs.length;
+    if (event.key === 'ArrowDown') next = (index + 1) % activeTabs.length;
+    if (event.key === 'ArrowUp') next = (index - 1 + activeTabs.length) % activeTabs.length;
     if (event.key === 'Home') next = 0;
     if (event.key === 'End') next = activeTabs.length - 1;
     if (next === undefined) return;
@@ -135,6 +165,7 @@ async function navigate(retry = false) {
     await session.renderPromise;
     if (request !== sequence) return;
     panel.removeAttribute('aria-busy');
+    panel.classList.add('is-entering');
   } catch (error) {
     if (request !== sequence || session.controller.signal.aborted) return;
     panel.removeAttribute('aria-busy');
