@@ -2,7 +2,11 @@
 
 Frontend production: [homie-ecru.vercel.app](https://homie-ecru.vercel.app). Project Vercel `pp-5f37/homie` kết nối với `katan-chan/Homie`, production branch `main`.
 
-Frontend là website tĩnh; backend có health, auth/session và public profile API. Không cần thư viện ngoài, dùng Node.js 22. Thay đổi auth/profile hiện mới kiểm tra local, chưa publish. Xem [contract](authentication.md).
+Backend Render: [homie-api-vd9v.onrender.com](https://homie-api-vd9v.onrender.com), service `srv-davgrouk1f9s73a977vg`, region Singapore, plan Free. Auto deploy bật với trigger `commit` trên `main`.
+
+Production frontend gọi `/api/...` cùng origin. `vercel.json` proxy các request này tới backend Render; không đặt `PUBLIC_API_BASE_URL` thành origin Render trong project Vercel khi dùng proxy. Cookie `HttpOnly; Secure; SameSite=Lax` không cần đổi sang cookie cross-site. Backend cho phép origin `https://homie-ecru.vercel.app`.
+
+Frontend là website tĩnh; backend có health, auth/session và public profile API. Không cần thư viện ngoài, dùng Node.js 22. Xem [contract](authentication.md).
 
 ## Điều kiện trước khi deploy auth/profile
 
@@ -13,7 +17,7 @@ Frontend là website tĩnh; backend có health, auth/session và public profile 
 
 ## 1. Render
 
-Đẩy thư mục dự án lên GitHub, rồi tạo Blueprint trên Render từ repo đó; Render đọc `render.yaml` tại root.
+Service hiện được tạo qua CLI và đã nối GitHub. Push vào `main` tự kích hoạt build/redeploy trên Render và Vercel. Không tạo thêm Blueprint cho cùng repo nếu chỉ muốn cập nhật service hiện hữu; dùng Dashboard hoặc `render services update` khi đổi cấu hình service. `render.yaml` ghi lại cấu hình để tạo lại bằng Blueprint nếu cần.
 
 Điền `FRONTEND_ORIGINS` bằng URL frontend, ví dụ `https://your-project.vercel.app`. Có thể điền sau khi tạo project Vercel rồi restart backend. Nhiều origin cách nhau bằng dấu phẩy, không có dấu `/` cuối URL. Chỉ thêm URL preview cụ thể khi cần, không mở toàn bộ `*.vercel.app`.
 

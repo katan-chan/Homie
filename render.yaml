@@ -1,8 +1,11 @@
 services:
   - type: web
-    name: vuon-cua-chung-minh-api
+    name: homie-api
     runtime: node
     plan: free
+    region: singapore
+    branch: main
+    autoDeployTrigger: commit
     buildCommand: node --check backend/server.js
     startCommand: npm start
     healthCheckPath: /api/health
@@ -10,10 +13,14 @@ services:
       - key: NODE_ENV
         value: production
       - key: FRONTEND_ORIGINS
-        sync: false
+        value: https://homie-ecru.vercel.app
+      - key: NODE_VERSION
+        value: 22.23.2
       - key: MINHLE_PASSWORD_HASH
         sync: false
       - key: HAIYEN_PASSWORD_HASH
         sync: false
       - key: SESSION_SAME_SITE
         value: Lax
+      - key: PROFILE_DATA_DIR
+        value: .data
