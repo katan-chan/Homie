@@ -4,15 +4,38 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 8000 --bind 127.0.0.1",
+    "dev": "node scripts/build-notes.js && python3 -m http.server 8000 --bind 127.0.0.1",
     "dev:backend": "node --env-file-if-exists=.env backend/server.js",
     "start": "node backend/server.js",
     "build": "node scripts/build.js",
+    "build:notes": "node scripts/build-notes.js",
     "test": "node --test tests/*.test.js",
+    "test:notes-stack": "node --test tests/notes-stack.test.js",
     "test:browser": "node tests/browser-auth.mjs",
     "test:layout": "node tests/browser-layout.mjs"
   },
   "engines": {
     "node": "22.x"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-bold": "3.31.4",
+    "@tiptap/extension-collaboration": "3.31.4",
+    "@tiptap/extension-collaboration-caret": "3.31.4",
+    "@tiptap/extension-document": "3.31.4",
+    "@tiptap/extension-italic": "3.31.4",
+    "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-paragraph": "3.31.4",
+    "@tiptap/extension-text": "3.31.4",
+    "@tiptap/extension-text-style": "3.31.4",
+    "@tiptap/extension-underline": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/y-tiptap": "3.0.9",
+    "y-indexeddb": "9.0.12",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
