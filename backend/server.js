@@ -36,6 +36,7 @@ function readJson(request) {
 }
 
 export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? '', options = {}) {
+  // The Vercel /api proxy preserves the browser Origin for this allowlist.
   const allowed = new Set(frontendOrigins.split(',').map((origin) => origin.trim()).filter(Boolean));
   const auth = createAuth(options);
   const profiles = createProfiles(options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data');
