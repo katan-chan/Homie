@@ -2,7 +2,7 @@
 
 Frontend production: [homie-ecru.vercel.app](https://homie-ecru.vercel.app). Project Vercel `pp-5f37/homie` kết nối với `katan-chan/Homie`, production branch `main`.
 
-Backend Render: [homie-api-vd9v.onrender.com](https://homie-api-vd9v.onrender.com), service `srv-davgrouk1f9s73a977vg`, region Singapore, plan Free. Auto deploy bật với trigger `commit` trên `main`.
+Backend Render: [homie-api-vd9v.onrender.com](https://homie-api-vd9v.onrender.com), service `srv-davgrouk1f9s73a977vg`, region Singapore, plan Free. Auto deploy cấu hình trigger `commit` trên `main`; cần kết nối GitHub deployment credential trước khi Render nhận sự kiện push. URL repo công khai đơn thuần không kích hoạt auto deploy.
 
 Production frontend gọi `/api/...` cùng origin. `vercel.json` proxy các request này tới backend Render; không đặt `PUBLIC_API_BASE_URL` thành origin Render trong project Vercel khi dùng proxy. Cookie `HttpOnly; Secure; SameSite=Lax` không cần đổi sang cookie cross-site. Backend cho phép origin `https://homie-ecru.vercel.app`.
 
@@ -17,7 +17,7 @@ Frontend là website tĩnh; backend có health, auth/session và public profile 
 
 ## 1. Render
 
-Service hiện được tạo qua CLI và đã nối GitHub. Push vào `main` tự kích hoạt build/redeploy trên Render và Vercel. Không tạo thêm Blueprint cho cùng repo nếu chỉ muốn cập nhật service hiện hữu; dùng Dashboard hoặc `render services update` khi đổi cấu hình service. `render.yaml` ghi lại cấu hình để tạo lại bằng Blueprint nếu cần.
+Service hiện được tạo qua CLI từ URL repo. Trong [Account Settings](https://dashboard.render.com/u/settings), thêm GitHub ở Git Deployment Credentials và cấp quyền cho repo `katan-chan/Homie`. Sau đó tại [service Settings](https://dashboard.render.com/web/srv-davgrouk1f9s73a977vg/settings), chọn Git Credentials vừa kết nối. Khi kết nối hoàn tất, push vào `main` kích hoạt build/redeploy trên Render; Vercel đã được xác nhận hoạt động từ push. Không tạo thêm Blueprint cho cùng repo nếu chỉ muốn cập nhật service hiện hữu; dùng Dashboard hoặc `render services update` khi đổi cấu hình service. `render.yaml` ghi lại cấu hình để tạo lại bằng Blueprint nếu cần.
 
 Điền `FRONTEND_ORIGINS` bằng URL frontend, ví dụ `https://your-project.vercel.app`. Có thể điền sau khi tạo project Vercel rồi restart backend. Nhiều origin cách nhau bằng dấu phẩy, không có dấu `/` cuối URL. Chỉ thêm URL preview cụ thể khi cần, không mở toàn bộ `*.vercel.app`.
 
