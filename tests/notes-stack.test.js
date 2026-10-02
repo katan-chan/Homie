@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -40,18 +40,24 @@ async function withBrowser(callback, assetRoot = root) {
   const browser = spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu',
     '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0',
     `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const browserTerminated = new Promise(resolveExit => {
+    browser.once('exit', resolveExit);
+    browser.once('error', resolveExit);
+  });
   let browserLog = '';
   browser.stderr.on('data', chunk => { browserLog += chunk; });
   let ws;
   try {
+    let startupTimer;
     const endpoint = await new Promise((resolveEndpoint, reject) => {
-      const timer = setTimeout(() => reject(Error(`Chrome startup timed out: ${browserLog}`)), 15000);
+      startupTimer = setTimeout(() => reject(Error(`Chrome startup timed out: ${browserLog}`)), 15000);
       browser.once('error', reject);
+      browser.once('exit', (code, signal) => reject(Error(`Chrome exited during startup (${signal || code}): ${browserLog}`)));
       browser.stderr.on('data', () => {
         const match = browserLog.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-        if (match) { clearTimeout(timer); resolveEndpoint(match[1]); }
+        if (match) resolveEndpoint(match[1]);
       });
-    });
+    }).finally(() => clearTimeout(startupTimer));
     const debugOrigin = new URL(endpoint).origin.replace('ws:', 'http:');
     const targets = await (await fetch(`${debugOrigin}/json/list`)).json();
     ws = new WebSocket(targets.find(target => target.type === 'page').webSocketDebuggerUrl);
@@ -90,10 +96,35 @@ async function withBrowser(callback, assetRoot = root) {
   } finally {
     ws?.close();
     browser.kill();
-    if (browser.exitCode === null) await new Promise(resolveExit => browser.once('exit', resolveExit));
+    await browserTerminated;
     await new Promise(resolveClose => server.close(resolveClose));
     await rm(profile, { recursive: true, force: true, maxRetries: 5 });
   }
+}
+
+for (const scenario of ['missing executable', 'signal-terminated child']) {
+  test(`browser startup cleanup is bounded for ${scenario}`, { timeout: 10000 }, async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'homie-browser-failure-'));
+    const profiles = resolve(directory, 'profiles');
+    const chrome = resolve(directory, 'chrome');
+    try {
+      // Real process failures exercise the same startup/cleanup path as Chrome.
+      await mkdir(profiles);
+      if (scenario === 'signal-terminated child') {
+        await writeFile(chrome, '#!/bin/sh\nkill -TERM $$\n', { mode: 0o755 });
+      }
+      const result = spawnSync(process.execPath, ['--test-name-pattern=^local vendor',
+        'tests/notes-stack.test.js'], { cwd: root, encoding: 'utf8', timeout: 4000,
+        killSignal: 'SIGKILL',
+        env: { ...process.env, CHROME_PATH: chrome, TMPDIR: profiles } });
+      assert.equal(result.error, undefined, `Startup failure must finish promptly: ${result.error?.message}`);
+      assert.equal(result.status, 1, `${result.stdout}${result.stderr}`);
+      assert.match(result.stdout + result.stderr, scenario === 'missing executable' ? /ENOENT/ : /SIGTERM/);
+      assert.deepEqual(await readdir(profiles), [], 'Failed startup must remove the temporary browser profile');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 }
 
 test('local vendor mounts real Vietnamese collaborative editors with per-origin undo and redo', { timeout: 45000 }, async () => {
