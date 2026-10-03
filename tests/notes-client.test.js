@@ -258,3 +258,51 @@ test('a receipt committed by another client cannot ACK a conflicting queued requ
   await assert.rejects(b.command({...request,payload:{name:'Conflicting other client'}}),{code:'operation_conflict'});
   assert.equal(f.store.publicBoard(f.boardId).name,'First client');assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
 });
+
+async function conflictingOfflineCommand(t) {
+  const f=await fixture(t), a=await f.open(), b=await f.open();const request=f.envelope('board.rename',{name:'ACKed content'});
+  await a.command(request);f.disconnect();
+  try { await b.command({...request,payload:{name:'Offline conflicting edit'}}); } catch(error) { assert.equal(error.code,'operation_conflict'); }
+  return {f,b,request};
+}
+function assertRetainedConflict(client) {
+  const state=client.getState();assert.equal(state.pending.total,1);assert.equal(state.durability,'local');assert.equal(state.error?.code,'operation_conflict');
+  let subscribed;const stop=client.subscribe(next=>{subscribed=next;});stop();
+  assert.equal(subscribed.pending.total,1);assert.equal(subscribed.error?.code,'operation_conflict');
+}
+
+test('stale same-account offline metadata conflict remains visible after receipt reconnect',async t=>{
+  const {f,b}=await conflictingOfflineCommand(t);f.reconnect();await waitFor(()=>b.getState().connection==='online');await b.flush();
+  assertRetainedConflict(b);assert.equal(f.store.publicBoard(f.boardId).name,'ACKed content');assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
+});
+
+test('same-account mode hydration compares conflicting pending content before retiring a receipt',async t=>{
+  const {f,b}=await conflictingOfflineCommand(t);f.auth(null);f.auth('minhle');
+  await waitFor(()=>b.getState().connection==='offline'&&b.getState().snapshot);assertRetainedConflict(b);
+  f.reconnect();await waitFor(()=>b.getState().connection==='online');await b.flush();assertRetainedConflict(b);
+});
+
+test('reload keeps an offline metadata receipt conflict in its originating persisted queue',async t=>{
+  const {f,b}=await conflictingOfflineCommand(t);await b.close();const reloaded=await f.open();
+  await reloaded.flush();f.reconnect();await waitFor(()=>reloaded.getState().connection==='online');await reloaded.flush();
+  assertRetainedConflict(reloaded);assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
+});
+
+test('upload receipt conflict survives offline reconnect and reload without a second upload',async t=>{
+  const f=await fixture(t), a=await f.open(), b=await f.open(), original=f.transport.request;let uploadPosts=0;
+  f.transport.request=(path,options)=>options?.rawBody instanceof FormData ? (uploadPosts++,Promise.resolve({operationId:options.rawBody.get('operationId'),assetId:randomUUID()})):original(path,options);
+  const request={operationId:randomUUID(),file:new Blob(['ACKed'],{type:'image/png'}),name:'fixture.png',fields:{rows:'1'}};
+  await a.queueUpload(request);f.disconnect();
+  try { await b.queueUpload({...request,file:new Blob(['Different'],{type:'image/png'})}); } catch(error) { assert.equal(error.code,'operation_conflict'); }
+  await b.close();const reloaded=await f.open();f.reconnect();await waitFor(()=>reloaded.getState().connection==='online');await reloaded.flush();
+  assertRetainedConflict(reloaded);assert.equal(reloaded.getState().pending.uploads,1);assert.equal(uploadPosts,1);
+});
+
+test('an exact offline duplicate may retire against the identical persisted ACK',async t=>{
+  const f=await fixture(t), a=await f.open(), b=await f.open();const request=f.envelope('board.rename',{name:'Exact ACK'}), accepted=await a.command(request);
+  f.disconnect();const duplicate=await b.command(structuredClone(request));
+  assert.ok(duplicate.pending || duplicate.operationId===accepted.operationId);assert.equal(b.getState().history.canUndo,false);
+  await b.close();const reloaded=await f.open();f.reconnect();await waitFor(()=>reloaded.getState().connection==='online');await reloaded.flush();
+  assert.equal(reloaded.getState().pending.total,0);assert.equal(reloaded.getState().error,null);assert.equal(reloaded.getState().history.canUndo,false);assert.deepEqual(await reloaded.command(request),accepted);
+  assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
+});

@@ -6,14 +6,27 @@ import { applyMetadataCommand, validateCommand, requireId, requireAccount, notes
 const MAX_TEXT = 262144, MAX_UPLOAD = 50 * 1024 * 1024;
 const remote = Symbol('committed'), cache = Symbol('cache');
 const clone = value => structuredClone(value);
-async function requestIdentity(entry) {
+function canonicalRequest(entry) {
   const value = entry.kind === 'command' ? entry.command : entry.kind === 'text'
     ? { kind: 'text', noteId: entry.noteId, update: entry.update }
     : { kind: 'upload', path: entry.path, name: entry.name, fields: entry.fields, hash: entry.hash, mimeType: entry.file.type };
-  const canonical = JSON.stringify(value, (_key, part) => part && typeof part === 'object' && !Array.isArray(part)
+  return JSON.stringify(value, (_key, part) => part && typeof part === 'object' && !Array.isArray(part)
     ? Object.fromEntries(Object.keys(part).sort().map(key => [key, part[key]])) : part);
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)));
+}
+async function requestIdentity(entry) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest(entry))));
   return [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+async function receiptReconciler(entries) {
+  // Hash before a native IDB transaction; its mutator must stay synchronous.
+  const identities = new Map(await Promise.all(entries.map(async entry => [canonicalRequest(entry), await requestIdentity(entry)])));
+  return (pending, receipts) => pending.flatMap(entry => {
+    const receipt = receipts[entry.operationId], identity = identities.get(canonicalRequest(entry));
+    // A concurrent, previously unseen request stays pending until its content can be checked.
+    if (!receipt || !identity) return [entry];
+    if (receipt.identity === identity) return [];
+    return [{ ...entry, failure: { code: 'operation_conflict', status: 409, message: 'Operation ID was ACKed for different content' } }];
+  });
 }
 const encode = bytes => {
   let value = '';
@@ -186,16 +199,33 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   function write(action) {
     const job = localWrites.then(action); localWrites = job.catch(() => {}); return job;
   }
+  async function hydrate(saved, g) {
+    const ids = new Set(queue.map(entry => entry.operationId));
+    const entries = [...queue, ...saved.queue.filter(entry => !ids.has(entry.operationId))];
+    const reconcile = await receiptReconciler(entries);
+    if (!alive(g)) return false;
+    for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
+    const receipts = Object.fromEntries(acknowledged), retained = reconcile(entries, receipts);
+    if (retained.length !== entries.length) {
+      // Check the transaction's current content too: another tab may reuse that ID with different bytes.
+      await storage.update(scope, record => ({ ...record, queue: reconcile(record.queue, { ...receipts, ...record.receipts }) }));
+      if (!alive(g)) return false;
+    }
+    const captured = new Set(entries.map(entry => entry.operationId));
+    queue = [...retained, ...queue.filter(entry => !captured.has(entry.operationId))];
+    durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown'; error = null;
+    return true;
+  }
   async function persist() {
     const entries = clone(queue), g = generation;
     try {
-      await storage.update(scope, record => {
+      const reconcile = await receiptReconciler(entries), receipts = Object.fromEntries(acknowledged);
+      const saved = await storage.update(scope, record => {
         const ids = new Set(entries.map(e => e.operationId));
-        const retained = [...entries.filter(e => !acknowledged.has(e.operationId)),
-          ...record.queue.filter(e => !ids.has(e.operationId) && !acknowledged.has(e.operationId))];
-        return { ...record, queue: retained };
+        const merged = [...entries, ...record.queue.filter(e => !ids.has(e.operationId))];
+        return { ...record, queue: reconcile(merged, { ...receipts, ...record.receipts }) };
       });
-      if (alive(g)) { durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown'; error = null; notify(); }
+      if (alive(g) && await hydrate(saved, g)) notify();
     } catch (failure) { if (alive(g)) failed(failure, true); throw failure; }
   }
   async function request(path, options = {}, writeRequest = false) {
@@ -250,11 +280,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     if (!next) startStream();
     else {
       const g = generation;
-      storage.load(scope).then(saved => {
-        if (!alive(g) || !writable()) return;
-        for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
-        queue = queue.filter(entry => !acknowledged.has(entry.operationId));
-        for (const entry of saved.queue) if (!acknowledged.has(entry.operationId) && !queue.some(e => e.operationId === entry.operationId)) queue.push(entry);
+      storage.load(scope).then(async saved => {
+        if (!alive(g) || !writable() || !await hydrate(saved, g)) return;
         snapshot = saved.snapshot; notify(); startStream();
       }).catch(failure => { if (alive(g)) { failed(failure, true); startStream(); } });
     }
@@ -363,10 +390,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     if (sending) return sending;
     const g = generation;
     const job = (async () => {
-      const saved = await storage.load(scope); if (!alive(g)) return getState();
-      for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
-      queue = queue.filter(entry => !acknowledged.has(entry.operationId));
-      for (const entry of saved.queue) if (!acknowledged.has(entry.operationId) && !queue.some(e => e.operationId === entry.operationId)) queue.push(entry);
+      const saved = await storage.load(scope);
+      if (!alive(g) || !await hydrate(saved, g)) return getState();
       if (connection !== 'online' && creating) {
         // A nonexistent board has no SSE yet. Verify the live account, create, then subscribe before GET.
         try {
@@ -376,6 +401,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
       }
       for (const entry of [...queue]) {
         if (!alive(g) || !writable() || connection !== 'online' && entry.command?.type !== 'board.create') break;
+        // Matching receipts were retired; a remaining receipt represents visible conflicting work.
+        if (acknowledged.has(entry.operationId)) continue;
         try {
           const identity = await requestIdentity(entry);
           if (!alive(g) || !writable()) break;
@@ -559,7 +586,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     const saved = await storage.load(privateMode ? scope : `homie-notes:guest:${boardId}`);
     if (!alive(g)) { check(); return client; }
     queue = accountId ? saved.queue : []; snapshot = saved.snapshot;
-    if (privateMode) for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
+    if (privateMode && !await hydrate(saved, g)) return client;
     durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown';
   } catch (failure) { failed(failure, true); }
   stopAuth = session.subscribe(authChanged);
