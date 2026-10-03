@@ -88,7 +88,10 @@ test('corrupt, wrong-version and invalid-reference snapshots fail closed without
   const path = join(f.dataDir, 'notes.json'), valid = JSON.parse(await readFile(path, 'utf8'));
   const invalidReference = structuredClone(valid); invalidReference.notes[0].columnId = randomUUID();
   const invalidDedup = structuredClone(valid); invalidDedup.operations[0].result.revisions[0].revision = 'invalid';
-  for (const bytes of ['{broken', JSON.stringify({ ...valid, formatVersion: 999 }), JSON.stringify(invalidReference), JSON.stringify(invalidDedup)]) {
+  const cyclicLineage = structuredClone(valid); cyclicLineage.operations[0].undo.undoOf = cyclicLineage.operations[0].id;
+  const futureLineage = structuredClone(valid); futureLineage.operations[0].undo.undoOf = futureLineage.operations[1].id;
+  for (const bytes of ['{broken', JSON.stringify({ ...valid, formatVersion: 1 }), JSON.stringify({ ...valid, formatVersion: 999 }),
+    JSON.stringify(invalidReference), JSON.stringify(invalidDedup), JSON.stringify(cyclicLineage), JSON.stringify(futureLineage)]) {
     await writeFile(path, bytes);
     await assert.rejects(createNotesStore({ dataDir: f.dataDir }));
     assert.equal(await readFile(path, 'utf8'), bytes);
@@ -249,4 +252,53 @@ test('a directory-sync failure after rename reconciles committed state and resol
     await f.reopen();
     assert.deepEqual(await f.store.applyCommand('minhle', command), result);
   } finally { patched.mock.restore(); syncBuiltinESMExports(); }
+});
+
+for (const grouped of [false, true]) {
+  test(`successive own undo/redo preserves history and dedup after restart (${grouped ? 'column group' : 'note'})`, async t => {
+    const f = await fixture(t);
+    const id = grouped ? randomUUID() : f.noteId, type = grouped ? 'column.update' : 'note.update';
+    if (grouped) {
+      await f.send('column.create', { id, name: 'Nhóm', x: 0, y: 0, width: 400, height: 500 });
+      await f.send('note.move', { id: f.noteId, columnId: id });
+    }
+    const x = () => f.store.entity(grouped ? 'column' : 'note', id).x;
+    const initialX = x(), initialNoteX = f.store.entity('note', f.noteId).x;
+    const aCommand = f.command(type, { id, x: initialX + 10 });
+    const aResult = await f.store.applyCommand('minhle', aCommand);
+    const bCommand = f.command(type, { id, x: initialX + 20 });
+    const bResult = await f.store.applyCommand('minhle', bCommand);
+    let a = aResult, b = bResult;
+    const undo = operation => f.send('command.undo', { operationId: operation.operationId });
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const undoB = await undo(b); assert.equal(x(), initialX + 10);
+      await f.reopen();
+      const undoA = await undo(a); assert.equal(x(), initialX);
+      assert.equal(f.store.entity('note', f.noteId).x, initialNoteX);
+      await f.reopen();
+      a = await undo(undoA); assert.equal(x(), initialX + 10);
+      b = await undo(undoB); assert.equal(x(), initialX + 20);
+      assert.equal(f.store.entity('note', f.noteId).x, initialNoteX + 20);
+    }
+    assert.deepEqual(await f.store.applyCommand('minhle', aCommand), aResult);
+    assert.deepEqual(await f.store.applyCommand('minhle', bCommand), bResult);
+    const beforePeer = f.store.entity('note', f.noteId).x;
+    await f.send('note.update', { id: f.noteId, width: 300 }, 'haiyen');
+    await assert.rejects(undo(b), { code: 'undo_conflict' });
+    assert.equal(x(), initialX + 20);
+    assert.equal(f.store.entity('note', f.noteId).x, beforePeer);
+  });
+}
+
+test('undo lineage rejects normal lookalike writes and cannot cross a reverted peer change', async t => {
+  const f = await fixture(t);
+  const a = await f.send('note.update', { id: f.noteId, x: 20 });
+  await f.send('note.update', { id: f.noteId, x: 30 });
+  await f.send('note.update', { id: f.noteId, x: 20 });
+  await assert.rejects(f.send('command.undo', { operationId: a.operationId }), { code: 'undo_conflict' });
+  const own = await f.send('note.update', { id: f.noteId, x: 40 });
+  const peer = await f.send('note.update', { id: f.noteId, x: 50 }, 'haiyen');
+  await f.send('command.undo', { operationId: peer.operationId }, 'haiyen');
+  assert.equal(f.store.entity('note', f.noteId).x, 40);
+  await assert.rejects(f.send('command.undo', { operationId: own.operationId }), { code: 'undo_conflict' });
 });

@@ -6,7 +6,7 @@ import { emptyNotesState, applyMetadataCommand, applyMetadataUndo, validateNotes
   validateCommand, projectBoard, findEntity, isVisible, mutationTargets, notesError,
   requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
-export const NOTES_FORMAT_VERSION = 1;
+export const NOTES_FORMAT_VERSION = 2;
 export const MAX_TEXT_UPDATE_BYTES = 256 * 1024;
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_NODES = 10000, MAX_TEXT_DEPTH = 32;
@@ -121,7 +121,7 @@ function validateSnapshot(state) {
   const assets = new Set();
   for (const asset of state.assets) { validateAsset(asset); if (assets.has(asset.id)) throw notesError('duplicate_id'); assets.add(asset.id); }
   for (const decoration of state.decorations) if (!assets.has(decoration.assetId)) throw notesError('asset_not_found');
-  const operations = new Set();
+  const operations = new Set(), priorOperations = new Map();
   for (const op of state.operations) {
     requireKeys(op, ['id', 'accountId', 'boardId', 'fingerprint', 'result', 'undo']);
     requireId(op.id); requireAccount(op.accountId);
@@ -146,7 +146,14 @@ function validateSnapshot(state) {
       }
     }
     if (op.undo !== null) {
-      requireKeys(op.undo, ['changes', 'groups', 'entity']);
+      requireKeys(op.undo, ['changes', 'groups', 'entity', 'undoOf']);
+      if (op.undo.undoOf !== null) {
+        requireId(op.undo.undoOf);
+        const target = priorOperations.get(op.undo.undoOf);
+        if (!target?.undo || target.accountId !== op.accountId || target.boardId !== op.boardId
+          || !Array.isArray(op.undo.changes) || op.undo.changes.length !== target.undo.changes.length
+          || target.undo.changes.some(change => !op.undo.changes.some(other => other.kind === change.kind && other.id === change.id))) throw notesError('invalid_state');
+      }
       requireKeys(op.undo.entity, ['kind', 'id']);
       if (!op.result.entity || canonical(op.result.entity) !== canonical(op.undo.entity)
         || !Array.isArray(op.undo.changes) || !op.undo.changes.length || !Array.isArray(op.undo.groups)) throw notesError('invalid_state');
@@ -173,8 +180,42 @@ function validateSnapshot(state) {
           || group.memberIds.some(id => !collectionKeys.some(key => state[key].some(entity => entity.id === id)))) throw notesError('invalid_state');
       }
     }
+    priorOperations.set(op.id, op);
   }
   return state;
+}
+
+// Rebase only states reached by explicit inverses; ordinary equal-valued edits are new states.
+function rebaseUndo(state, original) {
+  const undo = clone(original.undo), operations = new Map(state.operations.map(operation => [operation.id, operation]));
+  for (const change of undo.changes) {
+    const key = change.kind === 'board' ? 'metadataRevision' : 'revision';
+    const expected = change.after[key], current = findEntity(state, change.kind, change.id)[key];
+    if (current === expected) continue;
+    const versions = new Map();
+    for (const operation of state.operations) {
+      const entry = operation.undo?.changes.find(other => other.kind === change.kind && other.id === change.id);
+      if (!entry) continue;
+      if (entry.after[key] > expected && operation.accountId !== original.accountId) {
+        throw notesError('undo_conflict', 'Peer metadata changed since operation', 409);
+      }
+      versions.set(entry.after[key], operation);
+    }
+    const resolve = revision => {
+      // Each inverse points to an earlier operation; the bound also fails closed on corrupt cycles.
+      for (let remaining = versions.size; remaining >= 0; remaining -= 1) {
+        const operation = versions.get(revision);
+        if (!operation?.undo.undoOf) return revision;
+        const target = operations.get(operation.undo.undoOf).undo.changes
+          .find(other => other.kind === change.kind && other.id === change.id);
+        revision = target.before?.[key] ?? 0;
+      }
+      throw notesError('undo_conflict', 'Invalid undo lineage', 409);
+    };
+    if (resolve(current) !== resolve(expected)) throw notesError('undo_conflict', 'Entity changed since operation', 409);
+    change.after[key] = current;
+  }
+  return undo;
 }
 
 export async function createNotesStore({ dataDir }) {
@@ -287,7 +328,7 @@ export async function createNotesStore({ dataDir }) {
           if (!original || !original.undo || original.boardId !== request.boardId) throw notesError('not_found', 'Undo operation not found', 404);
           if (original.accountId !== userId) throw notesError('forbidden', 'Undo belongs to another account', 403);
           if (request.baseRevision > findEntity(state, 'board', request.boardId).revision) throw notesError('invalid_revision');
-          mutation = applyMetadataUndo(metadata(state), original.undo, request.boardId);
+          mutation = applyMetadataUndo(metadata(state), rebaseUndo(state, original), request.boardId);
         } else mutation = applyMetadataCommand(metadata(state), userId, request,
           { assetExists: id => state.assets.some(asset => asset.id === id && !asset.removed) });
         if (authorize) await authorize({ userId, boardId: request.boardId, operationId: request.operationId,
@@ -298,7 +339,8 @@ export async function createNotesStore({ dataDir }) {
         const result = { revision, operationId: request.operationId, entity: mutation.entity,
           revisions: mutation.changes.map(change => ({ kind: change.kind, id: change.id,
             revision: change.after[change.kind === 'board' ? 'metadataRevision' : 'revision'] })) };
-        const undo = { changes: mutation.changes, groups: mutation.groups, entity: mutation.entity };
+        const undo = { changes: mutation.changes, groups: mutation.groups, entity: mutation.entity,
+          undoOf: request.type === 'command.undo' ? request.payload.operationId : null };
         return commit(candidate, userId, request.operationId, request.boardId, hash, result, undo,
           { type: 'metadata', boardId: request.boardId, revision, operationId: request.operationId, commandType: request.type });
       });
