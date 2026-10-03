@@ -181,3 +181,80 @@ test('a rejected deleted geometry command cannot prevent retained text committin
   assert.equal(c.getState().pending.text,0);assert.equal(c.getState().pending.commands,1);assert.match(JSON.stringify(f.store.privateBoard(f.boardId).texts),/./);
   assert.equal(f.store.publicBoard(f.boardId).notes.length,0);
 });
+
+test('post-ACK command retry compares immutable content and survives same-account reload', async t => {
+  const f=await fixture(t), c=await f.open();
+  const request=f.envelope('board.rename',{name:'First'});const accepted=await c.command(request);
+  assert.deepEqual(await c.command(structuredClone(request)),accepted);
+  await assert.rejects(c.command({...request,payload:{name:'Different'}}),{code:'operation_conflict'});
+  assert.equal(f.store.publicBoard(f.boardId).name,'First');
+  await c.close();const reloaded=await f.open();
+  assert.deepEqual(await reloaded.command(structuredClone(request)),accepted);
+  await assert.rejects(reloaded.command({...request,payload:{name:'Different'}}),{code:'operation_conflict'});
+  assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
+});
+
+test('matching shorthand ACK retry reuses its original default revision', async t => {
+  const f=await fixture(t), c=await f.open();const request={operationId:randomUUID(),type:'board.rename',payload:{name:'Shorthand'}};
+  const accepted=await c.command(request);assert.deepEqual(await c.command(request),accepted);
+  await assert.rejects(c.command({...request,baseRevision:0}),{code:'operation_conflict'});
+});
+
+test('post-ACK upload retry binds digest, path, name, fields and MIME to the originating account', async t => {
+  const f=await fixture(t), c=await f.open();const original=f.transport.request;let uploads=0;
+  f.transport.request=(path,options)=>options?.rawBody instanceof FormData ? (uploads++,Promise.resolve({operationId:options.rawBody.get('operationId'),accountId:options.rawBody.get('accountId'),assetId:randomUUID()})) : original(path,options);
+  const request={operationId:randomUUID(),path:'/api/assets',name:'fixture.png',fields:{rows:'1'},file:new Blob(['first'],{type:'image/png'})};
+  const accepted=await c.queueUpload(request);assert.deepEqual(await c.queueUpload({...request,file:new Blob(['first'],{type:'image/png'})}),accepted);
+  for(const change of [{file:new Blob(['different'],{type:'image/png'})},{path:'/api/other-assets'},{name:'different.png'},{fields:{rows:'2'}},{file:new Blob(['first'],{type:'image/gif'})}]) {
+    await assert.rejects(c.queueUpload({...request,...change}),{code:'operation_conflict'});
+  }
+  assert.equal(uploads,1);f.auth('haiyen');const yen=await f.open('haiyen');
+  assert.equal((await yen.queueUpload(request)).accountId,'haiyen');assert.equal(uploads,2);
+});
+
+for(const helper of ['authenticatedRequest','listTrash','acquireLease','renewLease','releaseLease']) {
+  test(`${helper} 401 centrally clears private state and retains originating pending drafts`,async t=>{
+    const f=await fixture(t), c=await f.open(), original=f.transport.request;f.disconnect();
+    await c.applyText(f.noteId,newText('Private draft'));let rejectPending;
+    const heldTransport=(path,options)=>path.endsWith('/text')?new Promise((resolve,reject)=>{rejectPending=reject;}):original(path,options);
+    f.transport.request=heldTransport;f.reconnect();await waitFor(()=>c.getState().connection==='online'&&rejectPending);
+    if(helper==='renewLease'||helper==='releaseLease')await c.acquireLease({kind:'note',id:f.noteId});
+    f.transport.request=(path,options)=>path.endsWith('/leases')||path.endsWith('/trash')||path==='/api/helper-private' ? Promise.reject(Object.assign(Error('expired'),{status:401,code:'unauthorized'})):heldTransport(path,options);
+    const action=helper==='authenticatedRequest'?()=>c.authenticatedRequest('/api/helper-private'):helper==='listTrash'?()=>c.listTrash():()=>c[helper]({kind:'note',id:f.noteId});
+    await assert.rejects(action(),{status:401});assert.equal(c.getState().writable,false);assert.ok(!c.getState().snapshot?.texts);
+    assert.equal(c.getState().pending.text,1);assert.throws(()=>c.getPending(),/auth|account/i);
+    rejectPending(Error('late transport failure'));
+  });
+}
+
+test('late 401 from a superseded auth generation cannot expire the new same-account client',async t=>{
+  const f=await fixture(t), c=await f.open();const original=f.transport.request;let rejectOld;
+  f.transport.request=(path,options)=>path==='/api/helper-private'?new Promise((resolve,reject)=>{rejectOld=reject;}):original(path,options);
+  const old=c.authenticatedRequest('/api/helper-private');const rejected=assert.rejects(old,{code:'stale_client'});
+  await waitFor(()=>rejectOld);f.auth('minhle');await waitFor(()=>c.getState().connection==='online');
+  rejectOld(Object.assign(Error('old expired response'),{status:401,code:'unauthorized'}));await rejected;
+  assert.equal(c.getState().writable,true);assert.ok(c.getState().snapshot.texts);
+});
+
+test('offline cache-only open with empty queue remains unknown until server confirmation',async t=>{
+  const f=await fixture(t), c=await f.open();await c.close();f.disconnect();const offline=await f.open();
+  assert.equal(offline.getState().pending.total,0);assert.ok(offline.getState().snapshot);assert.equal(offline.getState().durability,'unknown');
+  await offline.flush();assert.equal(offline.getState().durability,'unknown');f.reconnect();await waitFor(()=>offline.getState().connection==='online');
+  assert.equal(offline.getState().durability,'saved');
+});
+
+test('late presence 401 cannot expire a superseding same-account session through caller error handling',async t=>{
+  const f=await fixture(t), c=await f.open(), original=f.transport.request;let rejectOld;
+  f.transport.request=(path,options)=>path.endsWith('/presence')?new Promise((resolve,reject)=>{rejectOld=reject;}):original(path,options);
+  const old=c.publishPresence({pointer:null,editors:[]}).catch(error=>error);
+  await waitFor(()=>rejectOld);f.auth('minhle');await waitFor(()=>c.getState().connection==='online');
+  rejectOld(Object.assign(Error('superseded presence response'),{status:401,code:'unauthorized'}));await old;
+  assert.equal(c.getState().writable,true);assert.ok(c.getState().snapshot.texts);
+});
+
+test('a receipt committed by another client cannot ACK a conflicting queued request',async t=>{
+  const f=await fixture(t), a=await f.open(), b=await f.open();const request=f.envelope('board.rename',{name:'First client'});
+  await a.command(request);
+  await assert.rejects(b.command({...request,payload:{name:'Conflicting other client'}}),{code:'operation_conflict'});
+  assert.equal(f.store.publicBoard(f.boardId).name,'First client');assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
+});

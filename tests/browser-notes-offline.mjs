@@ -58,7 +58,28 @@ try {
     })()`);
     assert.equal(final.state.pending.total, 0); assert.equal(final.publicBoard.notes.length, 0);
     assert.ok(final.privateBoard.notes[0].deletedAt);
+    await call('Network.setBlockedURLs', { urls: ['*/api/notes/*/text'] });
+    const privateDraft = await evaluate(`(async()=>{
+      const status=document.createElement('section');status.id='session-state';document.body.append(status);
+      client.subscribe(state=>{status.textContent=state.writable && state.snapshot?.texts ? 'private' : 'public';});
+      const doc=await client.getDocument('${noteId}');doc.getXmlFragment('body').get(0).get(0).insert(0,'Giữ khi 401: ');
+      await client.flush();return client.getState();
+    })()`);
+    assert.equal(privateDraft.pending.text,1);
+    await call('Network.setBlockedURLs', { urls: [] });
+    const cookies=await call('Network.getCookies',{urls:[fixture.origin]});
+    const sessionCookie=cookies.cookies.find(cookie=>cookie.httpOnly);
+    assert.ok(sessionCookie,'The isolated fixture owns an HttpOnly session cookie');
+    // The old SSE still captures its live original session. Only this subsequent helper gets 401.
+    await call('Network.setCookie',{name:sessionCookie.name,value:'invalid-fixture-session',url:fixture.origin,
+      path:sessionCookie.path,httpOnly:true,sameSite:sessionCookie.sameSite});
+    const downgraded=await evaluate(`(async()=>{
+      let status;try{await client.listTrash();}catch(error){status=error.status;}
+      return {status,state:client.getState(),display:document.querySelector('#session-state').textContent};
+    })()`);
+    assert.equal(downgraded.status,401);assert.equal(downgraded.state.writable,false);
+    assert.ok(!downgraded.state.snapshot?.texts);assert.equal(downgraded.state.pending.text,1);assert.equal(downgraded.display,'public');
     await evaluate('client.close()');
   }, undefined, { origin: fixture.origin });
-  console.log('PASS real Chromium: IndexedDB offline reload, ACK reconnect, retained text under peer tombstone, same-origin empty API base');
+  console.log('PASS real Chromium: IndexedDB offline reload, ACK reconnect, retained text under peer tombstone, same-origin empty API base, helper401 clears private DOM while retaining draft');
 } finally { await fixture.close(); }

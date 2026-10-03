@@ -6,6 +6,15 @@ import { applyMetadataCommand, validateCommand, requireId, requireAccount, notes
 const MAX_TEXT = 262144, MAX_UPLOAD = 50 * 1024 * 1024;
 const remote = Symbol('committed'), cache = Symbol('cache');
 const clone = value => structuredClone(value);
+async function requestIdentity(entry) {
+  const value = entry.kind === 'command' ? entry.command : entry.kind === 'text'
+    ? { kind: 'text', noteId: entry.noteId, update: entry.update }
+    : { kind: 'upload', path: entry.path, name: entry.name, fields: entry.fields, hash: entry.hash, mimeType: entry.file.type };
+  const canonical = JSON.stringify(value, (_key, part) => part && typeof part === 'object' && !Array.isArray(part)
+    ? Object.fromEntries(Object.keys(part).sort().map(key => [key, part[key]])) : part);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)));
+  return [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
 const encode = bytes => {
   let value = '';
   for (let i = 0; i < bytes.length; i += 8192) value += String.fromCharCode(...bytes.subarray(i, i + 8192));
@@ -137,7 +146,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   let closed = false, generation = 0, authGeneration = session.generation(), privateMode = !!accountId && session.account() === accountId;
   let expiredGeneration = null, controller = new AbortController(), stopStream = () => {}, stopAuth = () => {};
   let queue = [], snapshot = null, presence = [], localWrites = Promise.resolve(), sending = null, refreshJob = null, refreshWanted = false;
-  let durability = 'saved', connection = 'connecting', error = null, leaseState = 'none', latestPresence = null;
+  let confirmed = false, durability = 'unknown', connection = 'connecting', error = null, leaseState = 'none', latestPresence = null;
   let heartbeat = null;
   const alive = g => !closed && !signal?.aborted && generation === g && authGeneration === session.generation();
   const writable = () => !closed && privateMode && accountId === session.account() && authGeneration === session.generation();
@@ -167,9 +176,9 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   }
   function notify() { if (!closed) for (const listener of listeners) listener(getState()); }
   function failed(failure, local = false) {
-    if (closed) return;
+    if (closed || failure.code === 'stale_client') return;
     error = failure; if (local) durability = 'unsaved';
-    else if (failure.status === 401) expire();
+    else if (failure.status === 401) { if (privateMode) expire(); }
     else if (!failure.status || failure.status >= 500) offline();
     notify();
   }
@@ -186,14 +195,20 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
           ...record.queue.filter(e => !ids.has(e.operationId) && !acknowledged.has(e.operationId))];
         return { ...record, queue: retained };
       });
-      if (alive(g)) { durability = queue.length ? 'local' : 'saved'; error = null; notify(); }
+      if (alive(g)) { durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown'; error = null; notify(); }
     } catch (failure) { if (alive(g)) failed(failure, true); throw failure; }
   }
   async function request(path, options = {}, writeRequest = false) {
     check(writeRequest); const g = generation;
-    const result = await transport.request(path, { ...options, signal: controller.signal });
-    if (!alive(g) || (writeRequest && !writable())) throw notesError('stale_client');
-    return result;
+    try {
+      const result = await transport.request(path, { ...options, signal: controller.signal });
+      if (!alive(g) || (writeRequest && !writable())) throw notesError('stale_client');
+      return result;
+    } catch (failure) {
+      if (!alive(g)) throw notesError('stale_client');
+      if (failure.status === 401 && privateMode) expire();
+      throw failure;
+    }
   }
   async function documentFor(noteId) {
     check(true); requireId(noteId);
@@ -231,12 +246,14 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   }
   function changeMode(next) {
     generation++; controller.abort(); stopStream(); controller = new AbortController(); refreshJob = null;
-    clearPrivate(); privateMode = next; snapshot = null; connection = next ? 'connecting' : 'auth-required'; notify();
+    clearPrivate(); privateMode = next; snapshot = null; confirmed = false; durability = queue.length ? 'local' : 'unknown'; connection = next ? 'connecting' : 'auth-required'; notify();
     if (!next) startStream();
     else {
       const g = generation;
       storage.load(scope).then(saved => {
         if (!alive(g) || !writable()) return;
+        for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
+        queue = queue.filter(entry => !acknowledged.has(entry.operationId));
         for (const entry of saved.queue) if (!acknowledged.has(entry.operationId) && !queue.some(e => e.operationId === entry.operationId)) queue.push(entry);
         snapshot = saved.snapshot; notify(); startStream();
       }).catch(failure => { if (alive(g)) { failed(failure, true); startStream(); } });
@@ -267,6 +284,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     await storage.update(privateMode ? scope : `homie-notes:guest:${boardId}`, record => ({ ...record,
       snapshot: (!record.snapshot || !snapshot || snapshot.revision >= record.snapshot.revision) ? clone(snapshot) : record.snapshot }));
     if (!alive(g)) return;
+    confirmed = true;
+    if (durability !== 'unsaved') durability = queue.length ? 'local' : 'saved';
     connection = 'online'; error = null; notify();
   }
   async function refresh() {
@@ -345,6 +364,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     const g = generation;
     const job = (async () => {
       const saved = await storage.load(scope); if (!alive(g)) return getState();
+      for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
+      queue = queue.filter(entry => !acknowledged.has(entry.operationId));
       for (const entry of saved.queue) if (!acknowledged.has(entry.operationId) && !queue.some(e => e.operationId === entry.operationId)) queue.push(entry);
       if (connection !== 'online' && creating) {
         // A nonexistent board has no SSE yet. Verify the live account, create, then subscribe before GET.
@@ -356,6 +377,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
       for (const entry of [...queue]) {
         if (!alive(g) || !writable() || connection !== 'online' && entry.command?.type !== 'board.create') break;
         try {
+          const identity = await requestIdentity(entry);
+          if (!alive(g) || !writable()) break;
           let result;
           if (entry.kind === 'command') {
             const leaseTokens = [];
@@ -375,9 +398,11 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
           }
           if (!alive(g) || !writable()) break;
           await write(async () => {
-            await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId) }));
+            const receipt = { identity, result: clone(result), ...(entry.kind === 'command' ? { baseRevision: entry.command.baseRevision } : {}) };
+            await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId),
+              receipts: { ...record.receipts, [entry.operationId]: receipt } }));
             if (!alive(g)) return;
-            acknowledged.set(entry.operationId, clone(result));
+            acknowledged.set(entry.operationId, receipt); confirmed = true;
             queue = queue.filter(e => e.operationId !== entry.operationId);
             if (entry.kind === 'command' && entry.owner === clientId) {
               const affected = result.revisions.map(({ kind, id }) => ({ kind, id }));
@@ -387,7 +412,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
               else if (entry.history === 'redo') { redoStack.pop(); undoStack.push(entry.operationId); }
               else { undoStack.push(entry.operationId); redoStack.length = 0; }
             }
-            durability = queue.length ? 'local' : 'saved'; error = null; notify();
+            durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown'; error = null; notify();
           });
           if (entry.kind === 'command') {
             if (entry.command.type === 'board.create') await reconnect();
@@ -416,16 +441,29 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     try { return await job; } finally { if (sending === job) sending = null; }
   }
   async function enqueue(entry) {
+    check(true); const g = generation;
+    const identity = await requestIdentity(entry);
+    if (!alive(g)) throw notesError('stale_client');
     check(true);
+    const receipt = acknowledged.get(entry.operationId);
+    if (receipt) {
+      if (receipt.identity !== identity) throw notesError('operation_conflict', '', 409);
+      return clone(receipt.result);
+    }
     const duplicate = queue.find(e => e.operationId === entry.operationId);
-    if (duplicate && JSON.stringify(duplicate.command ?? { kind: duplicate.kind, path: duplicate.path, name: duplicate.name, fields: duplicate.fields, hash: duplicate.hash }) !== JSON.stringify(entry.command ?? { kind: entry.kind, path: entry.path, name: entry.name, fields: entry.fields, hash: entry.hash })) throw notesError('operation_conflict', '', 409);
-    if (!duplicate && !acknowledged.has(entry.operationId)) queue.push(entry);
+    if (duplicate && await requestIdentity(duplicate) !== identity) throw notesError('operation_conflict', '', 409);
+    if (!alive(g)) throw notesError('stale_client');
+    check(true);
+    if (!duplicate) queue.push(entry);
     durability = 'saving'; notify(); await write(persist); await flush();
-    return acknowledged.get(entry.operationId) ?? { operationId: entry.operationId, pending: true };
+    const accepted = acknowledged.get(entry.operationId);
+    if (accepted && accepted.identity !== identity) throw notesError('operation_conflict', '', 409);
+    return accepted?.result ?? { operationId: entry.operationId, pending: true };
   }
   async function command(value, history) {
     check(true);
-    const envelope = { operationId: crypto.randomUUID(), accountId, boardId, baseRevision: snapshot?.revision ?? 0, ...clone(value) };
+    const original = queue.find(entry => entry.operationId === value.operationId)?.command ?? acknowledged.get(value.operationId);
+    const envelope = { operationId: crypto.randomUUID(), accountId, boardId, baseRevision: original?.baseRevision ?? snapshot?.revision ?? 0, ...clone(value) };
     validateCommand(envelope, accountId);
     if (envelope.boardId !== boardId) throw notesError('wrong_board');
     if (envelope.type === 'command.undo' && !ownOperations.has(envelope.payload.operationId)) throw notesError('undo_conflict', 'Operation is not in this tab history', 409);
@@ -476,10 +514,12 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     }
   }
   async function queueUpload({ path = '/api/assets', file, name = file?.name ?? 'upload', fields = {}, operationId = crypto.randomUUID() }) {
-    check(true); requireId(operationId);
+    check(true); const g = generation; requireId(operationId);
     if (!(file instanceof Blob) || file.size > MAX_UPLOAD || !file.size || !/^\/api\//.test(path)
       || Object.values(fields).some(v => typeof v !== 'string') || Object.keys(fields).some(k => ['accountId', 'operationId', 'file'].includes(k))) throw notesError('invalid_upload');
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())); check(true);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+    if (!alive(g)) throw notesError('stale_client');
+    check(true);
     const hash = [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('');
     return enqueue({ kind: 'upload', operationId, path, file, name, fields: clone(fields), hash });
   }
@@ -503,7 +543,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
       if (entry.kind === 'text') throw notesError('invalid_fields', 'Retained text drafts cannot be discarded through metadata history');
       const g = generation;
       await write(() => storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== operationId) })));
-      if (alive(g)) { queue = queue.filter(e => e.operationId !== operationId); error = null; durability = queue.length ? 'local' : 'saved'; notify(); }
+      if (alive(g)) { queue = queue.filter(e => e.operationId !== operationId); error = null; durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown'; notify(); }
     },
     getDocument: documentFor, getAwareness,
     acquireLease, renewLease, releaseLease, publishPresence, queueUpload,
@@ -519,7 +559,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     const saved = await storage.load(privateMode ? scope : `homie-notes:guest:${boardId}`);
     if (!alive(g)) { check(); return client; }
     queue = accountId ? saved.queue : []; snapshot = saved.snapshot;
-    durability = queue.length ? 'local' : 'saved';
+    if (privateMode) for (const [id, receipt] of Object.entries(saved.receipts ?? {})) acknowledged.set(id, receipt);
+    durability = queue.length ? 'local' : confirmed ? 'saved' : 'unknown';
   } catch (failure) { failed(failure, true); }
   stopAuth = session.subscribe(authChanged);
   globalThis.addEventListener?.('online', reconnect); globalThis.addEventListener?.('offline', offline);
