@@ -110,6 +110,26 @@ function validateAsset(asset) {
       || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/.test(asset[key])) throw notesError('invalid_asset');
   }
 }
+function validateInverse(undo, target) {
+  const fields = record => {
+    const { revision, metadataRevision, ...content } = record;
+    return content;
+  };
+  if (canonical(undo.entity) !== canonical(target.entity) || canonical(undo.groups) !== canonical(target.groups)) throw notesError('invalid_state');
+  for (const change of undo.changes) {
+    const original = target.changes.find(other => other.kind === change.kind && other.id === change.id);
+    const key = change.kind === 'board' ? 'metadataRevision' : 'revision';
+    if (!change.before || change.before[key] < original.after[key] || change.after[key] !== change.before[key] + 1
+      || change.kind === 'board' && change.after.revision !== change.before.revision) throw notesError('invalid_state');
+    const before = fields(original.after);
+    // Reversing creation retains the original entity and generates its own tombstone.
+    const after = original.before ? fields(original.before) : { ...before, deletedAt: change.after.deletedAt };
+    if (!original.before && after.deletedAt === null
+      || canonical(fields(change.before)) !== canonical(before)
+      || canonical(fields(change.after)) !== canonical(after)) throw notesError('invalid_state');
+  }
+}
+
 function validateSnapshot(state) {
   requireKeys(state, ['formatVersion', 'revision', ...collectionKeys, 'texts', 'operations', 'assets']);
   if (state.formatVersion !== NOTES_FORMAT_VERSION) throw notesError('unsupported_version');
@@ -179,6 +199,7 @@ function validateSnapshot(state) {
           || !Array.isArray(group.memberIds) || new Set(group.memberIds).size !== group.memberIds.length
           || group.memberIds.some(id => !collectionKeys.some(key => state[key].some(entity => entity.id === id)))) throw notesError('invalid_state');
       }
+      if (op.undo.undoOf !== null) validateInverse(op.undo, priorOperations.get(op.undo.undoOf).undo);
     }
     priorOperations.set(op.id, op);
   }

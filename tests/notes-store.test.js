@@ -302,3 +302,44 @@ test('undo lineage rejects normal lookalike writes and cannot cross a reverted p
   assert.equal(f.store.entity('note', f.noteId).x, 40);
   await assert.rejects(f.send('command.undo', { operationId: own.operationId }), { code: 'undo_conflict' });
 });
+
+test('loading rejects a backward undo link that does not describe its saved inverse', async t => {
+  const f = await fixture(t);
+  await f.send('note.update', { id: f.noteId, x: 10 });
+  const b = await f.send('note.update', { id: f.noteId, x: 20 });
+  const c = await f.send('note.update', { id: f.noteId, x: 30 });
+  await f.store.close();
+  const path = join(f.dataDir, 'notes.json'), snapshot = JSON.parse(await readFile(path, 'utf8'));
+  snapshot.operations.find(operation => operation.id === c.operationId).undo.undoOf = b.operationId;
+  const bytes = JSON.stringify(snapshot);
+  await writeFile(path, bytes);
+  await assert.rejects(createNotesStore({ dataDir: f.dataDir }), { code: 'storage_unavailable' });
+  assert.equal(await readFile(path, 'utf8'), bytes);
+});
+
+test('restarted inverse history preserves create tombstones, restore and redo for every entity kind', async t => {
+  const f = await fixture(t), assetId = randomUUID();
+  await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
+  const cases = [
+    ['board', randomUUID(), 'board.create', { name: 'New' }],
+    ['column', randomUUID(), 'column.create', { name: 'New', x: 0, y: 0, width: 400, height: 500 }],
+    ['note', randomUUID(), 'note.create', { columnId: null, x: 0, y: 0, width: 200, height: 250, color: '#ffffff' }],
+    ['decoration', randomUUID(), 'decoration.add', { noteId: f.noteId, assetId, x: 0, y: 0, width: 30, height: 40, rotation: 0, z: 1 }],
+  ];
+  for (const [kind, id, type, fields] of cases) {
+    const boardId = kind === 'board' ? id : f.boardId;
+    const send = (commandType, payload) => f.store.applyCommand('minhle', { ...f.command(commandType, payload), boardId,
+      baseRevision: f.store.privateBoard(boardId)?.revision ?? 0 });
+    const created = await send(type, { ...fields, ...(kind === 'board' ? {} : { id }) });
+    const undoCreate = await send('command.undo', { operationId: created.operationId });
+    await f.reopen();
+    assert.notEqual(f.store.entity(kind, id).deletedAt, null);
+    await send('command.undo', { operationId: undoCreate.operationId });
+    await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
+    const removed = await send(`${kind}.${kind === 'decoration' ? 'remove' : 'trash'}`, kind === 'board' ? {} : { id });
+    const restored = await send('command.undo', { operationId: removed.operationId });
+    await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
+    await send('command.undo', { operationId: restored.operationId });
+    await f.reopen(); assert.notEqual(f.store.entity(kind, id).deletedAt, null);
+  }
+});
