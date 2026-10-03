@@ -8,6 +8,11 @@ export function getUser() {
   return user;
 }
 
+// Consumers can fence binary/stream responses against login/logout races.
+export function getAuthGeneration() {
+  return version;
+}
+
 function setUser(next, reason = 'session') {
   if (JSON.stringify(user) === JSON.stringify(next)) return;
   user = next;

@@ -98,3 +98,16 @@ CORS check chạy trước route. Public GET/HEAD không yêu cầu Origin; muta
 ## Thay đổi interface
 
 Trước khi đổi signature, field registry, route hoặc config export: tìm tất cả nơi sử dụng; nêu tác động; cập nhật producer, consumer, tài liệu và kiểm tra trong cùng thay đổi. Giữ ID/hash ổn định nếu không được yêu cầu đổi. Không thêm abstraction chỉ để dự phòng một consumer chưa tồn tại.
+
+
+## Client ghi chép local
+
+`js/notes/client.js` xuất `openBoardClient({boardId,accountId=null,signal,transport?,storage?,session?}) -> Promise<Client>`, `createNotesTransport(options?)`, `createNotesStorage()` và `subscribeBoards({signal,transport?},fn) -> cleanup`. Promise mở client hoàn tất sau khi đọc cache; `subscribe(fn)` gọi ngay và tiếp tục báo `{snapshot,connection,writable,pending,durability,error,leaseState,leases,presence,history}`. Không coi mở client là đã kết nối hoặc đã ACK. `API_BASE_URL` rỗng dùng `/api` cùng origin theo proxy hiện tại.
+
+`Client` có `command(command)`, `applyText(noteId,Uint8Array)`, `flush()`, `close()`, `reconnect()`, `refresh()`, `getState()`, `getPending()`, `discardPending(operationId)`, `getDocument(noteId)`, `getAwareness(noteId)`, `acquireLease(target)`, `renewLease(target)`, `releaseLease(target)`, `publishPresence({pointer,editors})`, `undo()`, `redo()`, `listTrash()`, `authenticatedRequest(path,options)` và `queueUpload({path,file,name,fields,operationId})`. Command nhận envelope đầy đủ hoặc `{type,payload,operationId?,baseRevision?}`; client bổ sung account/board hiện tại. Offline trả `{operationId,pending:true}` sau khi persist; ACK trả result server. `flush()` trả state, không bảo đảm mọi queue item đã được ACK: kiểm tra `pending` và `error`. `close()` idempotent, chờ các write local đã bắt đầu, giữ draft/queue.
+
+`getDocument` chỉ cho account gốc đang live, trả per-note Y.Doc có root `body`. Editor dùng chính document này qua bundle vendor, không seed từ public JSON. Authenticated SSE được mở trước GET collaboration; mọi snapshot/delta merge bằng Yjs. `js/auth.js` bổ sung read-only `getAuthGeneration()`; signature cũ của `apiRequest` giữ nguyên. Logout/401 dừng write/presence/upload, dọn private UI state rồi lấy public projection mới; không đổi account của client cũ. Chỉ login lại cùng account với generation mới mới tiếp tục queue.
+
+Queue namespace gồm account+board; database note y-indexeddb thêm note ID. `durability` là `saving`, `local` (persist local, chưa ACK), `saved` (không pending), hoặc `unsaved` (write local thất bại). Guest chỉ cache projection công khai. Lease mất khi offline, geometry replay phải acquire token mới và defer khi peer giữ. Undo chỉ nhận operation thuộc history của chính client; server vẫn kiểm tra revision/lease. Text vẫn có thể ACK dưới tombstone mà không restore note.
+
+Upload helper persist Blob tối đa 50 MiB, tên và fields dạng string; khi gửi tạo multipart gồm accountId, operationId, fields và file. Endpoint `/api/assets` và media protocol thuộc Task 7, chưa được helper này triển khai server. Blob giữ account gốc qua logout; không cache cookie/mật khẩu. Chi tiết wire và handoff producer nằm trong report Task 3/4.
