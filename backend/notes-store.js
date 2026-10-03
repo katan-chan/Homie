@@ -110,23 +110,28 @@ function validateAsset(asset) {
       || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/.test(asset[key])) throw notesError('invalid_asset');
   }
 }
-function validateInverse(undo, target) {
+// Own inverse lineage preserves deletion status, not the time of repeated creation undo.
+function sameMetadataState(left, right) {
   const fields = record => {
-    const { revision, metadataRevision, ...content } = record;
-    return content;
+    const { revision, metadataRevision, deletedAt, ...content } = record;
+    return { ...content, deletedAt: deletedAt !== null };
   };
+  return canonical(fields(left)) === canonical(fields(right));
+}
+
+function validateInverse(undo, target) {
   if (canonical(undo.entity) !== canonical(target.entity) || canonical(undo.groups) !== canonical(target.groups)) throw notesError('invalid_state');
   for (const change of undo.changes) {
     const original = target.changes.find(other => other.kind === change.kind && other.id === change.id);
     const key = change.kind === 'board' ? 'metadataRevision' : 'revision';
     if (!change.before || change.before[key] < original.after[key] || change.after[key] !== change.before[key] + 1
       || change.kind === 'board' && change.after.revision !== change.before.revision) throw notesError('invalid_state');
-    const before = fields(original.after);
+    const before = original.after;
     // Reversing creation retains the original entity and generates its own tombstone.
-    const after = original.before ? fields(original.before) : { ...before, deletedAt: change.after.deletedAt };
+    const after = original.before ?? { ...before, deletedAt: change.after.deletedAt };
     if (!original.before && after.deletedAt === null
-      || canonical(fields(change.before)) !== canonical(before)
-      || canonical(fields(change.after)) !== canonical(after)) throw notesError('invalid_state');
+      || !sameMetadataState(change.before, before)
+      || !sameMetadataState(change.after, after)) throw notesError('invalid_state');
   }
 }
 
@@ -211,7 +216,9 @@ function rebaseUndo(state, original) {
   const undo = clone(original.undo), operations = new Map(state.operations.map(operation => [operation.id, operation]));
   for (const change of undo.changes) {
     const key = change.kind === 'board' ? 'metadataRevision' : 'revision';
-    const expected = change.after[key], current = findEntity(state, change.kind, change.id)[key];
+    const live = findEntity(state, change.kind, change.id);
+    if (!sameMetadataState(live, change.after)) throw notesError('undo_conflict', 'Entity metadata changed since operation', 409);
+    const expected = change.after[key], current = live[key];
     if (current === expected) continue;
     const versions = new Map();
     for (const operation of state.operations) {
@@ -342,13 +349,14 @@ export async function createNotesStore({ dataDir }) {
         const hash = fingerprint(request);
         const retry = await checkRetry(userId, request.operationId, hash, authorize, { boardId: request.boardId, type: request.type });
         if (retry) return retry;
-        let mutation;
+        let mutation, inverseTarget;
         if (request.type === 'command.undo') {
           requireKeys(request.payload, ['operationId']); requireId(request.payload.operationId);
           const original = state.operations.find(operation => operation.id === request.payload.operationId);
           if (!original || !original.undo || original.boardId !== request.boardId) throw notesError('not_found', 'Undo operation not found', 404);
           if (original.accountId !== userId) throw notesError('forbidden', 'Undo belongs to another account', 403);
           if (request.baseRevision > findEntity(state, 'board', request.boardId).revision) throw notesError('invalid_revision');
+          inverseTarget = original.undo;
           mutation = applyMetadataUndo(metadata(state), rebaseUndo(state, original), request.boardId);
         } else mutation = applyMetadataCommand(metadata(state), userId, request,
           { assetExists: id => state.assets.some(asset => asset.id === id && !asset.removed) });
@@ -362,6 +370,8 @@ export async function createNotesStore({ dataDir }) {
             revision: change.after[change.kind === 'board' ? 'metadataRevision' : 'revision'] })) };
         const undo = { changes: mutation.changes, groups: mutation.groups, entity: mutation.entity,
           undoOf: request.type === 'command.undo' ? request.payload.operationId : null };
+        // Use the loader's inverse check before ACK so persisted history remains reopenable.
+        if (inverseTarget) validateInverse(undo, inverseTarget);
         return commit(candidate, userId, request.operationId, request.boardId, hash, result, undo,
           { type: 'metadata', boardId: request.boardId, revision, operationId: request.operationId, commandType: request.type });
       });

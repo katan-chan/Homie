@@ -317,7 +317,7 @@ test('loading rejects a backward undo link that does not describe its saved inve
   assert.equal(await readFile(path, 'utf8'), bytes);
 });
 
-test('restarted inverse history preserves create tombstones, restore and redo for every entity kind', async t => {
+for (const reuseOldRedo of [false, true]) test(`restarted inverse history preserves every entity kind (${reuseOldRedo ? 'older redo after repeated creation undo' : 'fresh inverses'})`, async t => {
   const f = await fixture(t), assetId = randomUUID();
   await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
   const cases = [
@@ -332,14 +332,43 @@ test('restarted inverse history preserves create tombstones, restore and redo fo
       baseRevision: f.store.privateBoard(boardId)?.revision ?? 0 });
     const created = await send(type, { ...fields, ...(kind === 'board' ? {} : { id }) });
     const undoCreate = await send('command.undo', { operationId: created.operationId });
+    const firstTombstone = f.store.entity(kind, id).deletedAt;
     await f.reopen();
     assert.notEqual(f.store.entity(kind, id).deletedAt, null);
     await send('command.undo', { operationId: undoCreate.operationId });
     await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
+    if (reuseOldRedo) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await send('command.undo', { operationId: created.operationId });
+      assert.notEqual(f.store.entity(kind, id).deletedAt, firstTombstone);
+      const redoCommand = { ...f.command('command.undo', { operationId: undoCreate.operationId }), boardId,
+        baseRevision: f.store.privateBoard(boardId).revision };
+      const redoResult = await f.store.applyCommand('minhle', redoCommand);
+      assert.equal(f.store.entity(kind, id).deletedAt, null);
+      await f.reopen();
+      assert.equal(f.store.entity(kind, id).deletedAt, null);
+      assert.deepEqual(await f.store.applyCommand('minhle', redoCommand), redoResult);
+    }
     const removed = await send(`${kind}.${kind === 'decoration' ? 'remove' : 'trash'}`, kind === 'board' ? {} : { id });
     const restored = await send('command.undo', { operationId: removed.operationId });
     await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
     await send('command.undo', { operationId: restored.operationId });
     await f.reopen(); assert.notEqual(f.store.entity(kind, id).deletedAt, null);
+  }
+});
+
+
+test('inverse validation retains tombstone status, timestamp syntax and other metadata checks', async t => {
+  const f = await fixture(t), noteId = randomUUID();
+  const created = await f.send('note.create', { id: noteId, columnId: null, x: 0, y: 0, width: 200, height: 250, color: '#ffffff' });
+  const undone = await f.send('command.undo', { operationId: created.operationId });
+  await f.store.close();
+  const path = join(f.dataDir, 'notes.json'), original = JSON.parse(await readFile(path, 'utf8'));
+  for (const patch of [{ deletedAt: 'invalid timestamp' }, { deletedAt: null }, { color: '#000000' }]) {
+    const invalid = structuredClone(original);
+    Object.assign(invalid.operations.find(operation => operation.id === undone.operationId).undo.changes[0].after, patch);
+    const bytes = JSON.stringify(invalid); await writeFile(path, bytes);
+    await assert.rejects(createNotesStore({ dataDir: f.dataDir }), { code: 'storage_unavailable' });
+    assert.equal(await readFile(path, 'utf8'), bytes);
   }
 });
