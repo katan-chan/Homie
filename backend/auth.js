@@ -30,6 +30,7 @@ export function createAuth(options) {
   const ttl = options.sessionTtlMs ?? 24 * 60 * 60 * 1000;
   if (!Number.isFinite(ttl) || ttl <= 0) throw new Error('Session TTL must be positive');
   const sessions = new Map();
+  const listeners = new Set();
   const attempts = new Map();
   let working = 0;
 
@@ -37,7 +38,13 @@ export function createAuth(options) {
     return (request.headers.cookie ?? '').split(';').map(item => item.trim()).find(item => item.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
   }
   function pruneSessions() {
-    for (const [key, session] of sessions) if (session.expires <= Date.now()) sessions.delete(key);
+    for (const [key, session] of sessions) if (session.expires <= Date.now()) revoke(key);
+  }
+  function revoke(key) {
+    if (!sessions.delete(key)) return;
+    for (const listener of listeners) {
+      try { listener(key); } catch { /* Session revocation must finish even if a subscriber fails. */ }
+    }
   }
   function cookie(value, maxAge) {
     return `${cookieName}=${value}; HttpOnly; Path=/; SameSite=${sameSite}; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
@@ -79,16 +86,29 @@ export function createAuth(options) {
       pruneSessions();
       return sessions.get(token(request))?.id ?? null;
     },
+    session(request) {
+      pruneSessions();
+      const key = token(request), session = sessions.get(key);
+      return session ? Object.freeze({ token: key, id: session.id, expiresAt: session.expires }) : null;
+    },
+    isSession(session) {
+      pruneSessions();
+      return !!session && sessions.get(session.token)?.id === session.id && sessions.get(session.token)?.expires === session.expiresAt;
+    },
+    subscribeRevocation(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     issue(request, id) {
       pruneSessions();
-      sessions.delete(token(request));
+      revoke(token(request));
       if (sessions.size >= 1000) return null;
       const value = randomBytes(32).toString('hex');
       sessions.set(value, { id, expires: Date.now() + ttl });
       return cookie(value, Math.ceil(ttl / 1000));
     },
     logout(request) {
-      sessions.delete(token(request));
+      revoke(token(request));
       return cookie('', 0);
     },
   };
