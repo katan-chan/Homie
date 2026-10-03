@@ -73,8 +73,13 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     if (notesRoute(path)) {
       try {
         if (closing) throw Object.assign(failure(503, 'Backend is closing'), { code: 'store_closed' });
-        await (await notes()).handle(request, response);
-      } catch (error) { send(error.status ?? 503, { error: 'Notes storage is unavailable', code: error.code ?? 'storage_unavailable' }); }
+        if (!await (await notes()).handle(request, response)) send(404, { error: 'Not found' });
+      } catch (error) {
+        // Initialization failure has no API body reader to cancel an unfinished request.
+        response.setHeader('Connection', 'close');
+        request.resume();
+        send(error.status ?? 503, { error: 'Notes storage is unavailable', code: error.code ?? 'storage_unavailable' });
+      }
       return;
     }
     const profileId = /^\/api\/profiles\/(minhle|haiyen)$/.exec(path)?.[1];

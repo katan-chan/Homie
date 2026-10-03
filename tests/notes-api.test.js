@@ -283,6 +283,42 @@ test('notes initialization failure remains observed and preserves health, authen
   assert.ok(await f.login()); assert.equal(await readFile(join(f.dataDir, 'notes.json'), 'utf8'), '{not valid');
 });
 
+test('raw normalized unknown notes paths return a bounded response', async t => {
+  const f = await fixture(t);
+  for (const [path, status] of [['/api/boards/not-a-uuid', 400], ['/api/boards/..', 404], ['/api/boards/%2e%2e', 404]]) {
+    const request = httpRequest({ host: '127.0.0.1', port: f.server.address().port, path });
+    try {
+      const response = new Promise((resolve, reject) => {
+        request.on('response', res => { res.resume(); resolve(res.statusCode); });
+        request.on('error', reject);
+      });
+      request.setTimeout(500, () => request.destroy(new Error(`No bounded response for ${path}`)));
+      request.end();
+      assert.equal(await response, status);
+    } finally { request.destroy(); }
+  }
+});
+
+test('shutdown during failed notes initialization closes an incomplete request', async t => {
+  const f = await fixture(t, { corrupt: '{bad' });
+  let resolveClosed;
+  const closed = new Promise(resolve => { resolveClosed = resolve; });
+  f.server.once('request', () => f.server.close(resolveClosed));
+  const request = httpRequest({ host: '127.0.0.1', port: f.server.address().port, method: 'POST', path: '/api/boards/commands',
+    headers: { ...headers, Connection: 'keep-alive', 'Content-Length': 10000 } });
+  try {
+    const response = new Promise((resolve, reject) => {
+      request.on('response', res => { res.resume(); resolve({ status: res.statusCode, connection: res.headers.connection }); });
+      request.on('error', reject);
+    });
+    request.setTimeout(1000, () => request.destroy(new Error('Initialization failure did not respond')));
+    request.write('{');
+    assert.deepEqual(await response, { status: 503, connection: 'close' });
+    await Promise.race([closed, delay(1000).then(() => { throw new Error('Failed initialization blocked shutdown'); })]);
+    assert.equal(await readFile(join(f.dataDir, 'notes.json'), 'utf8'), '{bad');
+  } finally { request.destroy(); f.server.closeAllConnections(); await closed; }
+});
+
 test('server shutdown closes active SSE and drains accepted writes without deadlock', async t => {
   const f = await fixture(t), minh = await f.login(); await f.seed(minh);
   const stream = await f.stream(`/api/boards/${f.boardId}/events`, minh); await stream.next('snapshot');
