@@ -36,6 +36,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const toolbar = element('div', 'notes-toolbar'); toolbar.setAttribute('aria-label', 'Công cụ bảng');
   const mutations = element('div', 'notes-tools');
   mutations.append(button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
+  // One shared format row per board; editors register into it (see mountBoardNoteEditor).
+  const formatRow = element('div', 'notes-format-row'); formatRow.setAttribute('role', 'toolbar'); formatRow.setAttribute('aria-label', 'Định dạng chữ'); formatRow.hidden = true;
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
   const error = element('p', 'notes-error'); error.setAttribute('role', 'alert');
   const viewport = element('div', 'notes-viewport'); viewport.tabIndex = 0; viewport.setAttribute('aria-label', 'Mặt bảng. Dùng phím mũi tên để di chuyển góc nhìn.');
@@ -46,7 +48,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   cameraTools.append(button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
   const hint = element('p', 'notes-hint', 'Chuột phải kéo góc nhìn · Cuộn trên nền để zoom · Hai ngón để di chuyển trên điện thoại');
-  toolbar.append(mutations, durability); root.append(toolbar, error, viewport, cameraTools, inspector, hint); container.replaceChildren(root);
+  toolbar.append(mutations, durability); root.append(toolbar, formatRow, error, viewport, cameraTools, inspector, hint); container.replaceChildren(root);
   let state, disposed = false, selection = null, drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
   const cameraKey = `homie-notes:camera:${client.boardId}`;
   const camera = { x: 32, y: 32, scale: 1 }, records = new Map(), pointers = new Map();
@@ -97,7 +99,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if (kind === 'note') {
       const text = element('div', 'note-text'), layer = element('div', 'note-decorations'); text.dataset.noteId = layer.dataset.noteId = entity.id;
       record.text = text; record.layer = layer; node.append(text, layer);
-      const context = { client, note: entity, signal: record.controller.signal };
+      const context = { client, note: entity, signal: record.controller.signal, formatRow };
       record.editorCleanup = mountEditor?.(text, context); record.mediaCleanup = mountMedia?.(layer, context);
     }
     const resize = button('↘', 'object-resize', true); resize.classList.add('note-resize'); resize.dataset.drag = 'resize'; resize.setAttribute('aria-label', 'Kéo đổi kích thước'); node.append(resize);
@@ -112,6 +114,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     mutations.querySelector('[data-action=redo]').disabled = !state.history.canRedo;
     if (modeChanged) { cancelDrag(); for (const record of records.values()) destroyRecord(record); records.clear(); selection = null; }
     if(state.writable)toolbar.prepend(mutations);else {mutations.remove();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();}
+    formatRow.hidden = !state.writable;
     // Hidden mutation DOM is removed on auth downgrade, including editor/media slots.
     for (const control of mutations.children) control.toggleAttribute('data-mutation', state.writable);
     durability.dataset.durability = state.durability;
