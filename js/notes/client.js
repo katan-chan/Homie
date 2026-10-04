@@ -155,6 +155,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   const scope = `homie-notes:${accountId ?? 'guest'}:${boardId}`;
   const clientId = crypto.randomUUID();
   const listeners = new Set(), documents = new Map(), awareness = new Map(), leases = new Map();
+  const awaitingSnapshots = new Map();
   const acknowledged = new Map(), ownOperations = new Map(), undoStack = [], redoStack = [];
   let closed = false, generation = 0, authGeneration = session.generation(), privateMode = !!accountId && session.account() === accountId;
   let expiredGeneration = null, controller = new AbortController(), stopStream = () => {}, stopAuth = () => {};
@@ -173,7 +174,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     let state = { boards: [{ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
       metadataRevision: snapshot.metadataRevision, deletedAt: snapshot.deletedAt }],
       columns: clone(snapshot.columns), notes: clone(snapshot.notes), decorations: clone(snapshot.decorations) };
-    for (const entry of queue) if (entry.kind === 'command' && entry.command.type !== 'command.undo') {
+    for (const entry of [...awaitingSnapshots.values(), ...queue]) if (entry.kind === 'command' && entry.command.type !== 'command.undo') {
       try { state = applyMetadataCommand(state, accountId, entry.command, { assetExists: () => true }).state; } catch { /* Server resolves stale/deleted metadata; retained queue is still reviewable. */ }
     }
     return { ...snapshot, ...state.boards[0], columns: state.columns, notes: state.notes, decorations: state.decorations };
@@ -272,7 +273,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   function clearPrivate() {
     for (const record of documents.values()) { if (record.listener) record.doc.off('update', record.listener); record.doc.destroy(); }
     documents.clear(); for (const value of awareness.values()) value.destroy(); awareness.clear();
-    leases.clear(); presence = []; latestPresence = null; leaseState = 'lost';
+    leases.clear(); awaitingSnapshots.clear(); presence = []; latestPresence = null; leaseState = 'lost';
   }
   function changeMode(next) {
     generation++; controller.abort(); stopStream(); controller = new AbortController(); refreshJob = null;
@@ -302,6 +303,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     if (!alive(g)) return;
     if (privateMode && board) {
       if (!snapshot || board.revision >= snapshot.revision) snapshot = clone(board);
+      for (const [id, entry] of awaitingSnapshots) if (snapshot.revision >= entry.revision) awaitingSnapshots.delete(id);
       for (const [noteId, encoded] of Object.entries(board.texts ?? {})) {
         const doc = await documentFor(noteId); if (!alive(g)) return;
         Y.applyUpdate(doc, decode(encoded), remote); await storage.saveNote(`${scope}:${noteId}`, doc);
@@ -429,6 +431,11 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
             await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId),
               receipts: { ...record.receipts, [entry.operationId]: receipt } }));
             if (!alive(g)) return;
+            // A receipt can precede the GET that includes it. Keep keyed UI/editor DOM stable
+            // without keeping ACKed intent in the durable outgoing queue.
+            if (entry.kind === 'command' && entry.command.type !== 'command.undo' && (snapshot?.revision ?? -1) < result.revision) {
+              awaitingSnapshots.set(entry.operationId, { ...entry, revision: result.revision });
+            }
             acknowledged.set(entry.operationId, receipt); confirmed = true;
             queue = queue.filter(e => e.operationId !== entry.operationId);
             if (entry.kind === 'command' && entry.owner === clientId) {

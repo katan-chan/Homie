@@ -7,7 +7,7 @@ import { createBackend, hashPassword } from '../../backend/server.js';
 const root = new URL('../../', import.meta.url);
 export const fixturePasswords = { minhle: 'notes-client-only-minh', haiyen: 'notes-client-only-yen' };
 let credentials;
-export async function createNotesFixture(options = {}) {
+export async function createNotesFixture({ app = false, ...options } = {}) {
   credentials ||= await Promise.all(Object.entries(fixturePasswords).map(async ([id, password]) => [id, await hashPassword(password)])).then(Object.fromEntries);
   const dataDir = await mkdtemp(join(tmpdir(), 'homie-client-fixture-'));
   let backend;
@@ -26,10 +26,10 @@ export async function createNotesFixture(options = {}) {
       res.setHeader('Content-Type', 'text/javascript'); res.end("export const API_BASE_URL = '';\n"); return;
     }
     if (req.url === '/') {
-      res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><html lang="vi"><body></body></html>'); return;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(app ? await readFile(new URL('index.html', root)) : '<!doctype html><html lang="vi"><body></body></html>'); return;
     }
     const path = resolve(root.pathname, '.' + new URL(req.url, 'http://fixture').pathname);
-    if (!path.startsWith(root.pathname) || !['.js', '.css', '.png', '.gif'].includes(extname(path))) { res.writeHead(404).end(); return; }
+    if (!path.startsWith(root.pathname) || !['.js', '.css', '.png', '.gif', '.webp', '.woff2', '.ttf'].includes(extname(path))) { res.writeHead(404).end(); return; }
     try { res.setHeader('Content-Type', extname(path) === '.js' ? 'text/javascript' : extname(path) === '.css' ? 'text/css' : 'image/' + extname(path).slice(1)); res.end(await readFile(path)); }
     catch { res.writeHead(404).end(); }
   });

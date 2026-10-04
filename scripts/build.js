@@ -11,7 +11,7 @@ if (url && (!['http:', 'https:'].includes(url.protocol) || url.username || url.p
 await buildNotes();
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });
-for (const path of ['index.html', 'styles.css', 'js', 'assets']) {
+for (const path of ['index.html', 'styles.css', 'styles', 'js', 'assets']) {
   await cp(path, `dist/${path}`, { recursive: true });
 }
 const config = !process.env.PUBLIC_API_BASE_URL && !process.env.VERCEL

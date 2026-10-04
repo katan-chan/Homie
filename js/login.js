@@ -8,7 +8,7 @@ export function renderLogin(container, { signal, onSuccess }) {
     <div class="account-card">
       <p class="page-eyebrow">Góc riêng của chúng mình</p>
       <h1>Đăng nhập</h1>
-      <p class="account-description">Đăng nhập để chỉnh sửa hồ sơ của bạn và mở Góc ghi chép.</p>
+      <p class="account-description">Đăng nhập để chỉnh sửa hồ sơ của bạn và các bảng ghi chú.</p>
       <form class="login-form">
         <label for="login-account">Tên đăng nhập</label>
         <input id="login-account" name="accountId" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="minhle hoặc haiyen">

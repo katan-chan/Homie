@@ -38,6 +38,11 @@ function checkGeometry(record) {
 function color(value) {
   if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw notesError('invalid_color');
 }
+// Interactive paper sizes; wire geometry remains validated separately for stored content.
+export function clampPaperSize(kind, value) {
+  if (!['note', 'column'].includes(kind) || !Number.isFinite(value)) throw notesError('invalid_geometry');
+  return Math.min(2400, Math.max(kind === 'note' ? 180 : 240, value));
+}
 export function emptyNotesState() {
   return { boards: [], columns: [], notes: [], decorations: [] };
 }

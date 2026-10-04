@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState } from '../js/notes/model.js';
+import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState, clampPaperSize } from '../js/notes/model.js';
 
 const boardId = randomUUID(), columnId = randomUUID(), otherColumnId = randomUUID(), noteId = randomUUID();
 function apply(state, type, payload, accountId = 'minhle', board = boardId) {
@@ -71,4 +71,12 @@ test('hierarchy validation rejects missing/cross-board parents, duplicate IDs an
   const broken = structuredClone(state);
   broken.notes[0].columnId = foreignColumn;
   assert.throws(() => validateNotesState(broken));
+});
+
+test('interactive paper dimensions stay usable and reject nonfinite size input', () => {
+  assert.equal(clampPaperSize('note', 1), 180);
+  assert.equal(clampPaperSize('column', -100), 240);
+  assert.equal(clampPaperSize('note', 9000), 2400);
+  assert.equal(clampPaperSize('column', 480), 480);
+  for (const value of [NaN, Infinity, '240']) assert.throws(() => clampPaperSize('note', value), { code: 'invalid_geometry' });
 });

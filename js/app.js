@@ -73,7 +73,7 @@ function updateAccountControls() {
     });
   } else {
     button.textContent = 'Đăng nhập';
-    button.addEventListener('click', () => choose(activeTabs.find((tab) => tab.requiresAuth)));
+    button.addEventListener('click', openLogin);
   }
   const message = document.createElement('p');
   message.className = 'form-message';
@@ -82,6 +82,22 @@ function updateAccountControls() {
 }
 authEvents.addEventListener('change', updateAccountControls);
 updateAccountControls();
+
+// Shell login is an account action, independent of any tab's access policy.
+function openLogin() {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'shell-login';
+  dialog.setAttribute('aria-label', 'Đăng nhập');
+  const close = document.createElement('button');
+  close.type = 'button'; close.className = 'secondary-button'; close.textContent = 'Đóng';
+  close.addEventListener('click', () => dialog.close());
+  const host = document.createElement('div');
+  dialog.append(close, host); document.body.append(dialog);
+  const controller = new AbortController();
+  const cleanup = renderLogin(host, { signal: controller.signal, onSuccess: () => { dialog.close(); navigate(true); } });
+  dialog.addEventListener('close', () => { controller.abort(); cleanup(); dialog.remove(); }, { once: true });
+  dialog.showModal(); host.querySelector('input')?.focus();
+}
 
 function choose(tab) {
   if (!tab) return;

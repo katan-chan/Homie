@@ -306,3 +306,24 @@ test('an exact offline duplicate may retire against the identical persisted ACK'
   assert.equal(reloaded.getState().pending.total,0);assert.equal(reloaded.getState().error,null);assert.equal(reloaded.getState().history.canUndo,false);assert.deepEqual(await reloaded.command(request),accepted);
   assert.equal(f.sent.filter(s=>s.path==='/api/boards/commands').length,1);
 });
+
+test('metadata creation stays visible between persisted ACK and authoritative refresh', async t => {
+  const f = await fixture(t), c = await f.open(), id = randomUUID();
+  const states = []; const stop = c.subscribe(state => states.push(state));
+  await c.command({type:'note.create',payload:{id,columnId:null,x:12,y:34,width:240,height:200,color:'#ffeeee'}});
+  stop();
+  const first = states.findIndex(state => state.snapshot.notes.some(note => note.id === id));
+  assert.ok(first >= 0);
+  assert.ok(states.slice(first).every(state => state.snapshot.notes.some(note => note.id === id)), 'ACK must never transiently unmount a created note/editor');
+});
+
+test('ACK overlay survives an older refresh but cannot overwrite a newer peer snapshot', async t => {
+  const f = await fixture(t), c = await f.open(), original = f.transport.request;
+  const stale = f.store.privateBoard(f.boardId); let serveStale = true;
+  f.transport.request = (path, options) => serveStale && path.endsWith('/collaboration') ? Promise.resolve({board:stale}) : original(path, options);
+  await c.command({type:'note.update',payload:{id:f.noteId,x:200}});
+  assert.equal(c.getState().snapshot.notes[0].x,200,'A stale post-ACK snapshot must retain accepted geometry');
+  await f.store.applyCommand('haiyen',f.envelope('note.update',{id:f.noteId,x:300},'haiyen'));
+  serveStale=false;await c.refresh();
+  assert.equal(c.getState().snapshot.notes[0].x,300,'A newer authoritative peer commit replaces the ACK overlay');
+});
