@@ -113,7 +113,7 @@ Route trong backend/notes-api.js (`notesRoute`). Mọi lỗi trả JSON `{ error
 | POST /api/boards/:id/leases | Session | `{ accountId, clientId, action: acquire\|renew\|release, target \| leaseToken }` → `{ leaseToken, expiresAt }` hoặc `{ released: true }`; lease 10 giây |
 | POST /api/boards/:id/presence | Session | `{ accountId, clientId, pointer, editors }` (≤16 editor, ≤8 KiB) → `{ expiresAt }`; hết hạn sau 15 giây |
 | GET/HEAD /api/note-assets | Session | `{ assets }` thư viện |
-| POST /api/note-assets[?preview=1] | Session | Body `application/octet-stream` ≤10 MiB, header X-Note-Metadata là JSON base64 `{ accountId, operationId, hash, name, mimeType, spritesheet?, previewId? }`. `preview=1` trả `{ previewId, expiresAt, asset }`; xác nhận cần previewId còn hạn của cùng session, nếu không 409 `preview_required` |
+| POST /api/note-assets[?preview=1] | Session | Body `application/octet-stream` ≤10 MiB, header X-Note-Metadata là JSON base64 `{ accountId, operationId, hash, name, mimeType, spritesheet?, removeBackground?, previewId? }` (`removeBackground` chỉ cho PNG/JPG tĩnh, không spritesheet). `preview=1` trả `{ previewId, expiresAt, asset }`; xác nhận cần previewId còn hạn của cùng session, nếu không 409 `preview_required` |
 | PUT /api/note-assets/:id | Session | `{ accountId, operationId, action: "rename", name }` hoặc `action: "remove"` |
 | GET/HEAD /api/note-assets/:id/file\|poster | Khách: chỉ asset đang được chèn vào note còn hoạt động; session: mọi asset | Stream file, `X-Content-Type-Options: nosniff` |
 | GET/HEAD /api/note-assets/previews/:id/file\|poster | Session đã tạo preview | Bản chuyển đổi chờ xác nhận, hết hạn sau 5 phút |

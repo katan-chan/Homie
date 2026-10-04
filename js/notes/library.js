@@ -29,9 +29,11 @@ export function openLibrary(container,{client,noteId=null,signal}={}) {
   const form=el('form','note-media-upload'),file=el('input');file.type='file';file.accept='image/png,image/jpeg,.jpg,.jpeg,image/gif,video/webm,video/mp4';file.setAttribute('aria-label','Chọn PNG, JPG, GIF, WebM hoặc MP4');
   const name=el('input');name.maxLength=120;name.setAttribute('aria-label','Tên tài nguyên');name.placeholder='Tên tài nguyên';
   const sheet=el('input');sheet.type='checkbox';const sheetLabel=el('label','note-media-sheet-toggle','PNG spritesheet ');sheetLabel.append(sheet);
+  // Still PNG/JPG stickers get their plain border-connected background cut out by default; the preview shows the result.
+  const cutout=el('input');cutout.type='checkbox';cutout.checked=true;cutout.dataset.mediaField='removeBackground';const cutoutLabel=el('label','note-media-sheet-toggle','Tự khử nền (ảnh tĩnh PNG/JPG) ');cutoutLabel.append(cutout);
   const config=el('div','note-media-sheet');config.hidden=true;const inputs={};
   for(const [key,label,value] of [['frameWidth','Chiều rộng khung',16],['frameHeight','Chiều cao khung',16],['frames','Số khung (tối đa 256)',1],['fps','Khung/giây (1–60)',12]]){const wrapper=el('label','',label),input=el('input');input.type='number';input.min='1';input.value=value;input.dataset.sheetField=key;wrapper.append(input);config.append(wrapper);inputs[key]=input;}
-  const requestPreview=button('Xem bản chuyển đổi','media-preview');form.append(file,name,sheetLabel,config,requestPreview);
+  const requestPreview=button('Xem bản chuyển đổi','media-preview');form.append(file,name,cutoutLabel,sheetLabel,config,requestPreview);
   const explanation=el('p','note-media-limits','PNG/JPG/GIF/WebM/MP4 · tối đa 10 MiB, 4096 px, 16 triệu pixel, 30 giây và 60 fps. GIF dùng bảng màu và alpha nhị phân; hãy xem bản chuyển đổi trước khi xác nhận.');
   const preview=el('div','note-media-preview'),publish=button('Xác nhận vào thư viện','media-publish'),discard=button('Bỏ file chờ','media-discard');publish.disabled=true;discard.hidden=true;
   const list=el('div','note-library-list'),pendingList=el('div','note-library-pending'),close=button('Đóng','library-close');dialog.append(heading,explanation,form,status,preview,publish,discard,pendingList,list,close);container.append(dialog);
@@ -56,7 +58,7 @@ export function openLibrary(container,{client,noteId=null,signal}={}) {
     image.addEventListener(image.tagName==='VIDEO'?'loadeddata':'load',()=>{if(alive()&&shownPreview===receipt.previewId&&!previewDirty){publish.disabled=false;status.textContent='Bản chuyển đổi đã sẵn sàng. Chưa có trong thư viện.';}},{once:true});
     preview.append(image);status.textContent='Đang tải bản chuyển đổi để xem trước…';
   }
-  function adopt(entry){prepared=entry;previewOperation=entry.operationId;name.value=entry.name;discard.hidden=false;previewDirty=false;sheet.checked=!!entry.fields?.spritesheet;config.hidden=!sheet.checked;if(sheet.checked){const grid=JSON.parse(entry.fields.spritesheet);for(const [key,input]of Object.entries(inputs))input.value=grid[key];}}
+  function adopt(entry){prepared=entry;previewOperation=entry.operationId;name.value=entry.name;discard.hidden=false;previewDirty=false;sheet.checked=!!entry.fields?.spritesheet;cutout.checked=!!entry.fields?.removeBackground||!entry.fields?.spritesheet&&!['image/png','image/jpeg'].includes(entry.file?.type);config.hidden=!sheet.checked;if(sheet.checked){const grid=JSON.parse(entry.fields.spritesheet);for(const [key,input]of Object.entries(inputs))input.value=grid[key];}}
   function reconcile(){if(!alive()){cleanup();return;}const pending=client.getPending().filter(e=>e.kind==='upload');if(!prepared){const entry=pending.find(e=>e.path==='/api/note-assets?preview=1');if(entry)adopt(entry);}
     if(prepared){showPreview(client.getUploadReceipt(previewOperation));const retained=client.getPending().find(e=>e.operationId===previewOperation);if(retained?.failure)failure(retained.failure);}
     pendingList.replaceChildren();
@@ -71,13 +73,13 @@ export function openLibrary(container,{client,noteId=null,signal}={}) {
   }
   async function prepare(){if(!alive())return;const selected=file.files[0] || prepared?.file;if(!selected){status.textContent='Chọn file trước khi xem.';return;}
     if(selected.size>10*1024*1024){status.textContent='File vượt giới hạn 10 MiB.';return;}
-    const fields=sheet.checked?{spritesheet:JSON.stringify(Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,Number(input.value)])))}:{};
+    const fields=sheet.checked?{spritesheet:JSON.stringify(Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,Number(input.value)])))}:cutout.checked&&['image/png','image/jpeg'].includes(selected.type)?{removeBackground:'true'}:{};
     if(previewOperation)await client.discardPending(previewOperation);if(!alive())return;
     previewOperation=crypto.randomUUID();prepared={operationId:previewOperation,file:selected,name:name.value.trim() || selected.name,fields};shownPreview=null;previewDirty=false;publish.disabled=true;discard.hidden=false;status.textContent='Đang chuẩn bị bản xem trước…';
     const result=await client.queueUpload({...prepared,path:'/api/note-assets?preview=1'});if(!alive())return;showPreview(result);
     if(result.pending)status.textContent='File chờ trên thiết bị (tổng tối đa 50 MiB). Kết nối lại để xem bản chuyển đổi; chưa xuất bản.';
   }
-  file.onchange=()=>{name.value=file.files[0]?.name || '';run(prepare);};sheet.onchange=()=>{config.hidden=!sheet.checked;previewDirty=true;publish.disabled=true;};
+  file.onchange=()=>{name.value=file.files[0]?.name || '';run(prepare);};sheet.onchange=()=>{config.hidden=!sheet.checked;previewDirty=true;publish.disabled=true;};cutout.onchange=()=>{if(file.files[0]||prepared?.file)run(prepare);};
   for(const input of [name,...Object.values(inputs)])input.addEventListener('input',()=>{previewDirty=true;publish.disabled=true;});
   requestPreview.onclick=()=>run(prepare);form.onsubmit=event=>{event.preventDefault();run(prepare);};
   publish.onclick=()=>run(async()=>{if(accepting||publish.disabled||!prepared)return;const receipt=client.getUploadReceipt(previewOperation);if(!receipt || receipt.expiresAt<=Date.now()){shownPreview=null;showPreview(receipt);return;}

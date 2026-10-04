@@ -434,6 +434,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
           } else {
             const metadata = { ...entry.fields, name: entry.name, mimeType: entry.file.type, hash: entry.hash, accountId, operationId: entry.operationId };
             if (metadata.spritesheet) metadata.spritesheet = JSON.parse(metadata.spritesheet);
+            // Upload fields are strings in the queue; the server expects a boolean.
+            if (metadata.removeBackground !== undefined) metadata.removeBackground = metadata.removeBackground === 'true';
             result = await request(entry.path, { method: 'POST', rawBody: entry.file,
               headers: { 'Content-Type': 'application/octet-stream', 'X-Note-Metadata': encode(new TextEncoder().encode(JSON.stringify(metadata))) } }, true);
           }

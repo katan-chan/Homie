@@ -1,19 +1,79 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, open, readFile, rm, copyFile, rename } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, rm, copyFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { notesError, requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
 export const MEDIA_LIMITS = Object.freeze({ bytes: 10 * 1024 * 1024, side: 4096, pixels: 16000000, seconds: 30, fps: 60, frames: 256, jobs: 2, timeout: 30000, previewTTL: 300000, previews: 16 });
 // Browsers report both .jpg and .jpeg as image/jpeg.
+// Chamfer (3-4) distance to the nearest set pixel, two passes, O(pixels); 3 units per pixel step.
+function distanceTo(mask, width, height) {
+  const d = new Int32Array(mask.length).fill(1 << 29);
+  for (let i = 0; i < mask.length; i++) if (mask[i]) d[i] = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = y * width + x; let v = d[i];
+    if (x > 0) v = Math.min(v, d[i - 1] + 3);
+    if (y > 0) { v = Math.min(v, d[i - width] + 3); if (x > 0) v = Math.min(v, d[i - width - 1] + 4); if (x < width - 1) v = Math.min(v, d[i - width + 1] + 4); }
+    d[i] = v;
+  }
+  for (let y = height - 1; y >= 0; y--) for (let x = width - 1; x >= 0; x--) {
+    const i = y * width + x; let v = d[i];
+    if (x < width - 1) v = Math.min(v, d[i + 1] + 3);
+    if (y < height - 1) { v = Math.min(v, d[i + width] + 3); if (x < width - 1) v = Math.min(v, d[i + width + 1] + 4); if (x > 0) v = Math.min(v, d[i + width - 1] + 4); }
+    d[i] = v;
+  }
+  return d;
+}
+
+// Die-cut sticker: clear the background connected to the image border, keeping a margin of ~2% of the image around the
+// drawing. The background colour is the most common opaque border colour; a pixel is background-like while every channel
+// stays within `tolerance` of it (JPEG noise, anti-aliasing). Line art often has open gaps, and a white body cannot be told
+// apart from a white background through them, so the fill stays `margin` away from the drawing: gaps narrower than twice
+// the margin stay closed and the drawing keeps a smooth white (background-coloured) outline like a cut sticker. Returns
+// false, leaving the pixels untouched, when the border is not mostly one colour (a photo).
+// ponytail: chamfer distance + closing is a heuristic cut-out, not segmentation; photos or busy backgrounds need a real model.
+export function removeBackground(rgba, width, height, tolerance = 48) {
+  const total = width * height, border = [];
+  for (let x = 0; x < width; x++) border.push(x, (height - 1) * width + x);
+  for (let y = 1; y < height - 1; y++) border.push(y * width, y * width + width - 1);
+  const quantized = i => (rgba[i * 4] >> 4) << 8 | (rgba[i * 4 + 1] >> 4) << 4 | rgba[i * 4 + 2] >> 4, counts = new Map();
+  for (const i of border) if (rgba[i * 4 + 3] > 200) counts.set(quantized(i), (counts.get(quantized(i)) || 0) + 1);
+  if (!counts.size) return false;
+  const key = [...counts].sort((a, b) => b[1] - a[1])[0][0], sum = [0, 0, 0]; let n = 0;
+  for (const i of border) if (rgba[i * 4 + 3] > 200 && quantized(i) === key) { for (let c = 0; c < 3; c++) sum[c] += rgba[i * 4 + c]; n++; }
+  const bg = sum.map(v => v / n), near = new Uint8Array(total), drawing = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    near[i] = rgba[i * 4 + 3] < 16 || Math.abs(rgba[i * 4] - bg[0]) <= tolerance && Math.abs(rgba[i * 4 + 1] - bg[1]) <= tolerance && Math.abs(rgba[i * 4 + 2] - bg[2]) <= tolerance ? 1 : 0;
+    drawing[i] = 1 - near[i];
+  }
+  if (border.filter(i => near[i]).length < border.length * .6) return false;
+  const margin = 3 * Math.max(1, Math.round(Math.min(width, height) / 50)), distance = distanceTo(drawing, width, height);
+  const open = i => near[i] && distance[i] > margin, region = new Uint8Array(total), queue = new Int32Array(total); let head = 0, tail = 0;
+  for (const i of border) if (!region[i] && open(i)) { region[i] = 1; queue[tail++] = i; }
+  while (head < tail) {
+    const i = queue[head++], x = i % width;
+    for (const j of [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, i - width, i + width]) if (j >= 0 && j < total && !region[j] && open(j)) { region[j] = 1; queue[tail++] = j; }
+  }
+  if (!tail) return false;
+  // Smooth the cut line (closing: grow the kept shape, then shrink it back) so the outline does not trace every whisker.
+  const kept = new Uint8Array(total);
+  for (let i = 0; i < total; i++) kept[i] = region[i] ? 0 : 1;
+  const grownBy = distanceTo(kept, width, height), outside = new Uint8Array(total);
+  for (let i = 0; i < total; i++) outside[i] = grownBy[i] > 2 * margin ? 1 : 0;
+  const shrunkBy = distanceTo(outside, width, height);
+  for (let i = 0; i < total; i++) if (region[i] && shrunkBy[i] > 2 * margin) region[i] = 0;
+  for (let i = 0; i < total; i++) if (region[i]) rgba[i * 4 + 3] = 0;
+  return true;
+}
 const types = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'video/webm': 'webm', 'video/mp4': 'mp4' };
 export function validateMediaMetadata(value) {
-  requireKeys(value, ['accountId','operationId','hash','name','mimeType'], ['spritesheet','previewId','preview']);
+  requireKeys(value, ['accountId','operationId','hash','name','mimeType'], ['spritesheet','previewId','preview','removeBackground']);
   requireAccount(value.accountId); requireId(value.operationId);
   if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 120 || /[\\/\x00-\x1f]/.test(value.name)
     || !Object.hasOwn(types,value.mimeType) || !/^[a-f0-9]{64}$/.test(value.hash)) throw notesError('invalid_media');
   if (value.previewId !== undefined) requireId(value.previewId);
   if (value.preview !== undefined && typeof value.preview !== 'boolean') throw notesError('invalid_media');
+  if (value.removeBackground !== undefined && (typeof value.removeBackground !== 'boolean' || !['image/png','image/jpeg'].includes(value.mimeType) || value.spritesheet !== undefined)) throw notesError('invalid_media', 'Background removal is for still PNG/JPG images');
   if (value.spritesheet !== undefined) {
     requireKeys(value.spritesheet,['frameWidth','frameHeight','frames','fps']);
     const s=value.spritesheet;
@@ -21,7 +81,7 @@ export function validateMediaMetadata(value) {
   }
   return { ...value, name:value.name.trim() };
 }
-function identity(meta) { return { accountId:meta.accountId,hash:meta.hash,name:meta.name,mimeType:meta.mimeType,...(meta.spritesheet?{spritesheet:meta.spritesheet}:{}) }; }
+function identity(meta) { return { accountId:meta.accountId,hash:meta.hash,name:meta.name,mimeType:meta.mimeType,...(meta.spritesheet?{spritesheet:meta.spritesheet}:{}),...(meta.removeBackground?{removeBackground:true}:{}) }; }
 const binding = meta => JSON.stringify(identity(meta));
 export function assetView(asset, prefix=`/api/note-assets/${asset.id}`) {
   const { fileName,posterName,...publicFields }=asset;
@@ -112,7 +172,16 @@ export function createNoteMedia({dataDir,store,remote=null,ffmpegPath=process.en
       if(sheet && (width%sheet.frameWidth || height%sheet.frameHeight || sheet.frames>width/sheet.frameWidth*(height/sheet.frameHeight)))throw notesError('invalid_spritesheet','Frames do not fit the spritesheet grid');
       const outWidth=sheet?.frameWidth ?? width,outHeight=sheet?.frameHeight ?? height,animated=sheet?sheet.frames>1:frames>1;
       const mimeType=['png','jpg','gif'].includes(type)?'image/gif':'video/webm',output=join(dir,'converted');
-      const common=['-v','error','-nostdin','-threads','1','-filter_complex_threads','1','-i',source];
+      let input=source;
+      if(meta.removeBackground&&frames===1){
+        // Decode to raw RGBA, cut out the border-connected background, and convert the PNG result instead of the source.
+        const raw=join(dir,'cutout.rgba');
+        await run(ffmpegPath,['-v','error','-nostdin','-threads','1','-i',source,'-frames:v','1','-f','rawvideo','-pix_fmt','rgba',raw],controller.signal);fence();
+        const pixels=await readFile(raw);if(pixels.length!==width*height*4)throw notesError('invalid_media');
+        if(removeBackground(pixels,width,height)){await writeFile(raw,pixels);input=join(dir,'cutout.png');await run(ffmpegPath,['-v','error','-nostdin','-threads','1','-f','rawvideo','-pix_fmt','rgba','-s',`${width}x${height}`,'-i',raw,'-frames:v','1',input],controller.signal);}
+        await rm(raw,{force:true});fence();
+      }
+      const common=['-v','error','-nostdin','-threads','1','-filter_complex_threads','1','-i',input];
       if(mimeType==='image/gif'){
         let prefix='[0:v]';
         if(sheet){

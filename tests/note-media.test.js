@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { spawn } from 'node:child_process';
 import { mkdtemp, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -133,4 +134,32 @@ test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides 
   }
   assert.equal((await cmd('decoration.remove',{id:decorationId})).status,200);
   assert.equal((await fetch(base+asset.fileUrl)).status,404,'removing the last sticker hides the media');
+});
+
+test('removeBackground die-cuts: clears the border-connected background, keeps a margin and enclosed same-colour areas', async () => {
+  const { removeBackground } = await import('../backend/note-media.js');
+  const w = 16, h = 16, rgba = new Uint8Array(w * h * 4).fill(255);
+  const set = (x, y, v) => { rgba.set([v, v, v, 255], (y * w + x) * 4); };
+  for (let i = 5; i <= 10; i++) { set(i, 5, 0); set(i, 10, 0); set(5, i, 0); set(10, i, 0); }   // black ring around a white inside
+  set(0, 0, 240);                                                                            // JPEG-ish noise on the background
+  assert.equal(removeBackground(rgba, w, h), true);
+  const alpha = (x, y) => rgba[(y * w + x) * 4 + 3];
+  assert.deepEqual([alpha(0, 0), alpha(15, 15), alpha(1, 7), alpha(4, 7), alpha(5, 5), alpha(7, 7)], [0, 0, 0, 255, 255, 255], 'far background cleared; the 1px die-cut margin, ring and enclosed white kept');
+  const photo = new Uint8Array(w * h * 4).map((_, i) => i % 4 === 3 ? 255 : (i * 37) % 256);
+  assert.equal(removeBackground(photo, w, h), false, 'A busy border is left alone');
+});
+
+test('JPEG with removeBackground previews a GIF whose outside is transparent and enclosed white stays', async t => {
+  const f = await fixture(t), dir = await mkdtemp(join(tmpdir(), 'homie-cutout-')), source = join(dir, 'sticker.jpg'), out = join(dir, 'out.rgba');
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const ffmpeg = (args) => new Promise((resolve, reject) => { const p = spawn(process.env.FFMPEG_PATH || 'ffmpeg', ['-v', 'error', '-y', ...args]); p.on('error', reject); p.on('close', code => code ? reject(Error('ffmpeg ' + code)) : resolve()); });
+  await ffmpeg(['-f', 'lavfi', '-i', 'color=white:s=40x40:d=1', '-vf', 'drawbox=x=10:y=10:w=20:h=20:color=black:t=3', '-frames:v', '1', '-pix_fmt', 'yuvj420p', source]);
+  const bytes = await readFile(source);
+  const preview = await f.ingest(bytes, { ...f.metadata(bytes, 'image/jpeg', { removeBackground: true }), preview: true });
+  await ffmpeg(['-i', f.media.resolvePreview(preview.previewId, 'session-a').path, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', out]);
+  const rgba = await readFile(out), at = (x, y) => [...rgba.subarray((y * 40 + x) * 4, (y * 40 + x) * 4 + 4)];
+  assert.equal(at(2, 2)[3], 0, 'Background outside the frame is transparent');
+  assert.equal(at(20, 20)[3], 255, 'White enclosed by the frame is kept');
+  assert.ok(at(20, 20)[0] > 200, 'and is still white');
+  await assert.rejects(f.ingest(bytes, { ...f.metadata(bytes, 'image/gif', { removeBackground: true }), preview: true }), { code: 'invalid_media' });
 });

@@ -146,11 +146,11 @@ try {
       window.testClient=await openBoardClient({boardId:'${ids.board}',accountId:'haiyen'});
       await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('connect timeout')),5000);const stop=testClient.subscribe(s=>{if(s.connection==='online' && s.snapshot?.notes.some(n=>!n.deletedAt)){clearTimeout(timer);queueMicrotask(stop);resolve();}})});
       location.hash='garden';await new Promise(r=>setTimeout(r,100));
-      window.mountAbort=new AbortController();window.mountCounts={editor:0,media:0,cleaned:0};
+      window.mountAbort=new AbortController();window.mountCounts={editor:0,media:0,cleaned:0,mediaCleaned:0};
       const host=document.createElement('main');host.id='board-test-host';host.style.cssText='position:relative;z-index:9;margin:100px 20px 0';document.body.append(host);
       window.cleanupBoard=mountBoard(host,{client:testClient,signal:mountAbort.signal,
         mountEditor:(el)=>{mountCounts.editor++;el.textContent='Nội dung có thể cuộn\\n'.repeat(80);el.setAttribute('contenteditable','true');return()=>{mountCounts.cleaned++;el.replaceChildren();}},
-        mountMedia:()=>{mountCounts.media++;return()=>{mountCounts.cleaned++;}}});
+        mountMedia:()=>{mountCounts.media++;return()=>{mountCounts.mediaCleaned++;}}});
       document.querySelector('#board-test-host [data-action=fit]').click();
     })()`);
     const counts=await evaluate('({...mountCounts})');
@@ -209,10 +209,10 @@ try {
     await evaluate("import('/js/auth.js').then(m=>m.logout())");
     await wait("!document.querySelector('#board-test-host [contenteditable=true]')");
     // The editor is per note; the sticker layer is per board, so it is torn down with the board, not on auth downgrade.
-    const afterLogout=await evaluate('mountCounts.cleaned');assert.ok(afterLogout>=1,'Editor torn down on auth downgrade');
-    assert.equal(await evaluate('mountCounts.media'),1,'One board-wide sticker layer');
+    assert.ok(await evaluate('mountCounts.cleaned')>=1,'Editor torn down on auth downgrade');
+    assert.deepEqual(await evaluate('[mountCounts.media,mountCounts.mediaCleaned]'),[1,0],'One board-wide sticker layer, kept through auth downgrade');
     await evaluate('mountAbort.abort();cleanupBoard();cleanupBoard();testClient.close()');
-    assert.equal(await evaluate('mountCounts.cleaned'),afterLogout+1,'Board teardown cleans the sticker layer once');
+    assert.equal(await evaluate('mountCounts.mediaCleaned'),1,'Board teardown cleans the sticker layer once');
     assert.equal(await evaluate("document.querySelector('#board-test-host').childElementCount"),0);
     console.log('PASS board shell: public/login, empty creation, authors, reparent/group movement, keyboard/resize/save, five viewports, sidebar/back/forward, guest camera/last-viewed fallback, board/child trash ancestry, pointer cancel/lease loss, right-pan/pinch/text input, keyed hooks/reduced-motion/idempotent cleanup');
   },undefined,{origin:fixture.origin});
