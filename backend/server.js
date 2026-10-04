@@ -2,6 +2,9 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { createAuth } from './auth.js';
 import { accountIds, createProfiles, validateProfile } from './profiles.js';
+import { createNotesStore } from './notes-store.js';
+import { createNotesApi, notesRoute } from './notes-api.js';
+import { createNoteMedia } from './note-media.js';
 export { hashPassword } from './auth.js';
 
 function failure(status, message) {
@@ -40,7 +43,18 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   const allowed = new Set(frontendOrigins.split(',').map((origin) => origin.trim()).filter(Boolean));
   const auth = createAuth(options);
   const profiles = createProfiles(options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data');
+  let notesReady, closing = false;
+  const notes = () => {
+    if (!notesReady) {
+      notesReady = createNotesStore({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data' })
+        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', store, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }));
+      // Observe initialization even if a request disconnects; notes failure never affects health/auth/profile.
+      notesReady.catch(() => {});
+    }
+    return notesReady;
+  };
   const server = createServer(async (request, response) => {
+    response.on('finish', () => { if (closing) server.closeIdleConnections(); });
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Vary', 'Origin');
@@ -57,6 +71,18 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     }
     const send = (status, body) => response.writeHead(status).end(body === undefined ? undefined : JSON.stringify(body));
     const path = request.url?.split('?')[0];
+    if (notesRoute(path)) {
+      try {
+        if (closing) throw Object.assign(failure(503, 'Backend is closing'), { code: 'store_closed' });
+        if (!await (await notes()).handle(request, response)) send(404, { error: 'Not found' });
+      } catch (error) {
+        // Initialization failure has no API body reader to cancel an unfinished request.
+        response.setHeader('Connection', 'close');
+        request.resume();
+        send(error.status ?? 503, { error: 'Notes storage is unavailable', code: error.code ?? 'storage_unavailable' });
+      }
+      return;
+    }
     const profileId = /^\/api\/profiles\/(minhle|haiyen)$/.exec(path)?.[1];
     const methods = path === '/api/health' || path === '/api/auth/session' ? ['GET', 'HEAD']
       : path === '/api/auth/login' || path === '/api/auth/logout' ? ['POST']
@@ -116,6 +142,13 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
+  const close = server.close.bind(server);
+  server.close = callback => {
+    closing = true;
+    const cleanup = notesReady ? notesReady.then(api => api.close()).catch(() => {}) : Promise.resolve();
+    close(error => { cleanup.then(() => callback?.(error)); });
+    return server;
+  };
   return server;
 }
 

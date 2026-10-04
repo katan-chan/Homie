@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { withBrowser } from './helpers/notes-browser.mjs';
+import { createNotesFixture, fixturePasswords } from './helpers/notes-fixture.mjs';
+
+const fixture = await createNotesFixture({ app: true });
+try {
+  await withBrowser(async (evaluate, { call }) => {
+    const failures = [];
+    const check = (condition, message) => { if (!condition) failures.push(message); };
+    const eventually = expression => evaluate(`(async()=>{const end=Date.now()+3500;while(Date.now()<end){if(${expression})return true;await new Promise(r=>setTimeout(r,25));}return false;})()`);
+    const wait = expression => evaluate(`(async()=>{const end=Date.now()+5000;while(!(${expression})){if(Date.now()>end)throw Error('Timed out: '+${JSON.stringify(expression)});await new Promise(r=>setTimeout(r,25));}})()`);
+    await evaluate("location.hash='dashboard'");await wait("document.querySelector('.notes-dashboard')");
+    await evaluate("document.querySelector('.menu-toggle').click();document.querySelector('#account-controls button').focus();document.querySelector('#account-controls button').click()");
+    await wait("document.querySelector('#login-account')");
+    await evaluate(`document.querySelector('#login-account').value='minhle';document.querySelector('#login-password').value=${JSON.stringify(fixturePasswords.minhle)};document.querySelector('.login-form').requestSubmit()`);
+    await wait("document.querySelector('[data-action=board-new]') && !document.querySelector('.shell-login')");
+    check(await evaluate("document.querySelector('#sidebar').open && document.querySelector('#sidebar').contains(document.activeElement)"),'I4: login success must return focus inside the open sidebar');
+    await evaluate("document.querySelector('.menu-close').click();document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Existing';document.querySelector('.notes-name-form').requestSubmit()");
+    await wait("document.querySelector('.notes-durability')?.dataset.durability==='saved'");
+    const existing = await evaluate("document.querySelector('[data-board-id]').dataset.boardId");
+    await evaluate("document.querySelector('[data-action=note-new]').click()");
+    await wait("document.querySelector('.paper-note') && document.querySelector('.notes-durability').dataset.durability==='saved'");
+    await evaluate("document.querySelector('.note-handle').click()");
+    const before = await evaluate(`import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration')).then(v=>({x:v.board.notes[0].x,revision:v.board.revision}))`);
+    await evaluate("document.querySelector('[data-action=move-right]').click();document.querySelector('[data-action=move-right]').click()");
+    await wait(`(await import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration'))).board.revision>=${before.revision+2}`);
+    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.left)-${before.x+20})<.01`),'I3: two rapid button moves must contribute two deltas');
+    const keyBefore = await evaluate(`import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration')).then(v=>({y:v.board.notes[0].y,revision:v.board.revision}))`);
+    await evaluate("document.querySelector('.note-handle').focus();for(let i=0;i<2;i++)document.querySelector('.note-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',repeat:i>0,bubbles:true}))");
+    await wait(`(await import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration'))).board.revision>=${keyBefore.revision+2}`);
+    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-${keyBefore.y+20})<.01`),'I3: repeated keys must contribute two deltas');
+    await evaluate(`document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Fast switch';document.querySelector('.notes-name-form').requestSubmit();document.querySelector('[data-board-tab="${existing}"]').click()`);
+    const fast = await evaluate("JSON.parse(localStorage.getItem('homie-notes:pending-boards:minhle')).find(b=>b.name==='Fast switch').id");
+    await evaluate(`document.querySelector('[data-board-tab="${fast}"]').click()`);await wait(`document.querySelector('[data-board-id]')?.dataset.boardId==='${fast}'`);
+    await evaluate("document.querySelector('[data-action=save]').click()");
+    check(await eventually(`await import('/js/auth.js').then(m=>m.apiRequest('/api/boards')).then(v=>v.boards.some(b=>b.id==='${fast}'))`),'I1: fast switch must retain the requested board creation operation');
+    await call('Network.enable');await call('Network.setBlockedURLs',{urls:['*/api/*']});
+    await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Offline creation';document.querySelector('.notes-name-form').requestSubmit()");
+    await wait("document.querySelector('.notes-durability')?.dataset.durability==='local'");
+    const offline = await evaluate("document.querySelector('[data-board-id]').dataset.boardId");
+    await evaluate("location.hash='garden'");await wait("document.body.dataset.tab==='garden'");
+    await call('Network.setBlockedURLs',{urls:[]});
+    await evaluate("location.hash='dashboard'");await wait(`document.querySelector('[data-board-id]')?.dataset.boardId==='${offline}'`);
+    check(await eventually(`await import('/js/auth.js').then(m=>m.apiRequest('/api/boards')).then(v=>v.boards.some(b=>b.id==='${offline}'))`),'I2: reopening offline creation online must replay without manual Save');
+    await evaluate("document.querySelector('.menu-toggle').click();document.querySelector('.logout-button').click()");
+    await wait("!document.querySelector('.logout-button')");
+    await evaluate("document.querySelector('#account-controls button').focus();document.querySelector('#account-controls button').click()");await wait("document.querySelector('.shell-login')");
+    await evaluate("document.querySelector('.shell-login>.secondary-button').click()");await wait("!document.querySelector('.shell-login')");
+    check(await evaluate("document.querySelector('#sidebar').open && document.querySelector('#sidebar').contains(document.activeElement)"),'I4: login cancellation must return focus inside the sidebar');
+    assert.deepEqual(failures, []);
+    console.log('PASS Task5 review: durable fast-switch creation, automatic offline creation replay, repeated button/key deltas, shell login/cancel focus');
+  }, undefined, { origin: fixture.origin });
+} finally { await fixture.close(); }
