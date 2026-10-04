@@ -43,27 +43,72 @@ try {await withBrowser(async(evaluate,{call})=>{
   await evaluate("document.querySelector('[data-action=picker-insert]').click()");await wait("document.querySelector('.note-decoration') && !document.querySelector('.note-asset-picker')");
   await evaluate("window.decorationId=document.querySelector('.note-decoration').dataset.decorationId;window.noteId=document.querySelector('.paper-note').dataset.noteId;document.querySelector('[data-action=fit]').click()");
   await wait("document.querySelector('.notes-durability').dataset.durability==='saved' && document.querySelector('.note-decoration video')");
-  await evaluate("document.querySelector('.note-decoration-handle').click();document.querySelector('[data-action=decoration-right]').click()");
-  await wait("parseFloat(document.querySelector('.note-decoration').style.left)===30");
-  await evaluate("{const w=document.querySelector('[data-media-field=width]');w.value='110';w.dispatchEvent(new Event('change',{bubbles:true}));}");
-  await wait("parseFloat(document.querySelector('.note-decoration').style.width)===110");
-  await evaluate("{const r=document.querySelector('[data-media-field=rotation]');r.value='25';r.dispatchEvent(new Event('change',{bubbles:true}));}");
-  await wait("document.querySelector('.note-decoration').style.transform.includes('25deg')");
+  // An inserted sticker follows its note: it rides along while the note is dragged and keeps the offset after saving.
+  const follow=await evaluate("(()=>{const h=document.querySelector('.note-handle').getBoundingClientRect(),d=document.querySelector('.note-decoration'),n=document.querySelector('.paper-note');return {x:h.x+h.width/2,y:h.y+h.height/2,noteId:d.dataset.noteId===n.dataset.noteId,offset:parseFloat(d.style.left)-parseFloat(n.style.left),sticker:d.getBoundingClientRect().x,scale:n.getBoundingClientRect().width/n.offsetWidth}})()");
+  assert.equal(follow.noteId,true,'Chèn hình attaches the sticker to the writing note');
+  await call('Input.dispatchMouseEvent',{type:'mousePressed',x:follow.x,y:follow.y,button:'left',buttons:1});
+  await new Promise(r=>setTimeout(r,250));
+  await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:follow.x+40*follow.scale,y:follow.y,button:'left',buttons:1});
+  assert.ok(Math.abs(await evaluate("document.querySelector('.note-decoration').getBoundingClientRect().x")-(follow.sticker+40*follow.scale))<2,'The sticker rides along during the note drag');
+  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:follow.x+40*follow.scale,y:follow.y,button:'left',buttons:0});
+  await wait(`document.querySelector('.notes-durability').dataset.durability==='saved' && Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-parseFloat(document.querySelector('.paper-note').style.left)-(${follow.offset}))<0.01 && !document.querySelector('.note-decoration').style.translate`);
+  // Selecting a decoration (focus or press) swaps the format row to its tools at the same height; nothing overlays the decoration.
+  const rowHeight=await evaluate("document.querySelector('.notes-format-row').getBoundingClientRect().height");
+  assert.equal(await evaluate("document.querySelector('.note-decoration').children.length===1&&!document.querySelector('.note-decoration button')"),true,'No handle or block on the decoration');
+  await evaluate("document.querySelector('.note-decoration').focus()");await wait("!document.querySelector('.notes-format-row .notes-sticker-tools').hidden && document.querySelector('.note-decoration').classList.contains('is-selected')");
+  assert.equal(await evaluate("Math.abs(document.querySelector('.notes-format-row').getBoundingClientRect().height-"+rowHeight+")<2&&getComputedStyle(document.querySelector('.notes-format-row [data-format=toggleBold]')).display==='none'"),true,'Sticker tools replace the text tools without growing the row');
+  await evaluate("document.querySelector('[data-action=decoration-right]').click()");
+  // New stickers land on the board near the writing note: note.x + 20 (world coordinates); → moves 10px.
+  await wait("Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-(parseFloat(document.querySelector('.paper-note').style.left)+30))<0.01");
+  const width=await evaluate("parseFloat(document.querySelector('.note-decoration').style.width)");
+  await evaluate("document.querySelector('[data-action=decoration-bigger]').click()");
+  await wait(`parseFloat(document.querySelector('.note-decoration').style.width)===${Math.round(width*1.1)}`);
+  await evaluate("document.querySelector('[data-action=decoration-rotate-right]').click()");
+  await wait("document.querySelector('.note-decoration').style.transform.includes('15deg')");
   await evaluate("document.querySelector('[data-action=decoration-front]').click()");await wait("document.querySelector('.note-decoration').style.zIndex==='1'");await evaluate("document.querySelector('[data-action=decoration-close]').click()");
-  // Native right-button drag bubbles through the decoration to the board camera.
-  const handle=await evaluate("(()=>{const r=document.querySelector('.note-decoration-handle').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,left:document.querySelector('.note-decoration').style.left,world:document.querySelector('.notes-world').style.transform};})()");
+  await wait("document.querySelector('.notes-sticker-tools').hidden && !document.querySelector('.note-decoration.is-selected')");
+  // Holding the right button on a decoration moves it (not the camera). The board may re-fit after geometry edits, so measure once the camera is still.
+  const settle=()=>evaluate("(async()=>{let prev='';for(let i=0;i<40;i++){const now=document.querySelector('.notes-world').style.transform;if(now===prev)return true;prev=now;await new Promise(r=>setTimeout(r,150));}return false;})()");
+  // A reconnect leaves the client's leaseState 'lost' until a new lease is held; that stale state must not cancel the next drag.
+  await evaluate("dispatchEvent(new Event('online'))");await wait("document.querySelector('.notes-durability').dataset.durability==='saved'");
+  await settle();
+  const handle=await evaluate("(()=>{const d=document.querySelector('.note-decoration').getBoundingClientRect();return {x:d.x+d.width/2,y:d.y+d.height/2,left:parseFloat(document.querySelector('.note-decoration').style.left),world:document.querySelector('.notes-world').style.transform,scale:document.querySelector('.paper-note').getBoundingClientRect().width/document.querySelector('.paper-note').offsetWidth};})()");
   await call('Input.dispatchMouseEvent',{type:'mousePressed',x:handle.x,y:handle.y,button:'right',buttons:2});
-  await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:handle.x+45,y:handle.y+20,button:'right',buttons:2});
-  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:handle.x+45,y:handle.y+20,button:'right',buttons:0});
-  assert.equal(await evaluate("document.querySelector('.note-decoration').style.left"),handle.left);
-  assert.notEqual(await evaluate("document.querySelector('.notes-world').style.transform"),handle.world);
+  await new Promise(r=>setTimeout(r,250));
+  await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:handle.x+30*handle.scale,y:handle.y,button:'right',buttons:2});
+  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:handle.x+30*handle.scale,y:handle.y,button:'right',buttons:0});
+  await wait(`Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-(${handle.left+30}))<1 && document.querySelector('.notes-durability').dataset.durability==='saved'`);
+  assert.equal(await evaluate("document.querySelector('.notes-world').style.transform"),handle.world,'Right-drag on a decoration does not pan the camera');
+  assert.deepEqual(await evaluate("[document.querySelector('.notes-sticker-tools').hidden,!!document.querySelector('.note-decoration-inspector'),document.querySelector('.note-decoration').className]"),[false,false,'note-decoration is-editable is-selected'],'Pressing selects the decoration and shows its tools; no dialog');
   await evaluate("document.querySelector('[data-action=fit]').click()");
-  const start=await evaluate("(()=>{const r=document.querySelector('.note-decoration-handle').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,scale:document.querySelector('.paper-note').getBoundingClientRect().width/document.querySelector('.paper-note').offsetWidth};})()");
+  await settle();
+  const start=await evaluate("(()=>{const r=document.querySelector('.note-decoration').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,scale:document.querySelector('.paper-note').getBoundingClientRect().width/document.querySelector('.paper-note').offsetWidth};})()");
   await call('Input.dispatchMouseEvent',{type:'mousePressed',x:start.x,y:start.y,button:'left',buttons:1});
   await new Promise(r=>setTimeout(r,250));
   await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:start.x+20*start.scale,y:start.y+10*start.scale,button:'left',buttons:1});
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:start.x+20*start.scale,y:start.y+10*start.scale,button:'left',buttons:0});
-  await wait("Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-50)<1 && document.querySelector('.notes-durability').dataset.durability==='saved'");
+  await wait(`Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-(${handle.left+30+20}))<1 && document.querySelector('.notes-durability').dataset.durability==='saved'`);
+  // The selected decoration shows a corner grip; dragging it resizes with the aspect ratio kept.
+  await wait("document.querySelector('.note-decoration.is-selected .note-decoration-resize')");
+  const grip=await evaluate("(()=>{const g=document.querySelector('.note-decoration-resize').getBoundingClientRect(),d=document.querySelector('.note-decoration');return {x:g.x+g.width/2,y:g.y+g.height/2,w:parseFloat(d.style.width),h:parseFloat(d.style.height),scale:document.querySelector('.paper-note').getBoundingClientRect().width/document.querySelector('.paper-note').offsetWidth};})()");
+  await call('Input.dispatchMouseEvent',{type:'mousePressed',x:grip.x,y:grip.y,button:'left',buttons:1});
+  await new Promise(r=>setTimeout(r,250));
+  await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x+20*grip.scale,y:grip.y+20*grip.scale,button:'left',buttons:1});
+  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:grip.x+20*grip.scale,y:grip.y+20*grip.scale,button:'left',buttons:0});
+  const k=Math.max((grip.w+20)/grip.w,(grip.h+20)/grip.h);
+  await wait(`Math.abs(parseFloat(document.querySelector('.note-decoration').style.width)-${Math.round(grip.w*k)})<1 && Math.abs(parseFloat(document.querySelector('.note-decoration').style.height)-${Math.round(grip.h*k)})<1 && document.querySelector('.notes-durability').dataset.durability==='saved'`);
+  await evaluate("document.querySelector('[data-action=decoration-close]').click()");await wait("!document.querySelector('.note-decoration-resize')");
+  // Stickers are board objects: drag one well past its note's edge; it stays whole and visible there after saving.
+  await settle();
+  const out=await evaluate("(()=>{const d=document.querySelector('.note-decoration').getBoundingClientRect(),n=document.querySelector('.paper-note').getBoundingClientRect();return {x:d.x+d.width/2,y:d.y+d.height/2,dx:n.right-d.left+40}})()");
+  await call('Input.dispatchMouseEvent',{type:'mousePressed',x:out.x,y:out.y,button:'left',buttons:1});
+  await new Promise(r=>setTimeout(r,250));
+  for(let i=1;i<=5;i++)await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:out.x+out.dx*i/5,y:out.y,button:'left',buttons:1});
+  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:out.x+out.dx,y:out.y,button:'left',buttons:0});
+  await wait("document.querySelector('.notes-durability').dataset.durability==='saved' && document.querySelector('.note-decoration').getBoundingClientRect().left>document.querySelector('.paper-note').getBoundingClientRect().right");
+  assert.equal(await evaluate("(()=>{const d=document.querySelector('.note-decoration'),r=d.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!hit&&d.contains(hit)&&!document.querySelector('.paper-note').contains(d)})()"),true,'Outside the note the sticker is still on top and not clipped');
+  await wait("document.querySelector('.note-decoration').dataset.noteId===''");
+  assert.equal(await evaluate("(async()=>{const r=await fetch('/api/boards/'+document.querySelector('[data-board-id]').dataset.boardId);return (await r.json()).board.decorations[0].noteId})()"),null,'Dropped outside every note and column, the sticker is free on the board');
   // Long text scroll belongs to the editor, while decorations stay paper-local.
   const before=await evaluate("document.querySelector('.note-decoration').getBoundingClientRect().top");
   await evaluate("{const text=document.querySelector('.note-text');text.firstElementChild?.append(document.createTextNode('Long text '.repeat(200)));text.scrollTop=200;}");
@@ -71,8 +116,9 @@ try {await withBrowser(async(evaluate,{call})=>{
   await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});await wait("document.querySelector('.note-decoration img') && !document.querySelector('.note-decoration video')");
   assert.match(await evaluate("document.querySelector('.note-decoration img').src"),/\/poster$/);
   await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});await wait("document.querySelector('.note-decoration video')");
-  await evaluate("window.mediaVideo=document.querySelector('.note-decoration video');document.querySelector('.paper-note').style.left='-5000px'");await wait("mediaVideo.paused");
-  await evaluate("document.querySelector('.paper-note').style.left='140px'");
+  // An off-screen sticker pauses to its poster (each sticker is observed on its own, independent of notes).
+  await evaluate("window.mediaVideo=document.querySelector('.note-decoration video');window.stickerLeft=document.querySelector('.note-decoration').style.left;document.querySelector('.note-decoration').style.left='-50000px'");await wait("mediaVideo.paused");
+  await evaluate("document.querySelector('.note-decoration').style.left=stickerLeft");
   await evaluate("document.querySelector('[data-action=library-open]').click()");await wait("document.querySelector('.note-library-item')");
   await evaluate("document.querySelector('[data-action=media-rename]').click();document.querySelector('.notes-name-form input').value='Đổi tên';document.querySelector('.notes-name-form').requestSubmit()");await wait("document.querySelector('.note-library-item').textContent.includes('Đổi tên')");
   // An offline selection is a retained preview intent, never an automatic library publication.

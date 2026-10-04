@@ -6,6 +6,7 @@ export async function mediaBytes(format = 'png', { width = 16, height = 16, dura
   const dir = await mkdtemp(join(tmpdir(), 'homie-media-input-')), path = join(dir, `fixture.${format}`);
   const args = ['-v', 'error', '-f', 'lavfi', '-i', `color=red@0.5:s=${width}x${height}:r=${fps}:d=${duration},format=rgba`, '-y'];
   if (format === 'png') args.push('-frames:v', '1');
+  if (format === 'jpg') args.push('-frames:v', '1', '-pix_fmt', 'yuvj420p');
   if (format === 'webm') args.push('-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p');
   if (format === 'mp4') args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
   args.push(path);

@@ -2,7 +2,7 @@ import { authEvents, getUser } from '../auth.js';
 import { openBoardClient, subscribeBoards } from '../notes/client.js';
 import { mountBoard, askName } from '../notes/board.js';
 import { mountBoardNoteEditor } from '../notes/editor.js';
-import { mountNoteMedia, openLibrary } from '../notes/library.js';
+import { mountBoardMedia, openLibrary } from '../notes/library.js';
 
 const lastKey = 'homie-notes:last-board';
 const pendingKey = account => `homie-notes:pending-boards:${account}`;
@@ -38,7 +38,7 @@ export function render(container, { signal }) {
     try{
       const client=await openBoardClient({boardId:id,accountId:owner,signal:session.controller.signal});
       if(!alive()||current!==session||request!==generation){client.close();return;}
-      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor,mountMedia:mountNoteMedia});status.textContent='';
+      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor,mountMedia:mountBoardMedia});status.textContent='';
       if(intent && owner===account){
         const retained=client.getPending().find(entry=>entry.kind==='command' && entry.command.type==='board.create');
         intent.operationId=retained?.operationId || intent.operationId || crypto.randomUUID();intent.accountId=owner;save(pendingKey(owner),pending);

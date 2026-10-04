@@ -6,7 +6,7 @@ import { emptyNotesState, applyMetadataCommand, applyMetadataUndo, validateNotes
   validateCommand, projectBoard, findEntity, isVisible, mutationTargets, notesError,
   requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
-export const NOTES_FORMAT_VERSION = 2;
+export const NOTES_FORMAT_VERSION = 4;
 export const MAX_TEXT_UPDATE_BYTES = 256 * 1024;
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_NODES = 10000, MAX_TEXT_DEPTH = 32;
@@ -139,6 +139,28 @@ function validateInverse(undo, target) {
   }
 }
 
+// Version 2 kept stickers inside notes (note-relative x/y); version 3 put them on the board without an attachment.
+// Version 4 stores world coordinates plus the note or column a sticker follows: v2 keeps its note, v3 attaches by
+// where the sticker's centre lies (topmost note, else column). Undo records hold older shapes, so they are dropped.
+export function migrateNotesSnapshot(saved) {
+  if (saved?.formatVersion !== 2 && saved?.formatVersion !== 3) return saved;
+  const state = clone(saved), inside = (e, x, y) => e.deletedAt === null && x >= e.x && x <= e.x + e.width && y >= e.y && y <= e.y + e.height;
+  state.decorations = state.decorations.map(decoration => {
+    if (saved.formatVersion === 2) {
+      const { noteId, ...rest } = decoration, note = findEntity(state, 'note', noteId);
+      if (!note) throw notesError('invalid_state');
+      return { ...rest, boardId: note.boardId, noteId, columnId: null, x: note.x + rest.x, y: note.y + rest.y, revision: rest.revision + 1 };
+    }
+    const cx = decoration.x + decoration.width / 2, cy = decoration.y + decoration.height / 2;
+    const note = state.notes.filter(n => n.boardId === decoration.boardId && inside(n, cx, cy)).at(-1);
+    const column = note ? null : state.columns.filter(c => c.boardId === decoration.boardId && inside(c, cx, cy)).at(-1);
+    return { ...decoration, noteId: note?.id ?? null, columnId: column?.id ?? null, revision: decoration.revision + 1 };
+  });
+  for (const op of state.operations) op.undo = null;
+  state.formatVersion = 4;
+  return state;
+}
+
 function validateSnapshot(state) {
   requireKeys(state, ['formatVersion', 'revision', ...collectionKeys, 'texts', 'operations', 'assets']);
   if (state.formatVersion !== NOTES_FORMAT_VERSION) throw notesError('unsupported_version');
@@ -194,8 +216,7 @@ function validateSnapshot(state) {
         requireKeys(change, ['kind', 'id', 'before', 'after']);
         const live = findEntity(state, change.kind, change.id);
         if (!live || change.after?.id !== change.id || change.before !== null && change.before?.id !== change.id) throw notesError('invalid_state');
-        const ownerBoard = change.kind === 'board' ? live.id : change.kind === 'decoration'
-          ? findEntity(state, 'note', live.noteId).boardId : live.boardId;
+        const ownerBoard = change.kind === 'board' ? live.id : live.boardId;
         if (ownerBoard !== op.boardId || change.kind === 'note'
           && [change.before, change.after].filter(Boolean).some(note => note.authorId !== live.authorId)) throw notesError('invalid_state');
         // Validate historic records in the present hierarchy (entities are never permanently removed).
@@ -264,7 +285,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
     return saved;
   };
   let state;
-  try { state = validateSnapshot(await read()); }
+  try { state = validateSnapshot(migrateNotesSnapshot(await read())); }
   catch (error) {
     if (error.code !== 'ENOENT') throw notesError('storage_unavailable', 'Notes snapshot is invalid or unavailable', 503);
     state = { formatVersion: NOTES_FORMAT_VERSION, revision: 0, ...emptyNotesState(), texts: {}, operations: [], assets: [] };
@@ -284,7 +305,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
       try { await remote.putDocument('notes', candidate); return; }
       catch {
         // The upsert may have committed before the network failed: reconcile before any retry can overwrite it.
-        try { const saved = validateSnapshot(await read()); if (saved.revision === candidate.revision) { state = saved; needsSync = true; throw notesError('durability_uncertain', 'Commit reached storage; retry the same operation ID', 503); } }
+        try { const saved = validateSnapshot(migrateNotesSnapshot(await read())); if (saved.revision === candidate.revision) { state = saved; needsSync = true; throw notesError('durability_uncertain', 'Commit reached storage; retry the same operation ID', 503); } }
         catch (error) { if (error.code === 'durability_uncertain') throw error; }
         throw notesError('storage_unavailable', 'Notes write failed (remote)', 503);
       }
@@ -301,7 +322,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
     } catch (error) {
       if (renamed) {
         // The rename may have committed: reconcile before any retry can overwrite it.
-        try { state = validateSnapshot(JSON.parse(await readFile(path, 'utf8'))); needsSync = true; }
+        try { state = validateSnapshot(migrateNotesSnapshot(JSON.parse(await readFile(path, 'utf8')))); needsSync = true; }
         catch { unavailable = true; }
         throw notesError('durability_uncertain', 'Commit reached disk; retry the same operation ID', 503);
       }

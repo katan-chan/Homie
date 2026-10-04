@@ -394,17 +394,27 @@ test('queued geometry checks the current lease owner immediately before persiste
   gate.release(); await gate.blocked; assert.equal((await pending).status, 409); assert.equal(f.store.publicBoard(f.boardId).notes[0].x, 0);
 });
 
-test('decorations conflict with their note and column leases while rotation requires a transport token', async t => {
+test('board decorations are independent of note and column leases while rotation requires a transport token', async t => {
   const f = await directFixture(t), minh = f.cookie('minhle'), yen = f.cookie('haiyen'), assetId = randomUUID(), decorationId = randomUUID(), columnId = randomUUID();
   await f.store.registerAsset('minhle', { id: assetId, name: 'Fixture', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 30, bytes: 100, animated: false }, randomUUID());
   await f.store.applyCommand('minhle', f.command('column.create', { id: columnId, name: 'group', x: 0, y: 0, width: 500, height: 500 }));
   await f.store.applyCommand('minhle', f.command('note.move', { id: f.noteId, columnId }));
-  await f.store.applyCommand('minhle', f.command('decoration.add', { id: decorationId, noteId: f.noteId, assetId, x: 0, y: 0, width: 30, height: 30, rotation: 0, z: 1 }));
+  await f.store.applyCommand('minhle', f.command('decoration.add', { id: decorationId, assetId, x: 0, y: 0, width: 30, height: 30, rotation: 0, z: 1 }));
   const lease = await (await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'minhle', clientId: f.clientId, action: 'acquire', target: { kind: 'decoration', id: decorationId } }, minh)).json();
-  for (const target of [{ kind: 'note', id: f.noteId }, { kind: 'column', id: columnId }]) assert.equal((await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'haiyen', clientId: randomUUID(), action: 'acquire', target }, yen)).status, 409);
+  for (const target of [{ kind: 'note', id: f.noteId }, { kind: 'column', id: columnId }]) {
+    const clientId = randomUUID(), acquired = await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'haiyen', clientId, action: 'acquire', target }, yen);
+    assert.equal(acquired.status, 200, `${target.kind} lease is free while the sticker is leased`);
+    await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'haiyen', clientId, action: 'release', leaseToken: (await acquired.json()).leaseToken }, yen);
+  }
+  assert.equal((await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'haiyen', clientId: randomUUID(), action: 'acquire', target: { kind: 'decoration', id: decorationId } }, yen)).status, 409, 'The sticker itself stays leased');
   const command = f.command('decoration.update', { id: decorationId, rotation: 45 });
   assert.equal((await f.post('/api/boards/commands', { command, clientId: f.clientId }, minh)).status, 409);
   assert.equal((await f.post('/api/boards/commands', { command, clientId: f.clientId, leaseTokens: [lease.leaseToken] }, minh)).status, 200);
+  // A sticker attached to the note overlaps that note's lease (and its column's), so the two cannot be dragged at once.
+  const attachedId = randomUUID();
+  await f.store.applyCommand('minhle', f.command('decoration.add', { id: attachedId, noteId: f.noteId, assetId, x: 0, y: 0, width: 30, height: 30, rotation: 0, z: 1 }));
+  assert.equal((await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'minhle', clientId: f.clientId, action: 'acquire', target: { kind: 'decoration', id: attachedId } }, minh)).status, 200);
+  for (const target of [{ kind: 'note', id: f.noteId }, { kind: 'column', id: columnId }]) assert.equal((await f.post(`/api/boards/${f.boardId}/leases`, { accountId: 'haiyen', clientId: randomUUID(), action: 'acquire', target }, yen)).status, 409, `${target.kind} lease conflicts with an attached sticker`);
 });
 
 test('presence cannot overwrite another session or tab editor identity', async t => {

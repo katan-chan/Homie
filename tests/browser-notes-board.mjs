@@ -208,8 +208,11 @@ try {
     // Auth downgrade tears down private hook resources synchronously; cleanup is repeatable.
     await evaluate("import('/js/auth.js').then(m=>m.logout())");
     await wait("!document.querySelector('#board-test-host [contenteditable=true]')");
-    assert.ok((await evaluate('mountCounts.cleaned'))>=2);
+    // The editor is per note; the sticker layer is per board, so it is torn down with the board, not on auth downgrade.
+    const afterLogout=await evaluate('mountCounts.cleaned');assert.ok(afterLogout>=1,'Editor torn down on auth downgrade');
+    assert.equal(await evaluate('mountCounts.media'),1,'One board-wide sticker layer');
     await evaluate('mountAbort.abort();cleanupBoard();cleanupBoard();testClient.close()');
+    assert.equal(await evaluate('mountCounts.cleaned'),afterLogout+1,'Board teardown cleans the sticker layer once');
     assert.equal(await evaluate("document.querySelector('#board-test-host').childElementCount"),0);
     console.log('PASS board shell: public/login, empty creation, authors, reparent/group movement, keyboard/resize/save, five viewports, sidebar/back/forward, guest camera/last-viewed fallback, board/child trash ancestry, pointer cancel/lease loss, right-pan/pinch/text input, keyed hooks/reduced-motion/idempotent cleanup');
   },undefined,{origin:fixture.origin});

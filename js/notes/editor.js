@@ -5,8 +5,8 @@ import { openAssetPicker } from './library.js';
 
 const colors = [['#654c51','Mực nâu'], ['#9a3456','Hồng'], ['#37664c','Xanh lá'], ['#345d85','Xanh dương'], ['#79549a','Tím']];
 const formatButtons = [['B','In đậm','toggleBold','bold'],['I','In nghiêng','toggleItalic','italic'],['U','Gạch dưới','toggleUnderline','underline'],['•','Danh sách chấm','toggleBulletList','bulletList'],['1.','Danh sách số','toggleOrderedList','orderedList'],['☑','Danh sách việc','toggleTaskList','taskList'],['↶','Hoàn tác văn bản','undo'],['↷','Làm lại văn bản','redo']];
-// Note text defaults to 23px; validFontSize mirrors the backend text-mark check.
-const defaultFontSize = 23, minFontSize = 10, maxFontSize = 72;
+// Note text defaults to 28px (--paper-text in styles/notes.css, shared with author and column names); validFontSize mirrors the backend text-mark check.
+const defaultFontSize = 28, minFontSize = 10, maxFontSize = 72;
 const validFontSize = value => /^\d{2}px$/.test(value || '') && parseInt(value) >= minFontSize && parseInt(value) <= maxFontSize;
 const fontSizeOf = editor => {const size = editor.getAttributes('textStyle').fontSize; return validFontSize(size) ? parseInt(size) : defaultFontSize;};
 // With only a caret (no selected text) the size applies to the whole note, like resizing a sticky note; the caret is kept.

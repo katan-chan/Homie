@@ -41,7 +41,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
   const error = element('p', 'notes-error'); error.setAttribute('role', 'alert');
   const viewport = element('div', 'notes-viewport'); viewport.tabIndex = 0; viewport.setAttribute('aria-label', 'Mặt bảng. Dùng phím mũi tên để di chuyển góc nhìn.');
-  const world = element('div', 'notes-world'); viewport.append(world);
+  // Stickers live on one board-wide layer above notes and columns, in world coordinates.
+  const world = element('div', 'notes-world'), decorations = element('div', 'notes-decorations'); world.append(decorations); viewport.append(world);
   const empty = element('p', 'notes-empty', 'Một mặt giấy trống, dành cho những điều của chúng mình.');
   const cameraTools = element('div', 'notes-camera');
   const zoomLabel = element('output', 'notes-zoom', '100%'); zoomLabel.setAttribute('aria-label', 'Độ thu phóng');
@@ -61,7 +62,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   async function run(action) { try { return await action(); } catch (cause) { report(cause); } }
   function applyCamera(manual = false) { if (manual) follow = false; world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`; zoomLabel.value = `${Math.round(camera.scale * 100)}%`; try { localStorage.setItem(cameraKey, JSON.stringify({ ...camera, fit: follow })); } catch { /* The current view still works without local storage. */ } }
   function fit() {
-    const w = viewport.clientWidth, h = viewport.clientHeight, all = [...records.values()].map(r => r.entity); if (!alive() || !w || !h) return; follow = true;
+    const w = viewport.clientWidth, h = viewport.clientHeight, all = [...records.values()].map(r => r.entity).concat((state?.snapshot?.decorations || []).filter(d => !d.deletedAt)); if (!alive() || !w || !h) return; follow = true;
     if (!all.length) Object.assign(camera, { x: w / 2, y: h / 2, scale: 1 });
     else { awaitContent = false; const minX=Math.min(...all.map(e=>e.x)),minY=Math.min(...all.map(e=>e.y)),maxX=Math.max(...all.map(e=>e.x+e.width)),maxY=Math.max(...all.map(e=>e.y+e.height));camera.scale=clamp(Math.min((w-64)/(maxX-minX),(h-64)/(maxY-minY)),.2,1.5);camera.x=w/2-(minX+maxX)/2*camera.scale;camera.y=h/2-(minY+maxY)/2*camera.scale; }
     applyCamera();
@@ -98,7 +99,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     } else inspector.append(button('Đổi tên cột', 'column-rename', true));
     inspector.append(button('Bỏ vào thùng rác', 'object-trash', true));
   }
-  function destroyRecord(record) { record.controller.abort(); record.editorCleanup?.(); record.mediaCleanup?.(); record.node.remove(); }
+  function destroyRecord(record) { record.controller.abort(); record.editorCleanup?.(); record.node.remove(); }
   function makeRecord(kind, entity) {
     const node = element(kind === 'note' ? 'article' : 'section', kind === 'note' ? 'paper-note' : 'paper-column');
     node.dataset[kind === 'note' ? 'noteId' : 'columnId'] = entity.id;
@@ -106,10 +107,9 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const title = element('span', kind === 'note' ? 'note-author' : 'column-name'); handle.append(title); node.append(handle);
     const record = { kind, entity, node, handle, title, controller: new AbortController() };
     if (kind === 'note') {
-      const text = element('div', 'note-text'), layer = element('div', 'note-decorations'); text.dataset.noteId = layer.dataset.noteId = entity.id;
-      record.text = text; record.layer = layer; node.append(text, layer);
-      const context = { client, note: entity, signal: record.controller.signal, formatRow };
-      record.editorCleanup = mountEditor?.(text, context); record.mediaCleanup = mountMedia?.(layer, context);
+      const text = element('div', 'note-text'); text.dataset.noteId = entity.id;
+      record.text = text; node.append(text);
+      record.editorCleanup = mountEditor?.(text, { client, note: entity, signal: record.controller.signal, formatRow });
     }
     const resize = button('↘', 'object-resize', true); resize.classList.add('note-resize'); resize.dataset.drag = 'resize'; resize.setAttribute('aria-label', 'Kéo đổi kích thước'); node.append(resize);
     world.append(node); records.set(entity.id, record); return record;
@@ -129,8 +129,9 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     durability.dataset.durability = state.durability;
     durability.textContent = ({ unknown: 'Đang kiểm tra kết nối…', saving: 'Đang lưu…', local: 'Đã lưu trên thiết bị · Chờ đồng bộ', saved: 'Đã lưu', unsaved: 'Chưa lưu trên thiết bị · Hãy thử Lưu lại' })[state.durability] + (state.connection === 'offline' ? ' · Ngoại tuyến' : '') + (state.pending.total ? ` · ${state.pending.total} mục đang chờ` : '');
     if (!state.writable) durability.textContent = state.connection === 'auth-required' ? 'Phiên đã hết hạn · Đang xem công khai' : state.connection === 'online' ? 'Chế độ xem' : 'Đang mở bảng…';
-    error.textContent = state.error?.message || (state.leaseState === 'blocked' ? 'Đối tượng đang được người kia di chuyển.' : state.leaseState === 'lost' && drag ? 'Đã mất quyền kéo. Vị trí đã trở về bản được lưu.' : '');
-    if (drag && (state.leaseState === 'lost' || !state.writable)) cancelDrag();
+    error.textContent = state.error?.message || (state.leaseState === 'blocked' ? 'Đối tượng đang được người kia di chuyển.' : state.leaseState === 'lost' && drag?.leased ? 'Đã mất quyền kéo. Vị trí đã trở về bản được lưu.' : '');
+    // A stale 'lost' left by a reconnect must not cancel a drag that has not taken its lease yet.
+    if (drag && ((drag.leased && state.leaseState === 'lost') || !state.writable)) cancelDrag();
     const ids = new Set();
     for (const kind of ['column', 'note']) for (const entity of state.snapshot?.[kind === 'column' ? 'columns' : 'notes'] || []) {
       if (!visible(kind, entity)) continue; ids.add(entity.id);
@@ -214,8 +215,11 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(handle && state.writable) {event.preventDefault();const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column';select(kind,node.dataset.noteId||node.dataset.columnId);const e=selected(),amount=event.shiftKey?5:1;run(()=>geometry(kind,e,current=>({x:current.x+delta[0]*amount,y:current.y+delta[1]*amount})));}
     else if(event.target===viewport) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera(true);}
   },events);
+  // While a note or column is dragged, the stickers that follow it move along (CSS translate; the saved move shifts them for real).
+  function carryStickers(active){const moving=new Set(active&&!active.resize?[...records.values()].filter(r=>r.entity.id===active.id||active.kind==='column'&&r.entity.columnId===active.id).map(r=>r.entity.id):[]);
+    for(const node of decorations.querySelectorAll('.note-decoration')){const follows=moving.has(node.dataset.noteId)||active?.kind==='column'&&node.dataset.columnId===active.id;node.style.translate=follows?`${active.dx}px ${active.dy}px`:'';}}
   function cancelDrag() {
-    const previous=drag;drag=null;
+    const previous=drag;drag=null;carryStickers(null);
     if(previous) {for(const record of records.values())place(record.node,record.entity);if(previous.leased)client.releaseLease({kind:previous.kind,id:previous.id}).catch(()=>{});}
   }
   viewport.addEventListener('contextmenu',event=>event.preventDefault(),events);
@@ -238,9 +242,10 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(!drag?.ready||drag.pointerId!==event.pointerId)return;
     drag.dx=(event.clientX-drag.x)/camera.scale;drag.dy=(event.clientY-drag.y)/camera.scale;
     for(const record of records.values())if(record.entity.id===drag.id || !drag.resize && drag.kind==='column' && record.entity.columnId===drag.id){const e=record.entity;place(record.node,drag.resize?{...e,width:clampPaperSize(drag.kind,drag.entity.width+drag.dx),height:clampPaperSize(drag.kind,drag.entity.height+drag.dy)}:{...e,x:e.x+drag.dx,y:e.y+drag.dy});}
+    carryStickers(drag);
   },events);
   function endPointer(event,cancel=false){pointers.delete(event.pointerId);if(pointers.size<2)pinch=null;if(cameraDrag?.id===event.pointerId)cameraDrag=null;
-    if(drag?.pointerId===event.pointerId){const ended=drag;drag=null;for(const record of records.values())place(record.node,record.entity);
+    if(drag?.pointerId===event.pointerId){const ended=drag;drag=null;carryStickers(null);for(const record of records.values())place(record.node,record.entity);
       run(async()=>{try{if(!cancel && ended.ready && state.writable && (Math.abs(ended.dx)>1||Math.abs(ended.dy)>1)) {const e=ended.entity;
         if(ended.resize)await mutate(`${ended.kind}.update`,{id:e.id,width:clampPaperSize(ended.kind,e.width+ended.dx),height:clampPaperSize(ended.kind,e.height+ended.dy)});
         else {const x=e.x+ended.dx,y=e.y+ended.dy;const column=ended.kind==='note'?(state.snapshot.columns||[]).filter(c=>!c.deletedAt).findLast(c=>x+e.width/2>=c.x&&x+e.width/2<=c.x+c.width&&y+e.height/2>=c.y&&y+e.height/2<=c.y+c.height):null;await mutate(`${ended.kind}.${ended.kind==='note'?'move':'update'}`,{id:e.id,x,y,...(ended.kind==='note'?{columnId:column?.id||null}:{})});}
@@ -249,9 +254,9 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);
   }
   viewport.addEventListener('pointerup',event=>endPointer(event),events);viewport.addEventListener('pointercancel',event=>endPointer(event,true),events);viewport.addEventListener('lostpointercapture',event=>{if(drag?.pointerId===event.pointerId)endPointer(event,true);},events);
-  const unsubscribe=client.subscribe(render);if(follow)fit();else applyCamera();
+  const unsubscribe=client.subscribe(render),mediaCleanup=mountMedia?.(decorations,{client,signal:controller.signal,formatRow});if(follow)fit();else applyCamera();
   const resizeObserver=new ResizeObserver(()=>{if(follow)fit();});resizeObserver.observe(viewport);
   const stopPresence=mountBoardPresence(viewport,{client,signal:controller.signal,worldPoint});
-  function cleanup(){if(disposed)return;disposed=true;resizeObserver.disconnect();cancelDrag();controller.abort();unsubscribe();stopPresence();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
+  function cleanup(){if(disposed)return;disposed=true;resizeObserver.disconnect();cancelDrag();controller.abort();unsubscribe();mediaCleanup?.();stopPresence();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
   signal?.addEventListener('abort',cleanup,{once:true});return cleanup;
 }

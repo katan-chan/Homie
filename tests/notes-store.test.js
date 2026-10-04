@@ -126,15 +126,17 @@ test('authorization runs in serialized mutation and tokens stay outside command 
   assert.deepEqual(await f.store.applyCommand('minhle', command, { authorize }), result);
 });
 
-test('only registered server assets may decorate; library removal retains references; ancestor visibility applies', async t => {
+test('only registered server assets may decorate; library removal retains references; board stickers outlive note trash but not board trash', async t => {
   const f = await fixture(t), assetId = randomUUID(), id = randomUUID();
-  const payload = { id, noteId: f.noteId, assetId, x: 1, y: 2, width: 30, height: 40, rotation: 0, z: 1 };
+  const payload = { id, assetId, x: 1, y: 2, width: 30, height: 40, rotation: 0, z: 1 };
   await assert.rejects(f.send('decoration.add', payload), { code: 'asset_not_found' });
   await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
   await f.send('decoration.add', payload);
   assert.equal(f.store.isAssetPublic(assetId), true);
   await f.store.updateAsset('haiyen', assetId, { removed: true }, randomUUID());
   assert.equal(f.store.library().length, 0); assert.equal(f.store.isAssetPublic(assetId), true);
+  assert.equal(f.store.publicBoard(f.boardId).decorations[0].boardId, f.boardId);
+  await f.send('note.trash', { id: f.noteId }); assert.equal(f.store.isAssetPublic(assetId), true, 'A sticker is independent of notes');
   await f.send('board.trash', {}); assert.equal(f.store.isAssetPublic(assetId), false);
   await f.send('board.restore', {}); assert.equal(f.store.isAssetPublic(assetId), true);
   await f.reopen(); assert.equal(f.store.asset(assetId).removed, true);
@@ -325,7 +327,7 @@ for (const reuseOldRedo of [false, true]) test(`restarted inverse history preser
     ['board', randomUUID(), 'board.create', { name: 'New' }],
     ['column', randomUUID(), 'column.create', { name: 'New', x: 0, y: 0, width: 400, height: 500 }],
     ['note', randomUUID(), 'note.create', { columnId: null, x: 0, y: 0, width: 200, height: 250, color: '#ffffff' }],
-    ['decoration', randomUUID(), 'decoration.add', { noteId: f.noteId, assetId, x: 0, y: 0, width: 30, height: 40, rotation: 0, z: 1 }],
+    ['decoration', randomUUID(), 'decoration.add', { assetId, x: 0, y: 0, width: 30, height: 40, rotation: 0, z: 1 }],
   ];
   for (const [kind, id, type, fields] of cases) {
     const boardId = kind === 'board' ? id : f.boardId;
@@ -372,4 +374,50 @@ test('inverse validation retains tombstone status, timestamp syntax and other me
     await assert.rejects(createNotesStore({ dataDir: f.dataDir }), { code: 'storage_unavailable' });
     assert.equal(await readFile(path, 'utf8'), bytes);
   }
+});
+
+test('stickers follow the note or column they are attached to; free stickers stay put; trash follows attachment', async t => {
+  const f = await fixture(t), assetId = randomUUID(), columnId = randomUUID(), [onNote, onColumn, free] = [randomUUID(), randomUUID(), randomUUID()];
+  await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
+  await f.send('column.create', { id: columnId, name: 'Cột', x: 1000, y: 0, width: 400, height: 600 });
+  const sticker = (id, extra) => f.send('decoration.add', { id, assetId, x: 50, y: 60, width: 30, height: 40, rotation: 0, z: 1, ...extra });
+  await sticker(onNote, { noteId: f.noteId }); await sticker(onColumn, { columnId }); await sticker(free, {});
+  await assert.rejects(sticker(randomUUID(), { noteId: f.noteId, columnId }), { code: 'invalid_fields' });
+  const at = id => { const d = f.store.privateBoard(f.boardId).decorations.find(d => d.id === id); return [d.x, d.y]; };
+  await f.send('note.update', { id: f.noteId, x: 110, y: 120 });
+  assert.deepEqual([at(onNote), at(onColumn), at(free)], [[150, 160], [50, 60], [50, 60]], 'Only the note sticker moves with the note (+100,+100)');
+  await f.send('note.move', { id: f.noteId, columnId, x: 1010, y: 20 });
+  assert.deepEqual(at(onNote), [1050, 60], 'Moving the note into a column carries its sticker');
+  await f.send('column.update', { id: columnId, x: 1100 });
+  assert.deepEqual([at(onNote), at(onColumn), at(free)], [[1150, 60], [150, 60], [50, 60]], 'A column move carries its own and its notes\' stickers');
+  await f.send('decoration.update', { id: free, noteId: f.noteId });
+  await assert.rejects(f.send('decoration.update', { id: free, noteId: f.noteId, columnId }), { code: 'invalid_fields' });
+  const visible = () => f.store.publicBoard(f.boardId).decorations.map(d => d.id).sort();
+  await f.send('note.trash', { id: f.noteId });
+  assert.deepEqual(visible(), [onColumn], 'Stickers on a trashed note hide with it');
+  await f.send('note.restore', { id: f.noteId });
+  assert.deepEqual(visible(), [onNote, onColumn, free].sort());
+  await f.reopen();
+  assert.deepEqual(at(onNote), [1150, 60]);
+});
+
+for (const version of [2, 3]) test(`format ${version} stickers migrate to format 4 board stickers that follow their note`, async t => {
+  const f = await fixture(t), assetId = randomUUID(), [onNote, outside] = [randomUUID(), randomUUID()];
+  await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
+  for (const id of [onNote, outside]) await f.send('decoration.add', { id, assetId, x: 0, y: 0, width: 30, height: 40, rotation: 0, z: 1 });
+  await f.store.close();
+  // Rewrite the saved snapshot into the older shape. The note sits at (10,20) and is 240x280.
+  const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
+  saved.formatVersion = version;
+  saved.decorations = saved.decorations.map(({ boardId, noteId, columnId, ...d }) => version === 2
+    ? { ...d, noteId: f.noteId, x: 5, y: 6 }
+    : { ...d, boardId, x: d.id === onNote ? 15 : 900, y: d.id === onNote ? 26 : 900 });
+  for (const op of saved.operations) if (op.undo) op.undo = null;
+  await writeFile(path, JSON.stringify(saved));
+  const store = await f.reopen(), pick = id => store.privateBoard(f.boardId).decorations.find(d => d.id === id);
+  assert.deepEqual([pick(onNote).boardId, pick(onNote).noteId, pick(onNote).x, pick(onNote).y], [f.boardId, f.noteId, 15, 26], 'On the note at the same visible spot, attached to it');
+  assert.equal(pick(outside).noteId, version === 2 ? f.noteId : null, 'v3 attaches only stickers whose centre lies on a note');
+  await f.send('note.update', { id: f.noteId, x: 30 });
+  assert.equal(pick(onNote).x, 35, 'The migrated sticker follows its note');
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).formatVersion, 4);
 });

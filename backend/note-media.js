@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { notesError, requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
 export const MEDIA_LIMITS = Object.freeze({ bytes: 10 * 1024 * 1024, side: 4096, pixels: 16000000, seconds: 30, fps: 60, frames: 256, jobs: 2, timeout: 30000, previewTTL: 300000, previews: 16 });
-const types = { 'image/png': 'png', 'image/gif': 'gif', 'video/webm': 'webm', 'video/mp4': 'mp4' };
+// Browsers report both .jpg and .jpeg as image/jpeg.
+const types = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'video/webm': 'webm', 'video/mp4': 'mp4' };
 export function validateMediaMetadata(value) {
   requireKeys(value, ['accountId','operationId','hash','name','mimeType'], ['spritesheet','previewId','preview']);
   requireAccount(value.accountId); requireId(value.operationId);
@@ -93,13 +94,13 @@ export function createNoteMedia({dataDir,store,remote=null,ffmpegPath=process.en
       }
       if(stages.size>=MEDIA_LIMITS.previews)throw notesError('media_busy','Too many outstanding previews',429);
       const signature=(await readFile(source)).subarray(0,16),type=types[meta.mimeType];
-      const matches=type==='png'?signature.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):type==='gif'?/^GIF8[79]a/.test(signature.toString()):type==='webm'?signature.subarray(0,4).equals(Buffer.from([26,69,223,163])):signature.subarray(4,8).toString()==='ftyp';
+      const matches=type==='png'?signature.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):type==='jpg'?signature.subarray(0,3).equals(Buffer.from([255,216,255])):type==='gif'?/^GIF8[79]a/.test(signature.toString()):type==='webm'?signature.subarray(0,4).equals(Buffer.from([26,69,223,163])):signature.subarray(4,8).toString()==='ftyp';
       if(!matches)throw notesError('invalid_media','Declared media type does not match file');
       // Read dimensions/rate before decoding frames; giant compressed images must fail before allocation.
       if(type==='png'){const header=await readFile(source);if(header.length<24)throw notesError('invalid_media');const w=header.readUInt32BE(16),h=header.readUInt32BE(20);if(w>MEDIA_LIMITS.side||h>MEDIA_LIMITS.side||w*h>MEDIA_LIMITS.pixels)throw notesError('media_dimensions','Media dimensions exceed limits');}
       const probe=JSON.parse(await run(ffprobePath,['-v','error','-select_streams','v','-show_streams','-show_format','-of','json',source],controller.signal));
       const video=probe.streams?.[0];
-      const validCodec=type==='png'?video?.codec_name==='png':type==='gif'?video?.codec_name==='gif':type==='webm'?['vp8','vp9','av1'].includes(video?.codec_name):['h264','hevc','av1','mpeg4'].includes(video?.codec_name);
+      const validCodec=type==='png'?video?.codec_name==='png':type==='jpg'?video?.codec_name==='mjpeg':type==='gif'?video?.codec_name==='gif':type==='webm'?['vp8','vp9','av1'].includes(video?.codec_name):['h264','hevc','av1','mpeg4'].includes(video?.codec_name);
       if(!validCodec || probe.streams.length!==1)throw notesError('invalid_media','Unsupported video codec/stream');
       const width=video.width,height=video.height,duration=Number(video.duration ?? probe.format?.duration ?? 0),rate=video.avg_frame_rate?.split('/').map(Number),fps=rate?.[1]?rate[0]/rate[1]:0;
       if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width>MEDIA_LIMITS.side||height>MEDIA_LIMITS.side||width*height>MEDIA_LIMITS.pixels)throw notesError('media_dimensions','Media dimensions exceed limits');
@@ -110,7 +111,7 @@ export function createNoteMedia({dataDir,store,remote=null,ffmpegPath=process.en
       const sheet=meta.spritesheet;
       if(sheet && (width%sheet.frameWidth || height%sheet.frameHeight || sheet.frames>width/sheet.frameWidth*(height/sheet.frameHeight)))throw notesError('invalid_spritesheet','Frames do not fit the spritesheet grid');
       const outWidth=sheet?.frameWidth ?? width,outHeight=sheet?.frameHeight ?? height,animated=sheet?sheet.frames>1:frames>1;
-      const mimeType=['png','gif'].includes(type)?'image/gif':'video/webm',output=join(dir,'converted');
+      const mimeType=['png','jpg','gif'].includes(type)?'image/gif':'video/webm',output=join(dir,'converted');
       const common=['-v','error','-nostdin','-threads','1','-filter_complex_threads','1','-i',source];
       if(mimeType==='image/gif'){
         let prefix='[0:v]';

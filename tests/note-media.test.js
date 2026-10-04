@@ -31,6 +31,15 @@ test('normalizes alpha PNG to static GIF and poster; preview stays private until
   assert.deepEqual(await f.ingest(bytes,{...meta,previewId:preview.previewId}),result);
   assert.equal(f.media.resolvePublicAsset(result.asset.id),null);
 });
+test('JPEG (.jpg/.jpeg share image/jpeg) normalizes to a static GIF; a PNG declared as JPEG is rejected',async t=>{
+  const f=await fixture(t),bytes=await mediaBytes('jpg',{width:24,height:20});
+  assert.deepEqual([...bytes.subarray(0,3)],[0xff,0xd8,0xff]);
+  const preview=await f.ingest(bytes,{...f.metadata(bytes,'image/jpeg'),preview:true});
+  assert.deepEqual([preview.asset.mimeType,preview.asset.animated,preview.asset.width,preview.asset.height],['image/gif',false,24,20]);
+  assert.equal((await readFile(f.media.resolvePreview(preview.previewId,'session-a').path)).subarray(0,3).toString(),'GIF');
+  const png=await mediaBytes();
+  await assert.rejects(f.ingest(png,{...f.metadata(png,'image/jpeg'),preview:true}),{code:'invalid_media'});
+});
 test('animated GIF, WebM, MP4 and PNG spritesheets get normalized animation and PNG poster',async t=>{
   const f=await fixture(t);
   for(const [format,mime] of [['gif','image/gif'],['webm','video/webm'],['mp4','video/mp4'],['png','image/png']]){
@@ -85,7 +94,7 @@ test('two-job bound, queued abort and close clean temp jobs without library muta
   assert.equal(results.slice(0,2).every(r=>r.status==='fulfilled'),true);assert.deepEqual(f.media.list(),[]);
   await f.media.close();assert.deepEqual(await readdir(join(f.dir,'note-media-tmp')),[]);
 });
-test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides guest trash-only references',async t=>{
+test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides media only when its board sticker is gone',async t=>{
   const f=await createNotesFixture({ffmpegPath:process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath:process.env.FFPROBE_PATH || 'ffprobe'});t.after(()=>f.close());
   const base=f.origin,headers={Origin:base,'X-Requested-With':'Homie','Content-Type':'application/json'};
   const login=await fetch(base+'/api/auth/login',{method:'POST',headers,body:JSON.stringify({accountId:'minhle',password:fixturePasswords.minhle})});const cookie=login.headers.get('set-cookie').split(';')[0];
@@ -104,7 +113,7 @@ test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides 
   assert.equal((await cmd('board.create',{name:'Media'})).status,200);
   assert.equal((await cmd('column.create',{id:columnId,name:'Column',x:0,y:0,width:300,height:400})).status,200);
   assert.equal((await cmd('note.create',{id:noteId,columnId,x:10,y:10,width:240,height:300,color:'#ffeedd'})).status,200);
-  assert.equal((await cmd('decoration.add',{id:randomUUID(),noteId,assetId:asset.id,x:0,y:0,width:40,height:40,rotation:0,z:0})).status,200);
+  const decorationId=randomUUID();assert.equal((await cmd('decoration.add',{id:decorationId,assetId:asset.id,x:0,y:0,width:40,height:40,rotation:0,z:0})).status,200);
   const projection=(await (await fetch(`${base}/api/boards/${boardId}`)).json()).board;
   assert.equal(projection.media.length,1);assert.equal(projection.media[0].id,asset.id);
   assert.equal(JSON.stringify(projection).includes('.source'),false);assert.equal(JSON.stringify(projection).includes('previewId'),false);
@@ -115,10 +124,13 @@ test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides 
   assert.equal((await update('remove')).status,200);
   assert.deepEqual((await (await fetch(base+'/api/note-assets',{headers:{Cookie:cookie}})).json()).assets,[]);
   assert.equal((await fetch(base+asset.fileUrl)).status,200,'library removal retains inserted references');
+  // Stickers are board objects: trashing a note or column keeps them public; trashing the board or removing the sticker hides the media.
   for(const [kind,id] of [['note',noteId],['column',columnId],['board',boardId]]){
     assert.equal((await cmd(`${kind}.trash`,kind==='board'?{}:{id})).status,200);
-    assert.equal((await fetch(base+asset.fileUrl)).status,404,`${kind} tombstone hides media`);
-    const projected=(await (await fetch(`${base}/api/boards/${boardId}`)).json()).board;if(projected)assert.deepEqual(projected.media,[]);
+    assert.equal((await fetch(base+asset.fileUrl)).status,kind==='board'?404:200,`${kind} tombstone ${kind==='board'?'hides':'keeps'} media`);
+    const projected=(await (await fetch(`${base}/api/boards/${boardId}`)).json()).board;if(projected)assert.equal(projected.media.length,1);
     assert.equal((await cmd(`${kind}.restore`,kind==='board'?{}:{id})).status,200);
   }
+  assert.equal((await cmd('decoration.remove',{id:decorationId})).status,200);
+  assert.equal((await fetch(base+asset.fileUrl)).status,404,'removing the last sticker hides the media');
 });

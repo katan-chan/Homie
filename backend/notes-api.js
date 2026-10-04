@@ -58,8 +58,10 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
     requireId(id);
     const entity = store.entity(kind, id);
     if (!entity) throw notesError('not_found', 'Object not found', 404);
-    const note = kind === 'decoration' ? store.entity('note', entity.noteId) : kind === 'note' ? entity : null;
-    const result = { kind, id, boardId: note?.boardId ?? entity.boardId, ...(note ? { columnId: note.columnId } : {}), ...(kind === 'decoration' ? { noteId: note.id } : {}) };
+    // A sticker carries what it follows: its note (and that note's column) or its column.
+    const note = kind === 'note' ? entity : kind === 'decoration' && entity.noteId ? store.entity('note', entity.noteId) : null;
+    const result = { kind, id, boardId: entity.boardId, ...(note ? { columnId: note.columnId } : kind === 'decoration' ? { columnId: entity.columnId } : {}),
+      ...(kind === 'decoration' ? { noteId: entity.noteId } : {}) };
     if (result.boardId !== boardId) throw notesError('wrong_board', 'Object belongs to another board', 409);
     return result;
   }
@@ -69,7 +71,10 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
     if (a.kind === b.kind && a.id === b.id) return true;
     if (a.kind === 'column') return b.columnId === a.id;
     if (b.kind === 'column') return a.columnId === b.id;
-    return (a.kind === 'note' ? a.id : a.noteId) === (b.kind === 'note' ? b.id : b.noteId);
+    // A note overlaps the stickers that follow it; unattached stickers and distinct notes never overlap.
+    if (a.kind === 'note' && b.kind === 'decoration') return b.noteId === a.id;
+    if (b.kind === 'note' && a.kind === 'decoration') return a.noteId === b.id;
+    return false;
   }
   function releaseClient(session, clientId, boardId) {
     for (const [token, lease] of leases) if (owner(lease, session, clientId) && (!boardId || lease.target.boardId === boardId)) leases.delete(token);

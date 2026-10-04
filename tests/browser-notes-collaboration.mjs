@@ -82,11 +82,11 @@ try {
       await wait(b,`${colorAt}==='#123456'`);
       // Font size: typed number applies live, steppers and Word-style shortcuts adjust, and peers render it.
       const sizeAt=colorAt.replace('attrs.color','attrs.fontSize'),sizeField="document.querySelector('.notes-format-row input[data-format=fontSize]')";
-      await a(`editor.commands.setTextSelection({from:3,to:7});${sizeField}.focus();${sizeField}.value='28';${sizeField}.dispatchEvent(new Event('input',{bubbles:true}));client.flush()`);
-      assert.equal(await a(sizeAt),'28px','Typed size applies textStyle fontSize');
+      await a(`editor.commands.setTextSelection({from:3,to:7});${sizeField}.focus();${sizeField}.value='34';${sizeField}.dispatchEvent(new Event('input',{bubbles:true}));client.flush()`);
+      assert.equal(await a(sizeAt),'34px','Typed size applies textStyle fontSize');
       assert.equal(await a("document.activeElement.dataset.format"),'fontSize','Typing keeps focus in the size field');
-      await wait(b,`${sizeAt}==='28px'`);
-      assert.equal(await b(`getComputedStyle(editor.view.dom.querySelector('span[style*=font-size]')).fontSize`),'28px','Peer renders the size');
+      await wait(b,`${sizeAt}==='34px'`);
+      assert.equal(await b(`getComputedStyle(editor.view.dom.querySelector('span[style*=font-size]')).fontSize`),'34px','Peer renders the size');
       await a(`${sizeField}.value='500';${sizeField}.dispatchEvent(new Event('change'))`);
       assert.deepEqual([await a(sizeAt),await a(`${sizeField}.value`)],['72px','72'],'Out-of-range input clamps to 72');
       await a("editor.commands.setTextSelection({from:3,to:7});document.querySelector('.notes-format-row [data-format=fontSizeDown]').click()");

@@ -48,7 +48,7 @@ Giới hạn server (`MEDIA_LIMITS`): 10 MiB cho source và bản chuyển đổ
 
 Filter GIF: `palettegen=reserve_transparent=1:stats_mode=full` rồi `paletteuse=alpha_threshold=128`; spritesheet cắt ô bằng `loop`+`crop` theo thứ tự hàng. Proof ở bước stack (PNG RGBA 12×8, thêm `-gifflags -offsetting`) xác nhận alpha 255/128/0 thành 255/255/0. Lệnh server hiện không truyền `-gifflags -offsetting`.
 
-GIF chỉ có tối đa 256 màu và alpha nhị phân; bán trong suốt hoặc gradient mép có thể đổi rõ rệt. Poster lấy từ bản chuyển đổi, không khôi phục alpha nguồn. Thư viện hiện câu: **“PNG/GIF/WebM/MP4 · tối đa 10 MiB, 4096 px, 16 triệu pixel, 30 giây và 60 fps. GIF dùng bảng màu và alpha nhị phân; hãy xem bản chuyển đổi trước khi xác nhận.”** PNG tĩnh không tự thành animation.
+GIF chỉ có tối đa 256 màu và alpha nhị phân; bán trong suốt hoặc gradient mép có thể đổi rõ rệt. Poster lấy từ bản chuyển đổi, không khôi phục alpha nguồn. Thư viện hiện câu: **“PNG/JPG/GIF/WebM/MP4 · tối đa 10 MiB, 4096 px, 16 triệu pixel, 30 giây và 60 fps. GIF dùng bảng màu và alpha nhị phân; hãy xem bản chuyển đổi trước khi xác nhận.”** PNG tĩnh không tự thành animation.
 
 ## Chạy proof
 
@@ -56,4 +56,4 @@ GIF chỉ có tối đa 256 màu và alpha nhị phân; bán trong suốt hoặc
 
 Test xác minh hai editor đồng thời thêm chữ tiếng Việt, thêm marks trên cùng từ, hội tụ sau trao đổi updates; undo/redo của A giữ thay đổi B và undo B giữ A. Test cũng xác minh caret tên peer, lists/checklist, khôi phục IndexedDB, import bundle trên dev/dist và license notices.
 
-Bảng, SSE/session, offline, presence và upload được kiểm tra bằng `npm run test:notes-browser` (tests/browser-notes*.mjs, browser-note-media.mjs) và các test node trong `npm test` (notes-api, notes-store, notes-client, note-media). Test media gọi `ffmpeg`/`ffprobe` trong PATH hoặc theo `FFMPEG_PATH`/`FFPROBE_PATH`. IME chỉ được mô phỏng bằng CDP composition, chưa thử bộ gõ thật. SSE qua proxy Vercel→Render chưa được kiểm chứng.
+Bảng, SSE/session, offline, presence và upload được kiểm tra bằng `npm run test:notes-browser` (tests/browser-notes*.mjs, browser-note-media.mjs) và các test node trong `npm test` (notes-api, notes-store, notes-client, note-media). Test media gọi `ffmpeg`/`ffprobe` trong PATH hoặc theo `FFMPEG_PATH`/`FFPROBE_PATH`. IME chỉ được mô phỏng bằng CDP composition, chưa thử bộ gõ thật. SSE qua proxy Vercel→Render đã kiểm chứng trên production (2026-10-04).
