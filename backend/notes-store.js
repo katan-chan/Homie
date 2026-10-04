@@ -153,7 +153,11 @@ function validateSnapshot(state) {
     if (op.boardId !== null && !findEntity(state, 'board', op.boardId)) throw notesError('invalid_state');
     if (operations.has(op.id) || typeof op.fingerprint !== 'string' || !/^[\da-f]{64}$/.test(op.fingerprint)) throw notesError('invalid_state');
     operations.add(op.id);
-    requireKeys(op.result, ['revision', 'operationId'], ['entity', 'revisions']);
+    requireKeys(op.result, ['revision', 'operationId'], ['entity', 'revisions', 'asset']);
+    if (op.result.asset !== undefined) {
+      validateAsset(op.result.asset);
+      if (op.boardId !== null || op.undo !== null || op.result.asset.id !== op.id || op.result.asset.createdBy !== op.accountId || !assets.has(op.result.asset.id)) throw notesError('invalid_state');
+    }
     if (!Number.isSafeInteger(op.result.revision) || op.result.revision < 1 || op.result.operationId !== op.id) throw notesError('invalid_state');
     const eventRevision = op.boardId === null ? state.revision : findEntity(state, 'board', op.boardId).revision;
     if (op.result.revision > eventRevision) throw notesError('invalid_state');
@@ -327,11 +331,15 @@ export async function createNotesStore({ dataDir }) {
     publicBoard(id) {
       const projection = projectBoard(state, id);
       if (projection) for (const note of projection.notes) note.content = checkedText(state.texts[note.id]).content;
+      if (projection) projection.media = state.assets.filter(asset => projection.decorations.some(decoration => decoration.assetId === asset.id && isVisible(state, 'decoration', decoration)))
+        .map(({ id, mimeType, animated, width, height, name }) => ({ id, mimeType, animated, width, height, name }));
       return projection;
     },
     privateBoard(id) {
       const projection = projectBoard(state, id, { includeDeleted: true });
       if (projection) projection.texts = Object.fromEntries(projection.notes.map(note => [note.id, state.texts[note.id]]));
+      if (projection) projection.media = state.assets.filter(asset => projection.decorations.some(decoration => decoration.assetId === asset.id && isVisible(state, 'decoration', decoration)))
+        .map(({ id, mimeType, animated, width, height, name }) => ({ id, mimeType, animated, width, height, name }));
       return projection;
     },
     entity(kind, id) { return clone(findEntity(state, kind, id)); },
@@ -399,7 +407,10 @@ export async function createNotesStore({ dataDir }) {
       });
     },
     // Server-only: media pipeline must finalize/sync immutable files before registration.
-    registerAsset(userId, asset, operationId, { authorize } = {}) {
+    assetRegistration(userId, operationId, uploadIdentity, { authorize } = {}) {
+      return enqueue(() => checkRetry(userId, operationId, fingerprint({ type: 'asset.upload', userId, uploadIdentity }), authorize, { type: 'asset.register' }));
+    },
+    registerAsset(userId, asset, operationId, { authorize, uploadIdentity } = {}) {
       let record;
       try {
         requireAccount(userId); requireId(operationId);
@@ -408,13 +419,13 @@ export async function createNotesStore({ dataDir }) {
         validateAsset(record);
       } catch (error) { return Promise.reject(error); }
       return enqueue(async () => {
-        const hash = fingerprint({ type: 'asset.register', userId, asset: record });
+        const hash = fingerprint(uploadIdentity ? { type: 'asset.upload', userId, uploadIdentity } : { type: 'asset.register', userId, asset: record });
         const retry = await checkRetry(userId, operationId, hash, authorize, { type: 'asset.register' });
         if (retry) return retry;
         if (state.assets.some(asset => asset.id === record.id)) throw notesError('duplicate_id', 'Asset already exists', 409);
         if (authorize) await authorize({ userId, type: 'asset.register', operationId, replay: false, targets: [] });
         const candidate = clone(state); candidate.assets.push(record);
-        return commit(candidate, userId, operationId, null, hash, { revision: state.revision + 1, operationId }, null, null);
+        return commit(candidate, userId, operationId, null, hash, { revision: state.revision + 1, operationId, ...(uploadIdentity ? { asset: record } : {}) }, null, null);
       });
     },
     updateAsset(userId, id, patch, operationId, { authorize } = {}) {

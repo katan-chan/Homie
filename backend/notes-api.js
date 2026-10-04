@@ -1,4 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
+import { validateMediaMetadata } from './note-media.js';
 import * as Y from 'yjs';
 import { MAX_TEXT_UPDATE_BYTES } from './notes-store.js';
 import { notesError, requireId, requireKeys } from '../js/notes/model.js';
@@ -9,6 +12,11 @@ const MAX_QUEUE = 8 * 1024 * 1024, MAX_QUEUED_EVENTS = 128;
 const colors = { minhle: '#a33f68', haiyen: '#446da8' };
 
 export function notesRoute(path) {
+  if (path === '/api/note-assets') return { name: 'assets', methods: ['GET', 'HEAD', 'POST'] };
+  const preview = /^\/api\/note-assets\/previews\/([^/]+)\/(file|poster)$/.exec(path);
+  if (preview) return { name: 'asset-preview', id: preview[1], part: preview[2], methods: ['GET', 'HEAD'] };
+  const asset = /^\/api\/note-assets\/([^/]+)(?:\/(file|poster))?$/.exec(path);
+  if (asset) return { name: asset[2] ? 'asset-file' : 'asset-update', id: asset[1], part: asset[2], methods: asset[2] ? ['GET', 'HEAD'] : ['PUT'] };
   if (path === '/api/boards') return { name: 'list', methods: ['GET', 'HEAD'] };
   if (path === '/api/boards/events') return { name: 'catalog', methods: ['GET', 'HEAD'] };
   if (path === '/api/boards/trash') return { name: 'trash', methods: ['GET', 'HEAD'] };
@@ -28,7 +36,7 @@ function base64(value, maximum, code = 'invalid_text') {
   return bytes;
 }
 
-export function createNotesApi({ store, auth, allowedOrigins, profiles }) {
+export function createNotesApi({ store, auth, allowedOrigins, profiles, media }) {
   const allowed = new Set(allowedOrigins), streams = new Set(), leases = new Map(), presence = new Map(), bodies = new Set();
   let closing = false, closePromise;
   const send = (res, status, body) => {
@@ -251,17 +259,58 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles }) {
     try {
       const origin = req.headers.origin;
       if (origin && !allowed.has(origin)) throw notesError('forbidden', 'Origin not allowed', 403);
-      if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Access-Control-Allow-Credentials', 'true'); res.setHeader('Access-Control-Allow-Methods', [...route.methods, 'OPTIONS'].join(', ')); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'); }
+      if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Access-Control-Allow-Credentials', 'true'); res.setHeader('Access-Control-Allow-Methods', [...route.methods, 'OPTIONS'].join(', ')); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, X-Note-Metadata'); }
       if (req.method === 'OPTIONS') { send(res, 204); return true; }
       if (!route.methods.includes(req.method)) { res.setHeader('Allow', [...route.methods, 'OPTIONS'].join(', ')); throw notesError('method_not_allowed', 'Method not allowed', 405); }
       if (closing) throw notesError('store_closed', 'Notes API is closing', 503);
       if (route.id) requireId(route.id);
       const session = auth.session(req);
-      if (req.method === 'POST') {
+      if (req.method === 'POST' || req.method === 'PUT') {
         if (!origin || !allowed.has(origin) || req.headers['x-requested-with'] !== 'Homie') throw notesError('forbidden', 'Mutation requires allowed Origin and X-Requested-With', 403);
         sessionRequired(session);
       }
-      if (route.name === 'list') send(res, 200, { boards: store.list() });
+      if (route.name.startsWith('asset')) {
+        if (!media) throw notesError('media_unavailable', 'Media converter unavailable', 503);
+        if (route.name === 'asset-file' || route.name === 'asset-preview') {
+          if (route.name === 'asset-preview') sessionRequired(session);
+          const file = route.name === 'asset-preview' ? media.resolvePreview(route.id, session.token, route.part === 'poster')
+            : session ? media.resolveAsset(route.id, route.part === 'poster') : media.resolvePublicAsset(route.id, route.part === 'poster');
+          if (!file) throw notesError('not_found', 'Asset not found', 404);
+          let handle;
+          try { handle = await open(file.path, 'r'); }
+          catch { throw notesError('not_found', 'Asset file not found', 404); }
+          try {
+            if (session) sessionRequired(session);
+            res.setHeader('Content-Type', file.mimeType); res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Content-Length', (await handle.stat()).size);
+            if (req.method === 'HEAD') send(res, 200);
+            else { res.writeHead(200); await pipeline(handle.createReadStream({ autoClose: false }), res); }
+          } finally { await handle.close(); }
+        } else {
+          sessionRequired(session);
+          const authorize = () => { sessionRequired(session); if(closing) throw notesError('store_closed','Notes API is closing',503); };
+          if (req.method === 'GET' || req.method === 'HEAD') send(res,200,req.method === 'HEAD' ? undefined : {assets:media.list()});
+          else if (route.name === 'asset-update') {
+            const body = await readJson(req,MAX_BODY); account(body,session);
+            requireKeys(body,['accountId','operationId','action'],body.action === 'rename' ? ['name'] : []); requireId(body.operationId);
+            if(body.action === 'rename' && typeof body.name === 'string') send(res,200,await media.rename(route.id,body.name,{accountId:session.id,operationId:body.operationId,authorize}));
+            else if(body.action === 'remove') send(res,200,await media.remove(route.id,{accountId:session.id,operationId:body.operationId,authorize}));
+            else throw notesError('invalid_media');
+          } else {
+            if (!/^application\/octet-stream(?:\s*;|$)/i.test(req.headers['content-type'] ?? '')) {req.resume();throw notesError('unsupported_media_type','Upload raw binary',415);}
+            const encoded = req.headers['x-note-metadata'];
+            let metadata;
+            try { if(typeof encoded !== 'string' || encoded.length > 8192 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw Error(); metadata=JSON.parse(Buffer.from(encoded,'base64').toString('utf8')); }
+            catch {req.resume();throw notesError('invalid_media','Invalid upload metadata');}
+            validateMediaMetadata(metadata); account(metadata,session);
+            if(Object.hasOwn(metadata,'preview'))throw notesError('invalid_media');
+            const controller=new AbortController(),cancel=()=>controller.abort(notesError('media_aborted','Upload aborted',400));
+            bodies.add(cancel);req.once('aborted',cancel);const disconnected=()=>{if(!res.writableEnded)cancel();};res.once('close',disconnected);
+            try {send(res,200,await media.ingest({stream:req,metadata:{...metadata,preview:url.searchParams.get('preview')==='1'},sessionToken:session.token,signal:controller.signal,authorize}));}
+            finally {bodies.delete(cancel);req.removeListener('aborted',cancel);res.removeListener('close',disconnected);req.resume();}
+          }
+        }
+      } else if (route.name === 'list') send(res, 200, { boards: store.list() });
       else if (route.name === 'trash') { sessionRequired(session); send(res, 200, { boards: store.list({ includeDeleted: true }).filter(board => board.deletedAt !== null) }); }
       else if (route.name === 'board' || route.name === 'collaboration') {
         if (route.name === 'collaboration') sessionRequired(session);
@@ -320,7 +369,7 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles }) {
     for (const cancel of bodies) cancel();
     for (const stream of streams) stream.close();
     presence.clear(); leases.clear();
-    closePromise = store.close(); return closePromise;
+    closePromise = Promise.resolve(media?.close()).then(() => store.close()); return closePromise;
   }
   return { handle, close };
 }

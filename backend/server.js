@@ -4,6 +4,7 @@ import { createAuth } from './auth.js';
 import { accountIds, createProfiles, validateProfile } from './profiles.js';
 import { createNotesStore } from './notes-store.js';
 import { createNotesApi, notesRoute } from './notes-api.js';
+import { createNoteMedia } from './note-media.js';
 export { hashPassword } from './auth.js';
 
 function failure(status, message) {
@@ -46,7 +47,7 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   const notes = () => {
     if (!notesReady) {
       notesReady = createNotesStore({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data' })
-        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles }));
+        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', store, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }));
       // Observe initialization even if a request disconnects; notes failure never affects health/auth/profile.
       notesReady.catch(() => {});
     }

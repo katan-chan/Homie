@@ -24,7 +24,7 @@ async function receiptReconciler(entries) {
     const receipt = receipts[entry.operationId], identity = identities.get(canonicalRequest(entry));
     // A concurrent, previously unseen request stays pending until its content can be checked.
     if (!receipt || !identity) return [entry];
-    if (receipt.identity === identity) return [];
+    if (receipt.identity === identity) return entry.kind === 'upload' && entry.path.endsWith('?preview=1') ? [entry] : [];
     return [{ ...entry, failure: { code: 'operation_conflict', status: 409, message: 'Operation ID was ACKed for different content' } }];
   });
 }
@@ -98,13 +98,17 @@ export function createNotesStorage() {
     },
     async update(key, change) {
       const db = await boards();
+      let failure;
       try { return await transaction(db, ['boards'], 'readwrite', (tx, done) => {
         const store = tx.objectStore('boards'), read = store.get(key);
         read.onsuccess = () => {
-          try { const value = change(read.result ?? { queue: [], snapshot: null }); store.put(value, key); done(value); }
-          catch { tx.abort(); }
+          try {
+            const value = change(read.result ?? { queue: [], snapshot: null }),bytes=record=>(record.queue || []).reduce((sum,e)=>sum+(e.kind==='upload'?e.file.size:0),0);
+            let total=bytes(value);const cursor=store.openCursor();
+            cursor.onsuccess=()=>{const entry=cursor.result;if(entry){if(entry.key!==key)total+=bytes(entry.value);entry.continue();}else if(total>MAX_UPLOAD){failure=notesError('upload_quota','File chờ trên thiết bị vượt tổng 50 MiB',413);tx.abort();}else {store.put(value,key);done(value);}};
+          } catch(error) { failure=error;tx.abort(); }
         };
-      }); } finally { db.close(); }
+      }).catch(error=>{throw failure || error;}); } finally { db.close(); }
     },
     async loadNote(key, doc) {
       // Hydrate through y-indexeddb, then own writes explicitly so quota/transaction completion is observable.
@@ -390,13 +394,14 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     check(); if (!writable()) return getState();
     await localWrites; await write(persist);
     const creating = queue.some(e => e.kind === 'command' && e.command.type === 'board.create');
-    if (connection !== 'online' && !creating) return getState();
+    const uploading = queue.some(e => e.kind === 'upload' && !acknowledged.has(e.operationId));
+    if (connection !== 'online' && !creating && !uploading) return getState();
     if (sending) return sending;
     const g = generation;
     const job = (async () => {
       const saved = await storage.load(scope);
       if (!alive(g) || !await hydrate(saved, g)) return getState();
-      if (connection !== 'online' && creating) {
+      if (connection !== 'online' && (creating || uploading)) {
         // A nonexistent board has no SSE yet. Verify the live account, create, then subscribe before GET.
         try {
           const current = await request('/api/auth/session', {}, true);
@@ -404,7 +409,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
         } catch (failure) { if (alive(g)) failed(failure); return getState(); }
       }
       for (const entry of [...queue]) {
-        if (!alive(g) || !writable() || connection !== 'online' && entry.command?.type !== 'board.create') break;
+        if (!alive(g) || !writable()) break;
+        if (connection !== 'online' && entry.kind !== 'upload' && entry.command?.type !== 'board.create') continue;
         // Matching receipts were retired; a remaining receipt represents visible conflicting work.
         if (acknowledged.has(entry.operationId)) continue;
         try {
@@ -422,15 +428,15 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
           } else if (entry.kind === 'text') {
             result = await request(`/api/notes/${entry.noteId}/text`, { method: 'POST', body: { accountId, operationId: entry.operationId, update: entry.update } }, true);
           } else {
-            const form = new FormData();
-            for (const [key, value] of Object.entries({ ...entry.fields, accountId, operationId: entry.operationId })) form.append(key, value);
-            form.append('file', entry.file, entry.name);
-            result = await request(entry.path, { method: 'POST', rawBody: form }, true);
+            const metadata = { ...entry.fields, name: entry.name, mimeType: entry.file.type, hash: entry.hash, accountId, operationId: entry.operationId };
+            if (metadata.spritesheet) metadata.spritesheet = JSON.parse(metadata.spritesheet);
+            result = await request(entry.path, { method: 'POST', rawBody: entry.file,
+              headers: { 'Content-Type': 'application/octet-stream', 'X-Note-Metadata': encode(new TextEncoder().encode(JSON.stringify(metadata))) } }, true);
           }
           if (!alive(g) || !writable()) break;
           await write(async () => {
             const receipt = { identity, result: clone(result), ...(entry.kind === 'command' ? { baseRevision: entry.command.baseRevision } : {}) };
-            await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId),
+            await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId || entry.kind === 'upload' && entry.path.endsWith('?preview=1')),
               receipts: { ...record.receipts, [entry.operationId]: receipt } }));
             if (!alive(g)) return;
             // A receipt can precede the GET that includes it. Keep keyed UI/editor DOM stable
@@ -439,7 +445,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
               awaitingSnapshots.set(entry.operationId, { ...entry, revision: result.revision });
             }
             acknowledged.set(entry.operationId, receipt); confirmed = true;
-            queue = queue.filter(e => e.operationId !== entry.operationId);
+            queue = queue.filter(e => e.operationId !== entry.operationId || entry.kind === 'upload' && entry.path.endsWith('?preview=1'));
             if (entry.kind === 'command' && entry.owner === clientId) {
               const affected = result.revisions.map(({ kind, id }) => ({ kind, id }));
               for (const target of entry.undoTargets ?? []) if (!affected.some(t => t.kind === target.kind && t.id === target.id)) affected.push(target);
@@ -549,9 +555,9 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
       failed(failure); throw failure;
     }
   }
-  async function queueUpload({ path = '/api/assets', file, name = file?.name ?? 'upload', fields = {}, operationId = crypto.randomUUID() }) {
+  async function queueUpload({ path = '/api/note-assets', file, name = file?.name ?? 'upload', fields = {}, operationId = crypto.randomUUID() }) {
     check(true); const g = generation; requireId(operationId);
-    if (!(file instanceof Blob) || file.size > MAX_UPLOAD || !file.size || !/^\/api\//.test(path)
+    if (!(file instanceof Blob) || file.size > 10 * 1024 * 1024 || !file.size || !/^\/api\//.test(path)
       || Object.values(fields).some(v => typeof v !== 'string') || Object.keys(fields).some(k => ['accountId', 'operationId', 'file'].includes(k))) throw notesError('invalid_upload');
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
     if (!alive(g)) throw notesError('stale_client');
@@ -573,6 +579,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     subscribe(fn) { check(); listeners.add(fn); fn(getState()); return () => listeners.delete(fn); },
     command, applyText, flush, close, reconnect, refresh,
     getPending() { check(true); return clone(queue); },
+    getUploadReceipt(operationId) { check(true); return clone(acknowledged.get(operationId)?.result ?? null); },
     async discardPending(operationId) {
       check(true); const entry = queue.find(e => e.operationId === operationId);
       if (!entry) return;

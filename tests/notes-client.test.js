@@ -167,10 +167,10 @@ test('document edits remain observable after reconnect and foreign-tab replay is
 
 test('uploads persist as isolated blobs, reject over 50 MiB, and stop at logout', async t => {
   const f=await fixture(t), c=await f.open();f.disconnect();
-  await c.queueUpload({path:'/api/assets',file:new Blob(['preview'],{type:'image/png'}),name:'fixture.png'});
+  await c.queueUpload({path:'/api/note-assets',file:new Blob(['preview'],{type:'image/png'}),name:'fixture.png'});
   assert.equal(c.getState().pending.uploads,1);
   await assert.rejects(c.queueUpload({file:new Blob([new Uint8Array(50*1024*1024+1)])}), /invalid_upload/);
-  f.auth('haiyen');f.reconnect();const yen=await f.open('haiyen');await yen.flush();assert.equal(f.sent.filter(s=>s.path==='/api/assets').length,0);
+  f.auth('haiyen');f.reconnect();const yen=await f.open('haiyen');await yen.flush();assert.equal(f.sent.filter(s=>s.path==='/api/note-assets').length,0);
 });
 
 
@@ -202,14 +202,32 @@ test('matching shorthand ACK retry reuses its original default revision', async 
 
 test('post-ACK upload retry binds digest, path, name, fields and MIME to the originating account', async t => {
   const f=await fixture(t), c=await f.open();const original=f.transport.request;let uploads=0;
-  f.transport.request=(path,options)=>options?.rawBody instanceof FormData ? (uploads++,Promise.resolve({operationId:options.rawBody.get('operationId'),accountId:options.rawBody.get('accountId'),assetId:randomUUID()})) : original(path,options);
-  const request={operationId:randomUUID(),path:'/api/assets',name:'fixture.png',fields:{rows:'1'},file:new Blob(['first'],{type:'image/png'})};
+  f.transport.request=(path,options)=>{if(!(options?.rawBody instanceof Blob))return original(path,options);uploads++;const metadata=JSON.parse(Buffer.from(options.headers['X-Note-Metadata'],'base64'));assert.equal(options.headers['Content-Type'],'application/octet-stream');assert.match(metadata.hash,/^[a-f0-9]{64}$/);assert.equal(metadata.mimeType,'image/png');return Promise.resolve({operationId:metadata.operationId,accountId:metadata.accountId,assetId:randomUUID()});};
+  const request={operationId:randomUUID(),path:'/api/note-assets',name:'fixture.png',fields:{rows:'1'},file:new Blob(['first'],{type:'image/png'})};
   const accepted=await c.queueUpload(request);assert.deepEqual(await c.queueUpload({...request,file:new Blob(['first'],{type:'image/png'})}),accepted);
   for(const change of [{file:new Blob(['different'],{type:'image/png'})},{path:'/api/other-assets'},{name:'different.png'},{fields:{rows:'2'}},{file:new Blob(['first'],{type:'image/gif'})}]) {
     await assert.rejects(c.queueUpload({...request,...change}),{code:'operation_conflict'});
   }
   assert.equal(uploads,1);f.auth('haiyen');const yen=await f.open('haiyen');
   assert.equal((await yen.queueUpload(request)).accountId,'haiyen');assert.equal(uploads,2);
+});
+
+test('normalized preview ACK retains capped source through reload until explicit confirm or discard', async t => {
+  const f=await fixture(t),c=await f.open(),original=f.transport.request;
+  f.transport.request=(path,options)=>options?.rawBody instanceof Blob?Promise.resolve({previewId:randomUUID(),expiresAt:Date.now()+300000,asset:{mimeType:'image/gif'}}):original(path,options);
+  const operationId=randomUUID(),file=new Blob(['source-to-confirm'],{type:'image/png'});
+  const receipt=await c.queueUpload({path:'/api/note-assets?preview=1',operationId,name:'Preview',file});
+  assert.equal(c.getState().pending.uploads,1);assert.equal(c.getState().durability,'local');assert.equal(await c.getPending()[0].file.text(),'source-to-confirm');
+  assert.deepEqual(c.getUploadReceipt(operationId),receipt);await c.close();const resumed=await f.open();
+  assert.equal(resumed.getState().pending.uploads,1);assert.deepEqual(resumed.getUploadReceipt(operationId),receipt);
+  assert.equal(await resumed.getPending()[0].file.text(),'source-to-confirm');await resumed.discardPending(operationId);
+  assert.equal(resumed.getState().pending.uploads,0);
+});
+test('library preview verifies live account and uploads when an empty catalog has no board stream', async t=>{
+  const f=await fixture(t),original=f.transport.request;let uploads=0,verified=0;
+  f.disconnect();f.transport.stream=()=>()=>{};f.transport.request=(path,options)=>{if(path==='/api/auth/session'){verified++;return Promise.resolve({user:{id:'minhle'}});}if(options?.rawBody instanceof Blob){uploads++;return Promise.resolve({previewId:randomUUID(),expiresAt:Date.now()+300000,asset:{mimeType:'image/gif'}});}return original(path,options);};
+  const client=await f.open();const result=await client.queueUpload({path:'/api/note-assets?preview=1',file:new Blob(['preview'],{type:'image/png'}),name:'Before any board'});
+  assert.ok(result.previewId);assert.equal(uploads,1);assert.equal(verified,1);assert.equal(client.getState().durability,'local');
 });
 
 for(const helper of ['authenticatedRequest','listTrash','acquireLease','renewLease','releaseLease']) {
@@ -290,7 +308,7 @@ test('reload keeps an offline metadata receipt conflict in its originating persi
 
 test('upload receipt conflict survives offline reconnect and reload without a second upload',async t=>{
   const f=await fixture(t), a=await f.open(), b=await f.open(), original=f.transport.request;let uploadPosts=0;
-  f.transport.request=(path,options)=>options?.rawBody instanceof FormData ? (uploadPosts++,Promise.resolve({operationId:options.rawBody.get('operationId'),assetId:randomUUID()})):original(path,options);
+  f.transport.request=(path,options)=>options?.rawBody instanceof Blob ? (uploadPosts++,Promise.resolve({operationId:JSON.parse(Buffer.from(options.headers['X-Note-Metadata'],'base64')).operationId,assetId:randomUUID()})):original(path,options);
   const request={operationId:randomUUID(),file:new Blob(['ACKed'],{type:'image/png'}),name:'fixture.png',fields:{rows:'1'}};
   await a.queueUpload(request);f.disconnect();
   try { await b.queueUpload({...request,file:new Blob(['Different'],{type:'image/png'})}); } catch(error) { assert.equal(error.code,'operation_conflict'); }

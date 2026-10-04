@@ -2,6 +2,7 @@ import { authEvents, getUser } from '../auth.js';
 import { openBoardClient, subscribeBoards } from '../notes/client.js';
 import { mountBoard, askName } from '../notes/board.js';
 import { mountBoardNoteEditor } from '../notes/editor.js';
+import { mountNoteMedia, openLibrary } from '../notes/library.js';
 
 const lastKey = 'homie-notes:last-board';
 const pendingKey = account => `homie-notes:pending-boards:${account}`;
@@ -13,11 +14,11 @@ export function render(container, { signal }) {
   root.innerHTML = '<div class="notes-heading"><div><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><div class="notes-catalog-actions"></div></div><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
   container.replaceChildren(root);
   const tabs = root.querySelector('.notes-tabs'), actions = root.querySelector('.notes-catalog-actions'), status = root.querySelector('.notes-catalog-status'), host = root.querySelector('.notes-board-host');
-  let disposed = false, boards = [], catalogLoaded = false, selectedId = stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false;
+  let disposed = false, boards = [], catalogLoaded = false, selectedId = stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false, closeGlobalLibrary = null;
   const tabButtons = new Map();
   function alive() { return !disposed && !signal.aborted; }
   function button(label, action) { const control=document.createElement('button');control.type='button';control.className='notes-button';control.textContent=label;control.dataset.action=action;control.dataset.mutation='';return control; }
-  function stopCurrent() {generation++;if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
+  function stopCurrent() {generation++;closeGlobalLibrary?.();closeGlobalLibrary=null;if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
   function showError(error) { if(alive())status.textContent=error?.message || 'Chưa thể mở bảng. Hãy kiểm tra kết nối.'; }
   function available() {return [...boards,...pending.filter(p=>!boards.some(b=>b.id===p.id)).map(p=>({...p,pending:true}))];}
   function renderTabs() {
@@ -37,7 +38,7 @@ export function render(container, { signal }) {
     try{
       const client=await openBoardClient({boardId:id,accountId:owner,signal:session.controller.signal});
       if(!alive()||current!==session||request!==generation){client.close();return;}
-      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor});status.textContent='';
+      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor,mountMedia:mountNoteMedia});status.textContent='';
       if(intent && owner===account){
         const retained=client.getPending().find(entry=>entry.kind==='command' && entry.command.type==='board.create');
         intent.operationId=retained?.operationId || intent.operationId || crypto.randomUUID();intent.accountId=owner;save(pendingKey(owner),pending);
@@ -65,9 +66,10 @@ export function render(container, { signal }) {
     }catch(error){if(owner===account)showError(error);}finally{if(temporary){temporary.abort();client?.close();}}
   }
   function renderActions(){actions.replaceChildren();if(!account)return;
-    const create=button('+ Bảng mới','board-new'),trash=button('Bảng đã xóa','boards-trash');
+    const create=button('+ Bảng mới','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');
     create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});
-    trash.onclick=showBoardTrash;actions.append(create,trash);
+    library.onclick=async()=>{closeGlobalLibrary?.();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||request!==generation){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});closeGlobalLibrary=()=>{cleanup();if(temporary){temporary.abort();client.close();}};root.querySelector('.note-library')?.addEventListener('close',()=>{closeGlobalLibrary?.();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
+    trash.onclick=showBoardTrash;actions.append(create,trash,library);
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabButtons.values()];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});
   const unsubscribe=subscribeBoards({signal},result=>{if(!alive())return;if(result.boards===null){status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';renderTabs();return;}
