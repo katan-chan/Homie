@@ -29,3 +29,11 @@ docs/superpowers/
 docs/verification.md
 docs/*-verification.md
 docs/previews/
+
+# OpenRig local team (CLI, specs, instance state and files it writes into the workspace)
+.rig/
+.openrig/
+.claude/settings.local.json
+.claude/skills/
+.agents/
+.mcp.json
