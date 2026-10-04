@@ -26,17 +26,22 @@ export function render(container, { signal }) {
     for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
     if(!current && !list.length){status.textContent=catalogLoaded?'Chưa có bảng nào. '+(account?'Tạo một bảng trống và đặt tên cho những điều muốn giữ.':'Khi có bảng, bạn có thể ghé vào xem ở đây.'):'Đang tìm những trang giấy…';}
   }
-  async function selectBoard(id, { createName, trash = false, force = false } = {}) {
+  async function selectBoard(id, { trash = false, force = false } = {}) {
     if(!alive() || current?.id===id && !force)return;
     stopCurrent();selectedId=id;explicitTrash=trash;if(!trash)save(lastKey,id);renderTabs();
     if(!id)return;
+    const owner=account, intent=pending.find(board=>board.id===id && (!board.accountId || board.accountId===owner));
     const session={id,controller:new AbortController(),client:null,cleanup:null};current=session;const request=generation;
     host.id='notes-selected-board';host.setAttribute('role','tabpanel');if(tabButtons.has(id)){host.setAttribute('aria-labelledby',`board-tab-${id}`);host.removeAttribute('aria-label');}else{host.removeAttribute('aria-labelledby');host.setAttribute('aria-label','Bảng đã xóa');}status.textContent='Đang mở bảng…';
     try{
-      const client=await openBoardClient({boardId:id,accountId:account,signal:session.controller.signal});
+      const client=await openBoardClient({boardId:id,accountId:owner,signal:session.controller.signal});
       if(!alive()||current!==session||request!==generation){client.close();return;}
       session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal});status.textContent='';
-      if(createName)await client.command({type:'board.create',baseRevision:0,payload:{name:createName}});
+      if(intent && owner===account){
+        const retained=client.getPending().find(entry=>entry.kind==='command' && entry.command.type==='board.create');
+        intent.operationId=retained?.operationId || intent.operationId || crypto.randomUUID();intent.accountId=owner;save(pendingKey(owner),pending);
+        await client.command(retained?.command || {operationId:intent.operationId,accountId:owner,type:'board.create',baseRevision:0,payload:{name:intent.name}});
+      }
     }catch(error){if(alive()&&current===session)showError(error);}
   }
   function reconcile() {
@@ -60,7 +65,7 @@ export function render(container, { signal }) {
   }
   function renderActions(){actions.replaceChildren();if(!account)return;
     const create=button('+ Bảng mới','board-new'),trash=button('Bảng đã xóa','boards-trash');
-    create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name});save(pendingKey(account),pending);selectBoard(id,{createName:name});}});
+    create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});
     trash.onclick=showBoardTrash;actions.append(create,trash);
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabButtons.values()];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});

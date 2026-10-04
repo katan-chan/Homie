@@ -327,3 +327,50 @@ test('ACK overlay survives an older refresh but cannot overwrite a newer peer sn
   serveStale=false;await c.refresh();
   assert.equal(c.getState().snapshot.notes[0].x,300,'A newer authoritative peer commit replaces the ACK overlay');
 });
+
+for (const mode of ['reopen', 'reconnect', 'same-account login', 'different-account fence']) {
+  test(`retained nonexistent board creation resumes on ${mode} without a board stream`, async t => {
+    const f = await fixture(t), boardId = randomUUID(); let connected = false, client; const order = [];
+    const transport = {
+      stream(path, handlers) {
+        order.push('stream'); let stopped = false;
+        queueMicrotask(() => {
+          if (stopped) return;
+          if (!connected || !f.store.list().some(board => board.id === boardId)) handlers.onError();
+          else handlers.onEvent('snapshot', { boardId, revision: f.store.privateBoard(boardId).revision });
+        });
+        return () => { stopped = true; };
+      },
+      async request(path, options = {}) {
+        order.push(path); if (!connected) throw new TypeError('offline');
+        if (path === '/api/auth/session') return { user: { id: f.session.account() } };
+        if (path === '/api/boards/commands') return f.store.applyCommand(f.session.account(), options.body.command);
+        return { board: path.endsWith('/collaboration') ? f.store.privateBoard(boardId) : f.store.publicBoard(boardId) };
+      },
+    };
+    const open = () => openBoardClient({ boardId, accountId: 'minhle', transport, storage: f.storage, session: f.session });
+    t.after(() => client?.close());
+    client = await open();
+    const operationId = randomUUID();
+    await client.command({ operationId, type: 'board.create', baseRevision: 0, payload: { name: 'Retained creation' } });
+    assert.equal(client.getState().pending.commands, 1);
+    connected = true;
+    if (mode === 'reopen') { await client.close(); client = await open(); }
+    else if (mode === 'reconnect') await client.reconnect();
+    else if (mode === 'same-account login') { f.auth(null); f.auth('minhle'); }
+    else {
+      f.auth('haiyen'); await client.reconnect();
+      await new Promise(resolve => setTimeout(resolve, 30));
+      assert.equal(f.store.list().some(board => board.id === boardId), false);
+      assert.equal(order.filter(path => path === '/api/boards/commands').length, 0, 'A different account cannot replay creation');
+      f.auth('minhle');
+    }
+    await waitFor(() => client.getState().pending.total === 0 && client.getState().snapshot?.id === boardId);
+    assert.equal(f.store.list().find(board => board.id === boardId).name, 'Retained creation');
+    const post = order.indexOf('/api/boards/commands');
+    assert.ok(order.indexOf('/api/auth/session') < post, 'Replay checks live identity before creating');
+    const stream = order.indexOf('stream', post + 1), snapshot = order.indexOf(`/api/boards/${boardId}/collaboration`, post + 1);
+    assert.ok(stream > post && snapshot > stream, 'After creation, SSE is established before mergeable fetch');
+    assert.equal(client.getState().durability, 'saved');
+  });
+}

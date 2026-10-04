@@ -358,6 +358,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
         }
       },
     }); } catch (failure) { failed(failure); }
+    // A retained creation cannot wait for a board stream that still returns 404.
+    if (writable() && queue.some(entry => entry.kind === 'command' && entry.command.type === 'board.create')) flush().catch(failure => failed(failure));
   }
   function targets(entry) {
     const c = entry.command, p = c.payload, fields = ['x', 'y', 'width', 'height', 'rotation', 'z'];

@@ -46,7 +46,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
   const hint = element('p', 'notes-hint', 'Chuột phải kéo góc nhìn · Cuộn trên nền để zoom · Hai ngón để di chuyển trên điện thoại');
   toolbar.append(mutations, durability); root.append(toolbar, error, viewport, cameraTools, inspector, hint); container.replaceChildren(root);
-  let state, disposed = false, selection = null, drag = null, cameraDrag = null, pinch = null, inspectorKey = '';
+  let state, disposed = false, selection = null, drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
   const cameraKey = `homie-notes:camera:${client.boardId}`;
   const camera = { x: 32, y: 32, scale: 1 }, records = new Map(), pointers = new Map();
   try { const saved = JSON.parse(localStorage.getItem(cameraKey)); if (saved && ['x', 'y', 'scale'].every(key => Number.isFinite(saved[key]))) Object.assign(camera, { x: saved.x, y: saved.y, scale: clamp(saved.scale, .2, 3) }); } catch { /* Camera preference does not affect note durability. */ }
@@ -134,13 +134,21 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     updateInspector();
   }
   async function mutate(type, payload) { if (!state.writable || !alive()) return; return client.command({type,payload}); }
-  async function geometry(kind, entity, patch, move = false) {
-    if (!state.writable) return;
-    // Offline intent is queued by the client; online changes first acquire the real lease.
-    const target = {kind,id:entity.id}; let online = state.connection === 'online';
-    if (online) { await client.flush(); if (!alive() || !state.writable) return; online = state.connection === 'online'; if (online) await client.acquireLease(target); }
-    try { if (alive() && state.writable) await mutate(`${kind}.${move ? 'move' : 'update'}`, {id:entity.id,...patch}); }
-    finally { if (online) await client.releaseLease(target).catch(() => {}); }
+  function geometry(kind, entity, patch, move = false) {
+    const id = entity.id;
+    const job = geometryWork.then(async () => {
+      if (!alive() || !state.writable) return;
+      // Resolve relative intent after earlier actions and pending creations settle.
+      let online = state.connection === 'online';
+      if (online) { await client.flush(); if (!alive() || !state.writable) return; online = state.connection === 'online'; }
+      const current = records.get(id)?.entity; if (!current) return;
+      const destination = typeof patch === 'function' ? patch(current) : patch;
+      const target = {kind,id};
+      if (online) await client.acquireLease(target);
+      try { if (alive() && state.writable) await mutate(`${kind}.${move ? 'move' : 'update'}`, {id,...destination}); }
+      finally { if (online) await client.releaseLease(target).catch(() => {}); }
+    });
+    geometryWork = job.catch(() => {}); return job;
   }
   function creationPoint() { const rect = viewport.getBoundingClientRect(); return worldPoint(rect.left + Math.min(rect.width / 2, 380), rect.top + Math.min(rect.height / 2, 220)); }
   async function showTrash() {
@@ -168,14 +176,14 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (action === 'board-trash') await mutate('board.trash',{});
       if (action === 'trash') await showTrash();
       if (!entity) return;
-      if (action.startsWith('move-')) {const delta={ 'move-left':[-10,0], 'move-right':[10,0], 'move-up':[0,-10], 'move-down':[0,10] }[action]; if(delta)await geometry(selection.kind,entity,{x:entity.x+delta[0],y:entity.y+delta[1]});}
+      if (action.startsWith('move-')) {const delta={ 'move-left':[-10,0], 'move-right':[10,0], 'move-up':[0,-10], 'move-down':[0,10] }[action]; if(delta)await geometry(selection.kind,entity,current=>({x:current.x+delta[0],y:current.y+delta[1]}));}
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});
       if (action === 'column-rename') askName(root,{title:'Đổi tên cột',value:entity.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('column.update',{id:entity.id,name}))});
     });
   }, events);
-  inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target;
-    run(()=>input.dataset.action==='object-column' ? geometry('note',entity,{columnId:input.value || null,x:entity.x,y:entity.y},true)
+  inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target, columnId=input.value || null;
+    run(()=>input.dataset.action==='object-column' ? geometry('note',entity,current=>({columnId,x:current.x,y:current.y}),true)
       : input.dataset.action==='object-size' && Number.isFinite(input.valueAsNumber) ? geometry(selection.kind,entity,{[input.name]:clampPaperSize(selection.kind,input.valueAsNumber)}) : undefined);
   },events);
   root.addEventListener('keydown', event => {
@@ -184,7 +192,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(event.key==='Escape') {cancelDrag();return;}
     const delta={ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key]; if(!delta)return;
     const handle=event.target.closest('[data-drag]');
-    if(handle && state.writable) {event.preventDefault();const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column';select(kind,node.dataset.noteId||node.dataset.columnId);const e=selected(),amount=event.shiftKey?5:1;run(()=>geometry(kind,e,{x:e.x+delta[0]*amount,y:e.y+delta[1]*amount}));}
+    if(handle && state.writable) {event.preventDefault();const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column';select(kind,node.dataset.noteId||node.dataset.columnId);const e=selected(),amount=event.shiftKey?5:1;run(()=>geometry(kind,e,current=>({x:current.x+delta[0]*amount,y:current.y+delta[1]*amount})));}
     else if(event.target===viewport) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera();}
   },events);
   function cancelDrag() {
