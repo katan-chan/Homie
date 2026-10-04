@@ -45,14 +45,16 @@ try {
         await wait("!document.querySelector('dialog.notes-dialog')");
         check(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(opener)})`), `${name}: ${close ? 'Đóng' : 'Escape'} must return focus to its opener (focus on ${await evaluate(active)})`);
       }
-      await dialog('board name "+"', '[data-action=board-new]', ':has(.notes-name-form)');
+      // No boards yet: the visible opener is the big "+" in the empty frame (the tab "+" is hidden then).
+      await dialog('board name big "+"', '[data-action=board-new-empty]', ':has(.notes-name-form)');
       for (const name of ['Bảng A', 'Bảng B']) {
-        await evaluate(`document.querySelector('[data-action=board-new]').click();document.querySelector('dialog[open] .notes-name-form input').value=${JSON.stringify(name)};document.querySelector('dialog[open] .notes-name-form').requestSubmit()`);
+        await evaluate(`(document.querySelector('[data-action=board-new-empty]')||document.querySelector('[data-action=board-new]')).click();document.querySelector('dialog[open] .notes-name-form input').value=${JSON.stringify(name)};document.querySelector('dialog[open] .notes-name-form').requestSubmit()`);
         await wait(`[...document.querySelectorAll('.notes-board-tab')].some(t=>t.textContent===${JSON.stringify(name)}&&t.getAttribute('aria-selected')==='true') && document.querySelector('.notes-durability')?.dataset.durability==='saved'`);
         if (name === 'Bảng A') { await evaluate("document.querySelector('[data-action=note-new]').click()"); await wait("document.querySelector('.paper-note .note-text[data-editor-state=ready]') && document.querySelector('.notes-durability').dataset.durability==='saved'"); boardA = await evaluate("document.querySelector('[data-board-id]').dataset.boardId"); }
         else boardB = await evaluate("document.querySelector('[data-board-id]').dataset.boardId");
       }
       await evaluate(`document.querySelector('[data-board-tab="${boardA}"]').click()`); await wait(`document.querySelector('[data-board-id="${boardA}"] .paper-note .note-text[data-editor-state=ready]')`);
+      await dialog('board name tab "+"', '[data-action=board-new]', ':has(.notes-name-form)');
       await dialog('rename', '[data-action=board-rename]', ':has(.notes-name-form)');
       // Submitting rename triggers state updates; the re-rendered toolbar must keep focus on its opener.
       await evaluate("{const b=document.querySelector('[data-action=board-rename]');b.focus();b.click();}"); await wait("document.querySelector('dialog[open] .notes-name-form')");

@@ -26,7 +26,7 @@ export function render(container, { signal }) {
     const list=available();
     for(const [id,control] of tabButtons)if(!list.some(b=>b.id===id)){control.remove();tabButtons.delete(id);}
     for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
-    if(!current && !list.length){status.textContent=catalogLoaded?'Chưa có bảng nào. '+(account?'Tạo một bảng trống và đặt tên cho những điều muốn giữ.':'Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. '):'Đang tìm những trang giấy…';if(catalogLoaded&&!account)status.append(loginButton());}
+    if(!current && !list.length){if(catalogLoaded&&account){if(!status.querySelector('.notes-empty-create'))status.replaceChildren(emptyCreate());}else{status.textContent=catalogLoaded?'Chưa có bảng nào. Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. ':'Đang tìm những trang giấy…';if(catalogLoaded)status.append(loginButton());}}
   }
   async function selectBoard(id, { trash = false, force = false } = {}) {
     if(!alive() || current?.id===id && !force)return;
@@ -67,10 +67,13 @@ export function render(container, { signal }) {
   }
   // Guests get a sign-in entry; the shell owns the login dialog (app.js listens for 'login-request').
   function loginButton(){const control=document.createElement('button');control.type='button';control.className='notes-button notes-login';control.dataset.action='login';control.textContent='Đăng nhập để viết';control.onclick=()=>authEvents.dispatchEvent(new Event('login-request'));return control;}
+  function askNewBoard(){askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});}
+  // No boards yet: the empty frame itself is one large "+" (the small tab "+" hides via CSS while it exists).
+  function emptyCreate(){const control=document.createElement('button');control.type='button';control.className='notes-empty-create';control.dataset.action='board-new-empty';control.dataset.mutation='';control.setAttribute('aria-label','Tạo bảng mới');control.innerHTML='<span class="notes-empty-plus" aria-hidden="true">+</span><span class="notes-empty-label">Tạo bảng đầu tiên</span>';control.onclick=askNewBoard;return control;}
   function renderActions(){actions.replaceChildren();strip.replaceChildren(tabs);if(!account){actions.append(loginButton());return;}
     // The "+" sits after the tablist (not inside it) so arrow keys and tab roles only cover real boards.
     const create=button('+','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');create.className='notes-tab-new';create.setAttribute('aria-label','Tạo bảng mới');strip.append(create);
-    create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});
+    create.onclick=askNewBoard;
     library.onclick=async()=>{closeGlobalLibrary?.();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||request!==generation){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});const closer=()=>{cleanup();if(temporary){temporary.abort();client.close();}};closeGlobalLibrary=closer;root.querySelector('.note-library')?.addEventListener('close',()=>{/* A replaced dialog's close event fires later; ignore it. */if(closeGlobalLibrary!==closer)return;closer();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
     trash.onclick=showBoardTrash;actions.append(trash,library);
   }

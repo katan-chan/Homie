@@ -18,7 +18,10 @@ try {
     assert.equal(await evaluate("document.querySelector('#sidebar').open"),true,'Login keeps sidebar open');
     // Board creation lives in a "+" after the tablist, shown even before any board exists; the header has no create button.
     assert.deepEqual(await evaluate("(()=>{const plus=document.querySelector('[data-action=board-new]');return{tabs:document.querySelectorAll('.notes-board-tab').length,label:plus.getAttribute('aria-label'),text:plus.textContent,role:plus.getAttribute('role'),inStrip:plus.parentElement.classList.contains('notes-tab-strip'),last:plus===plus.parentElement.lastElementChild,inTablist:!!plus.closest('[role=tablist]'),header:[...document.querySelectorAll('.notes-heading button')].some(b=>b.textContent.includes('Bảng mới')||b.dataset.action==='board-new')}})()"),{tabs:0,label:'Tạo bảng mới',text:'+',role:null,inStrip:true,last:true,inTablist:false,header:false});
-    await evaluate("document.querySelector('.menu-close').click();document.querySelector('[data-action=board-new]').click()");
+    // With no boards the frame is one big "+" and the tab "+" hides; the big one opens the same name dialog.
+    await wait("document.querySelector('.notes-catalog-status [data-action=board-new-empty]')");
+    assert.deepEqual(await evaluate("[getComputedStyle(document.querySelector('.notes-tab-new')).display,getComputedStyle(document.querySelector('.notes-empty-create')).display,document.querySelector('.notes-empty-create').getAttribute('aria-label')]"),['none','flex','Tạo bảng mới'],'Empty state swaps the tab + for the big +');
+    await evaluate("document.querySelector('.menu-close').click();document.querySelector('[data-action=board-new-empty]').click()");
     await wait("document.querySelector('.notes-name-form')");
     await evaluate("document.querySelector('.notes-name-form input').value='Những ngày bình yên';document.querySelector('.notes-name-form').requestSubmit()");
     await wait("document.querySelector('.notes-viewport') && document.querySelector('.notes-durability').dataset.durability==='saved'");
@@ -27,6 +30,7 @@ try {
     await wait("document.querySelector('.paper-note')");
     assert.equal(await evaluate("document.querySelector('.note-author').textContent"),'Minh Lê');
     assert.deepEqual(await evaluate("[document.querySelectorAll('.notes-board-tab').length,document.querySelector('.notes-board-tab').getAttribute('aria-selected'),document.querySelector('.notes-board-tab').dataset.boardTab===boardId]"),[1,'true',true],'The + tab creates and selects a board');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-tab-new')).display!=='none'&&!document.querySelector('.notes-empty-create')"),true,'Once a board exists the tab + returns and the big + is gone');
     assert.deepEqual(await evaluate("[parseFloat(document.querySelector('.paper-note').style.width),parseFloat(document.querySelector('.paper-note').style.height)]"),[360,320],'New notes are 360x320');
     // Clicking empty note body (well below the text) starts editing, caret at the end.
     await wait("document.querySelector('.paper-note .note-text[data-editor-state=ready]')");

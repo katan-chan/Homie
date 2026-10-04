@@ -1,6 +1,6 @@
 /* The notes page may use the full shell width; the shell padding remains the side gutter. */
 .shell:has(.notes-dashboard){max-width:none}
-.notes-dashboard{position:relative;display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:88px 0 16px;max-width:2400px;margin:auto;color:#654c51;--paper-border:#bf939666;--board-line:#b98797;--paper-focus:#8b4f68}
+.notes-dashboard{position:relative;display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:88px 0 16px;max-width:2400px;margin:auto;color:#654c51;--paper-border:#bf939666;--board-line:#b98797;--board-flowers:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cdefs%3E%3Cg id='p' fill='%23efc3cd'%3E%3Ccircle cx='0' cy='-6' r='5'/%3E%3Ccircle cx='5.7' cy='-1.9' r='5'/%3E%3Ccircle cx='3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-5.7' cy='-1.9' r='5'/%3E%3Ccircle r='2.8' fill='%23f1d08a'/%3E%3C/g%3E%3Cg id='l' fill='%23dcc8e8'%3E%3Ccircle cx='0' cy='-6' r='5'/%3E%3Ccircle cx='5.7' cy='-1.9' r='5'/%3E%3Ccircle cx='3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-5.7' cy='-1.9' r='5'/%3E%3Ccircle r='2.8' fill='%23f4dca0'/%3E%3C/g%3E%3Cpath id='v' d='M0 0c5-6 13-7 18-3-5 5-13 6-18 3z' fill='%23c3d6b8'/%3E%3C/defs%3E%3Cg opacity='.6'%3E%3Cuse href='%23v' transform='translate(46 52) rotate(20)'/%3E%3Cuse href='%23v' transform='translate(34 50) rotate(160) scale(.8)'/%3E%3Cuse href='%23p' transform='translate(40 44)'/%3E%3Cuse href='%23v' transform='translate(152 150) rotate(-30) scale(.9)'/%3E%3Cuse href='%23l' transform='translate(146 140) scale(.8)'/%3E%3Cuse href='%23p' transform='translate(176 46) scale(.55)'/%3E%3Cuse href='%23l' transform='translate(64 176) scale(.6)'/%3E%3Cuse href='%23v' transform='translate(70 182) rotate(40) scale(.6)'/%3E%3Ccircle cx='112' cy='92' r='2' fill='%23efc3cd'/%3E%3Ccircle cx='196' cy='196' r='1.6' fill='%23c3d6b8'/%3E%3Ccircle cx='12' cy='128' r='1.6' fill='%23dcc8e8'/%3E%3C/g%3E%3C/svg%3E");--paper-focus:#8b4f68}
 .notes-dashboard *, .notes-dialog *{box-sizing:border-box}
 /* Title sits in the empty right side of the fixed site header, so the board starts right under the header. */
 .notes-heading{position:absolute;top:20px;right:0;margin:0;text-align:right;pointer-events:none}
@@ -21,7 +21,10 @@
 .notes-tab-new{padding:9px 16px;font-size:20px;line-height:1;color:#8b4f68}
 .notes-board-tab[aria-selected=true]{background:#fffaf3;border-color:#ba8f9e;box-shadow:0 -3px 0 #ba839b inset}
 .notes-catalog-status:empty,.notes-error:empty{display:none}
-.notes-catalog-status{padding:40px 24px;background:#fffaf4dd;border:1px dashed var(--paper-border);border-radius:15px;font:17px/1.6 Georgia,serif}
+.notes-catalog-status{margin:0;padding:20px 24px;background:#fff8f0ed;border:1.5px solid var(--board-line);border-radius:4px 18px 14px 17px;box-shadow:0 12px 35px #86556916;font:17px/1.6 Georgia,serif}
+/* With no board open, the status is the board frame itself: same edge under the tabs, same flowers, full height. */
+.notes-catalog-status:has(+ .notes-board-host:empty){flex:1 1 auto;min-height:240px;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;text-align:center;font:italic 21px/1.65 Georgia,serif;color:#a18888;background-color:#fbf3ec;background-image:var(--board-flowers),linear-gradient(135deg,#fff7ed70,#f2dce340);background-size:220px 220px,100% 100%}
+.notes-catalog-status:has(+ .notes-board-host:not(:empty)){margin-bottom:8px}
 .notes-board-host{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}.notes-board-host:empty{display:none}
 .notes-board{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#fff8f0ed;border:1.5px solid var(--board-line);border-radius:4px 18px 14px 17px;box-shadow:0 12px 35px #86556916;overflow:hidden;position:relative}
 .notes-toolbar{padding:12px 16px;border-bottom:1px solid #b9879766;justify-content:space-between;min-height:62px}
@@ -29,7 +32,7 @@
 .notes-durability[data-durability=unsaved],.notes-error{color:#963f51}
 .notes-error{font-size:13px;padding:10px 16px;background:#fbe4e5;margin:0}
 /* Fill the screen below the board chrome; the page can scroll to the camera row, the board never scrolls. */
-.notes-viewport{position:relative;overflow:hidden;flex:1 1 360px;min-height:220px;isolation:isolate;touch-action:none;background-color:#fbf3ec;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cdefs%3E%3Cg id='p' fill='%23efc3cd'%3E%3Ccircle cx='0' cy='-6' r='5'/%3E%3Ccircle cx='5.7' cy='-1.9' r='5'/%3E%3Ccircle cx='3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-5.7' cy='-1.9' r='5'/%3E%3Ccircle r='2.8' fill='%23f1d08a'/%3E%3C/g%3E%3Cg id='l' fill='%23dcc8e8'%3E%3Ccircle cx='0' cy='-6' r='5'/%3E%3Ccircle cx='5.7' cy='-1.9' r='5'/%3E%3Ccircle cx='3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-3.5' cy='4.9' r='5'/%3E%3Ccircle cx='-5.7' cy='-1.9' r='5'/%3E%3Ccircle r='2.8' fill='%23f4dca0'/%3E%3C/g%3E%3Cpath id='v' d='M0 0c5-6 13-7 18-3-5 5-13 6-18 3z' fill='%23c3d6b8'/%3E%3C/defs%3E%3Cg opacity='.6'%3E%3Cuse href='%23v' transform='translate(46 52) rotate(20)'/%3E%3Cuse href='%23v' transform='translate(34 50) rotate(160) scale(.8)'/%3E%3Cuse href='%23p' transform='translate(40 44)'/%3E%3Cuse href='%23v' transform='translate(152 150) rotate(-30) scale(.9)'/%3E%3Cuse href='%23l' transform='translate(146 140) scale(.8)'/%3E%3Cuse href='%23p' transform='translate(176 46) scale(.55)'/%3E%3Cuse href='%23l' transform='translate(64 176) scale(.6)'/%3E%3Cuse href='%23v' transform='translate(70 182) rotate(40) scale(.6)'/%3E%3Ccircle cx='112' cy='92' r='2' fill='%23efc3cd'/%3E%3Ccircle cx='196' cy='196' r='1.6' fill='%23c3d6b8'/%3E%3Ccircle cx='12' cy='128' r='1.6' fill='%23dcc8e8'/%3E%3C/g%3E%3C/svg%3E"),radial-gradient(#b98f851f .7px,transparent .9px),linear-gradient(135deg,#fff7ed70,#f2dce340);background-size:220px 220px,18px 18px,100% 100%;outline-offset:-4px!important}
+.notes-viewport{position:relative;overflow:hidden;flex:1 1 360px;min-height:220px;isolation:isolate;touch-action:none;background-color:#fbf3ec;background-image:var(--board-flowers),radial-gradient(#b98f851f .7px,transparent .9px),linear-gradient(135deg,#fff7ed70,#f2dce340);background-size:220px 220px,18px 18px,100% 100%;outline-offset:-4px!important}
 .notes-world{position:absolute;inset:0;transform-origin:0 0;width:0;height:0;will-change:transform}
 .paper-column,.paper-note{position:absolute;border:1.5px solid #c9a2a0}
 .paper-column{background:#fffdf480;border:1.5px dashed #c29b9b;border-radius:6px 12px 8px 10px;z-index:0}
@@ -104,4 +107,14 @@
 .note-decoration-inspector { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; }
 .note-decoration-inspector label { display:grid; gap:4px; margin:12px 0; }
 .note-library button,.note-decoration-inspector button { min-width:44px; min-height:44px; }
-.notes-catalog-status .notes-login{margin-left:6px;vertical-align:middle}.notes-dashboard:has(.notes-catalog-status:not(:empty)) .notes-catalog-actions .notes-login{display:none}
+.notes-catalog-status .notes-login{vertical-align:middle;font-style:normal}.notes-catalog-bar{min-height:50px}.notes-dashboard:has(.notes-catalog-status:not(:empty)) .notes-catalog-actions .notes-login{display:none}
+.notes-dashboard:has(.notes-empty-create) .notes-tab-new{display:none}
+.notes-catalog-status:has(.notes-empty-create){padding:0;overflow:hidden}
+/* The whole empty frame is the create button. */
+.notes-empty-create{align-self:stretch;flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(8px,2vh,20px);border:0;border-radius:inherit;background:transparent;color:#8b4f68;cursor:pointer;font:inherit;transition:background-color .2s}
+.notes-empty-create:hover{background:#f8e4e88c}
+.notes-empty-create:focus-visible{outline:3px solid var(--paper-focus);outline-offset:-6px}
+.notes-empty-plus{font:200 clamp(160px,32vh,340px)/0.75 Georgia,serif;transition:transform .2s}
+.notes-empty-create:hover .notes-empty-plus{transform:scale(1.06)}
+.notes-empty-label{font:italic clamp(18px,2.4vh,24px)/1.4 Georgia,serif;color:#8a6b73}
+@media(prefers-reduced-motion:reduce){.notes-empty-create,.notes-empty-plus{transition:none}.notes-empty-create:hover .notes-empty-plus{transform:none}}
