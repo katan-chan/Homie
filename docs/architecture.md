@@ -1,8 +1,8 @@
 # Kiến trúc hiện tại
 
-Frontend có bốn tab: garden, dashboard, minhle và haiyen. Garden và hai hồ sơ công khai; dashboard giữ chỗ riêng tư. Chỉ người đăng nhập đúng tài khoản sửa phần chữ trong hồ sơ của mình; ảnh/bố cục chỉnh bằng code riêng. Tính năng ghi chép sẽ do người dùng thiết kế sau.
+Frontend có bốn tab: garden, dashboard, minhle và haiyen, đều xem công khai. Dashboard (Góc ghi chép) là các bảng ghi chú dùng chung: khách chỉ xem, minhle/haiyen sửa realtime và offline. Chỉ người đăng nhập đúng tài khoản sửa phần chữ trong hồ sơ của mình; ảnh/bố cục chỉnh bằng code riêng.
 
-Frontend dùng **HTML + CSS + JavaScript ES modules**. Backend Node.js native có auth/session và public profile API; session RAM và file profile cho một process. Một registry và một module cho mỗi tab đủ để thêm/bỏ các góc vườn; chưa cần framework hoặc hệ plugin. Auth dùng EventTarget riêng để cập nhật UI danh tính, không phải event bus tổng quát.
+Frontend dùng **HTML + CSS + JavaScript ES modules**. Backend Node.js native có auth/session, profile API và notes API (command HTTP, SSE, media); session RAM, dữ liệu trên Supabase hoặc file local, luôn một process. Rich text dùng Yjs/Tiptap đóng gói sẵn bằng esbuild; xem [notes-runtime.md](notes-runtime.md). Một registry và một module cho mỗi tab đủ để thêm/bỏ các góc vườn; chưa cần framework hoặc hệ plugin. Auth dùng EventTarget riêng để cập nhật UI danh tính, không phải event bus tổng quát.
 
 Quy tắc thực hiện nằm trong [AGENTS.md](../AGENTS.md), [interface](interfaces.md), [quy tắc code và kiểm tra](contributing.md), [bộ skills đề xuất](skills.md). Tài liệu này mô tả cấu trúc; interfaces.md là nguồn chi tiết cho hợp đồng module.
 
@@ -22,19 +22,33 @@ js/
   tabs.js                 # registry duy nhất
   tabs/
     garden.js             # tiêu đề và lettering homepage
-    dashboard.js
+    dashboard.js          # danh sách bảng, tab bảng, thùng rác bảng, thư viện
     minhle.js              # cấu hình bố cục/ảnh Minh Lê bằng code
     haiyen.js              # cấu hình bố cục/ảnh Hải Yến bằng code
+  notes/
+    model.js              # schema, command metadata, dùng chung với backend
+    client.js             # fetch/SSE, hàng đợi IndexedDB, lease, presence
+    board.js              # DOM bảng, cột, note, camera, thùng rác
+    editor.js             # Tiptap + Yjs, hàng định dạng, presence caret
+    library.js            # thư viện hình, upload, trang trí note
+styles/                   # notes.css, notes-format.css có phạm vi ghi chú
 assets/
   flowers/                # WebP từ PNG đã duyệt, giữ alpha
   characters/             # atlas Loopy WebP
   typography/             # lettering WebP
-  brand/                  # logo raster, nguồn và prompt
-backend/server.js         # HTTP health/auth/profiles, CORS/CSRF
+  brand/                  # logo raster, favicon, nguồn và prompt
+  fonts/                  # Patrick Hand + OFL
+  vendor/                 # notes.js bundle do build tạo, gitignored
+backend/server.js         # HTTP health/auth/profiles, CORS/CSRF, delegate notes
 backend/auth.js           # scrypt, session và rate limit
-backend/profiles.js       # validate text và ghi file atomic
-tests/                    # Node HTTP và browser CDP
-scripts/build.js          # xuất frontend vào dist/
+backend/profiles.js       # validate text, lưu Supabase hoặc file atomic
+backend/notes-store.js    # snapshot notes, Yjs text, dedupe operation
+backend/notes-api.js      # route /api/boards, /api/notes, /api/note-assets, SSE
+backend/note-media.js     # ffprobe/FFmpeg, preview, lưu media
+backend/supabase.js       # REST/Storage Supabase qua fetch
+tests/                    # node:test, browser headless Chrome, live Supabase
+scripts/build.js          # build vendor rồi xuất frontend vào dist/
+scripts/build-notes.js    # esbuild assets/vendor/notes.js
 ```
 
 Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.html` ở root là nguồn frontend; `concept/index.html` cùng PNG gốc trong `concept/assets/` giữ làm reference. Local chạy trực tiếp qua HTTP; build tạo `dist/` để deploy, không chỉnh output bằng tay.
@@ -45,7 +59,7 @@ Chỉ thêm tệp dữ liệu khi đã chốt nội dung và cách lưu. `index.
 export const tabs = [
   { id: 'garden', label: 'Vườn hoa', enabled: true, background: { showCharacters: true },
     load: () => import('./tabs/garden.js') },
-  { id: 'dashboard', label: 'Góc ghi chép', enabled: true, requiresAuth: true,
+  { id: 'dashboard', label: 'Góc ghi chép', enabled: true,
     load: () => import('./tabs/dashboard.js') },
   { id: 'minhle', label: 'Minh Lê', enabled: true,
     load: () => import('./tabs/minhle.js') },
@@ -70,11 +84,13 @@ Shell mount nền vườn một lần trong js/background.js, độc lập vòng
 
 ## Mobile
 
-Hai tab lấy nhãn từ registry, nằm trong sidebar bên trái trên cả desktop và điện thoại. Nút menu mở native dialog; chọn tab giữ menu mở. Nút đóng, Escape hoặc bấm backdrop đóng menu và trả focus về nút mở. Điều hướng dọc bằng ArrowUp/ArrowDown, Home/End; Tab giữ focus trong dialog. Nội dung tab hiện dần trong 320 ms, màu tab đổi trong 220 ms; tắt hiệu ứng khi prefers-reduced-motion được bật. Nút chạm cao ít nhất 44 px, có safe-area trên điện thoại. Logo raster vẽ tay ở `assets/brand/` đi cùng tên vườn và không có thao tác điều hướng. Bố cục dashboard chưa chốt, sẽ do người dùng thiết kế sau.
+Hai tab lấy nhãn từ registry, nằm trong sidebar bên trái trên cả desktop và điện thoại. Nút menu mở native dialog; chọn tab giữ menu mở. Nút đóng, Escape hoặc bấm backdrop đóng menu và trả focus về nút mở. Điều hướng dọc bằng ArrowUp/ArrowDown, Home/End; Tab giữ focus trong dialog. Nội dung tab hiện dần trong 320 ms, màu tab đổi trong 220 ms; tắt hiệu ứng khi prefers-reduced-motion được bật. Nút chạm cao ít nhất 44 px, có safe-area trên điện thoại. Logo raster vẽ tay ở `assets/brand/` đi cùng tên vườn và không có thao tác điều hướng.
 
 ## Dữ liệu và xuất bản
 
-Ghi chép chưa có lưu trữ hoặc đồng bộ. Hồ sơ có API thực: public GET, PUT chỉ owner, cookie HttpOnly; text lưu file trong PROFILE_DATA_DIR ngoài dist. Session RAM mất khi backend restart. File local tồn tại qua restart, nhưng deploy phải chọn storage bền thực tế; xem [authentication.md](authentication.md).
+Hồ sơ: public GET, PUT chỉ owner, cookie HttpOnly. Ghi chú: server giữ metadata có thẩm quyền (tác giả, tombstone, revision, lease) và text Yjs từng note; ghi bền rồi mới ACK, phát cập nhật qua SSE. Client giữ bản offline trong IndexedDB. Khách nhận projection công khai, không nhận tài liệu cộng tác, thùng rác hay presence.
+
+Storage chọn khi khởi động: có `SUPABASE_URL` và `SUPABASE_SECRET_KEY` thì hồ sơ và snapshot notes là tài liệu JSON trong bảng `public.documents` (khóa `profiles`, `notes`), media trong bucket private `note-media`, luôn phục vụ qua backend. Thiếu hai biến thì dùng file trong PROFILE_DATA_DIR (mặc định `.data/`: profiles.json, notes.json, note-media/). Snapshot notes được ghi lại toàn bộ mỗi mutation qua một hàng đợi trong process: không hỗ trợ nhiều instance backend cùng ghi. Session RAM mất khi backend restart. Xem [authentication.md](authentication.md), [deployment.md](deployment.md).
 
 GitHub Pages phục vụ tệp tĩnh; project site thường có đường dẫn `https://<owner>.github.io/<repository>/`. Dùng asset tương đối như `./assets/flowers/example.png`, tránh đường dẫn bắt đầu bằng `/`. Không đưa secret vào tệp tải về trình duyệt. Ẩn tab không tạo quyền truy cập riêng tư. [GitHub Docs: What is GitHub Pages?](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [GitHub Docs: Creating a site](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 

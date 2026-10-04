@@ -122,7 +122,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     mutations.querySelector('[data-action=undo]').disabled = !state.history.canUndo;
     mutations.querySelector('[data-action=redo]').disabled = !state.history.canRedo;
     if (modeChanged) { cancelDrag(); for (const record of records.values()) destroyRecord(record); records.clear(); selection = null; }
-    if(state.writable)toolbar.prepend(mutations);else {mutations.remove();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();}
+    if(state.writable){if(mutations.parentNode!==toolbar)toolbar.prepend(mutations);}else {mutations.remove();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();}
     formatRow.hidden = !state.writable;
     // Hidden mutation DOM is removed on auth downgrade, including editor/media slots.
     for (const control of mutations.children) control.toggleAttribute('data-mutation', state.writable);

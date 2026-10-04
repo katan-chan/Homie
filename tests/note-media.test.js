@@ -13,7 +13,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t) {
   const dir=await mkdtemp(join(tmpdir(),'homie-media-')),store=await createNotesStore({dataDir:dir});
   const {createNoteMedia}=await import('../backend/note-media.js');
-  const media=createNoteMedia({dataDir:dir,store,ffmpegPath:'/opt/homebrew/bin/ffmpeg',ffprobePath:'/opt/homebrew/bin/ffprobe'});
+  const media=createNoteMedia({dataDir:dir,store,ffmpegPath:process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath:process.env.FFPROBE_PATH || 'ffprobe'});
   t.after(async()=>{await media.close();await store.close();await rm(dir,{recursive:true,force:true});});
   const metadata=(bytes,mimeType='image/png',extra={})=>({accountId:'minhle',operationId:randomUUID(),hash:sha(bytes),name:'Cánh hoa',mimeType,...extra});
   const ingest=(bytes,meta,extra={})=>media.ingest({stream:Readable.from([bytes]),metadata:meta,sessionToken:'session-a',...extra});
@@ -57,7 +57,7 @@ test('acceptance binds original session/source/config; durable retry survives re
   await assert.rejects(f.ingest(bytes,{...meta,previewId:p.previewId},{authorize:()=>{throw Object.assign(Error('expired'),{status:401});}}),{status:401});
   assert.deepEqual(f.media.list(),[]);
   const result=await f.ingest(bytes,{...meta,previewId:p.previewId});
-  const {createNoteMedia}=await import('../backend/note-media.js');const reopened=createNoteMedia({dataDir:f.dir,store:f.store,ffmpegPath:'/opt/homebrew/bin/ffmpeg',ffprobePath:'/opt/homebrew/bin/ffprobe'});
+  const {createNoteMedia}=await import('../backend/note-media.js');const reopened=createNoteMedia({dataDir:f.dir,store:f.store,ffmpegPath:process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath:process.env.FFPROBE_PATH || 'ffprobe'});
   t.after(()=>reopened.close());
   assert.deepEqual(await reopened.ingest({stream:Readable.from([bytes]),metadata:meta,sessionToken:'new-same-account-session'}),result);
   await assert.rejects(f.ingest(bytes,{...meta,name:'Changed',previewId:p.previewId}),{code:'operation_conflict'});
@@ -86,7 +86,7 @@ test('two-job bound, queued abort and close clean temp jobs without library muta
   await f.media.close();assert.deepEqual(await readdir(join(f.dir,'note-media-tmp')),[]);
 });
 test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides guest trash-only references',async t=>{
-  const f=await createNotesFixture({ffmpegPath:'/opt/homebrew/bin/ffmpeg',ffprobePath:'/opt/homebrew/bin/ffprobe'});t.after(()=>f.close());
+  const f=await createNotesFixture({ffmpegPath:process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath:process.env.FFPROBE_PATH || 'ffprobe'});t.after(()=>f.close());
   const base=f.origin,headers={Origin:base,'X-Requested-With':'Homie','Content-Type':'application/json'};
   const login=await fetch(base+'/api/auth/login',{method:'POST',headers,body:JSON.stringify({accountId:'minhle',password:fixturePasswords.minhle})});const cookie=login.headers.get('set-cookie').split(';')[0];
   const bytes=await mediaBytes(),metadata={accountId:'minhle',operationId:randomUUID(),name:'Fixture',mimeType:'image/png',hash:sha(bytes)};

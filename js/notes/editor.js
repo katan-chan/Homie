@@ -1,12 +1,28 @@
-import { Editor, Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color,
+import { Editor, Extension, Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color, FontSize,
   BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem,
   Collaboration, CollaborationCaret, Y, yUndoPluginKey } from '../../assets/vendor/notes.js';
 import { openAssetPicker } from './library.js';
 
-const extensions = [Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color,
-  BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem.configure({ nested: true, a11y: { checkboxLabel: node => `Đánh dấu việc: ${node.textContent || 'Việc chưa có tên'}` } })];
 const colors = [['#654c51','Mực nâu'], ['#9a3456','Hồng'], ['#37664c','Xanh lá'], ['#345d85','Xanh dương'], ['#79549a','Tím']];
 const formatButtons = [['B','In đậm','toggleBold','bold'],['I','In nghiêng','toggleItalic','italic'],['U','Gạch dưới','toggleUnderline','underline'],['•','Danh sách chấm','toggleBulletList','bulletList'],['1.','Danh sách số','toggleOrderedList','orderedList'],['☑','Danh sách việc','toggleTaskList','taskList'],['↶','Hoàn tác văn bản','undo'],['↷','Làm lại văn bản','redo']];
+// Note text defaults to 23px; validFontSize mirrors the backend text-mark check.
+const defaultFontSize = 23, minFontSize = 10, maxFontSize = 72;
+const validFontSize = value => /^\d{2}px$/.test(value || '') && parseInt(value) >= minFontSize && parseInt(value) <= maxFontSize;
+const fontSizeOf = editor => {const size = editor.getAttributes('textStyle').fontSize; return validFontSize(size) ? parseInt(size) : defaultFontSize;};
+// With only a caret (no selected text) the size applies to the whole note, like resizing a sticky note; the caret is kept.
+function setFontSize(editor, size) {
+  const value = Math.min(maxFontSize, Math.max(minFontSize, Math.round(size))), {from, to, empty} = editor.state.selection;
+  const apply = chain => value === defaultFontSize ? chain.unsetFontSize() : chain.setFontSize(`${value}px`);
+  // The second apply at the restored caret also sets the stored mark, so new typing (even in an empty note) uses the size.
+  return (empty ? apply(apply(editor.chain().selectAll()).setTextSelection({from, to})) : apply(editor.chain())).run();
+}
+// Word-style shortcuts: Mod+Shift+> / Mod+Shift+< step by 2, Mod+] / Mod+[ step by 1.
+const FontSizeKeys = Extension.create({name:'fontSizeKeys', addKeyboardShortcuts() {
+  const step = delta => () => this.editor.isEditable && setFontSize(this.editor, fontSizeOf(this.editor)+delta);
+  return {'Mod->':step(2),'Mod-Shift-.':step(2),'Mod-<':step(-2),'Mod-Shift-,':step(-2),'Mod-]':step(1),'Mod-[':step(-1)};
+}});
+const extensions = [Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color, FontSize, FontSizeKeys,
+  BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem.configure({ nested: true, a11y: { checkboxLabel: node => `Đánh dấu việc: ${node.textContent || 'Việc chưa có tên'}` } })];
 const maximumCharacters = 100000;
 // Lowercase #rrggbb passes publicContent, model and backend cssColor text-mark validation.
 const hex = rgb => '#'+rgb.map(n=>Math.round(n).toString(16).padStart(2,'0')).join('');
@@ -33,6 +49,17 @@ function formatControls(row) {
   }
   const buttons = formatButtons.map(([label,title,command,mark])=>{const node=control(label,title,command,mark);on(node,'click',()=>{current()?.chain().focus()[command]().run();refresh();});return node;});
   const colorButton = control('Màu chữ','Màu chữ','color'), swatch = make('span','notes-format-swatch'); swatch.setAttribute('aria-hidden','true'); colorButton.prepend(swatch);
+  // Size field: typing applies each valid value without stealing focus; Enter returns to the note.
+  const sizeGroup = make('div','notes-format-size'); sizeGroup.setAttribute('role','group'); sizeGroup.setAttribute('aria-label','Cỡ chữ');
+  const sizeInput = make('input'); sizeInput.type = 'number'; sizeInput.min = String(minFontSize); sizeInput.max = String(maxFontSize); sizeInput.step = '1'; sizeInput.inputMode = 'numeric';
+  sizeInput.dataset.format = 'fontSize'; sizeInput.title = `Cỡ chữ (${minFontSize}–${maxFontSize}px). Phím tắt: Ctrl/⌘ + Shift + > hoặc <, Ctrl/⌘ + ] hoặc [`; sizeInput.setAttribute('aria-label',`Cỡ chữ, ${minFontSize} đến ${maxFontSize} px`);
+  const sizeDown = control('−','Giảm cỡ chữ','fontSizeDown'), sizeUp = control('+','Tăng cỡ chữ','fontSizeUp'), sizeUnit = make('span','notes-format-size-unit','px'); sizeUnit.setAttribute('aria-hidden','true');
+  controls.push({node:sizeInput,command:'fontSize'}); sizeGroup.append(sizeDown,sizeInput,sizeUnit,sizeUp);
+  on(sizeDown,'click',()=>{const editor=current();if(editor){setFontSize(editor,fontSizeOf(editor)-1);refresh();}});
+  on(sizeUp,'click',()=>{const editor=current();if(editor){setFontSize(editor,fontSizeOf(editor)+1);refresh();}});
+  on(sizeInput,'input',()=>{const editor=current(),value=Number(sizeInput.value);if(editor&&Number.isInteger(value)&&value>=minFontSize&&value<=maxFontSize)setFontSize(editor,value);});
+  on(sizeInput,'change',()=>{const editor=current();if(!editor)return;const value=Number(sizeInput.value);if(sizeInput.value!==''&&Number.isFinite(value))setFontSize(editor,value);sizeInput.value=String(fontSizeOf(editor));});
+  on(sizeInput,'keydown',event=>{if(event.key==='Enter'){event.preventDefault();sizeInput.dispatchEvent(new Event('change'));current()?.commands.focus();}});
   const imageButton = control('Chèn hình','Chèn hình vào ghi chú','image');
   const panel = make('div','notes-color-panel'); panel.id = `notes-color-panel-${++panelSerial}`; panel.hidden = true; panel.setAttribute('role','group'); panel.setAttribute('aria-label','Chọn màu chữ');
   colorButton.setAttribute('aria-expanded','false'); colorButton.setAttribute('aria-controls',panel.id);
@@ -101,6 +128,7 @@ function formatControls(row) {
     for (const {node,command,mark} of controls) {
       node.disabled = !editor;
       if (mark) node.setAttribute('aria-pressed',String(!!editor?.isActive(mark)));
+      if (command === 'fontSize' && document.activeElement !== node) node.value = editor ? String(fontSizeOf(editor)) : '';
       if (editor && (command === 'undo' || command === 'redo')) {const manager = yUndoPluginKey.getState(editor.state)?.undoManager; node.disabled = !manager || !(command === 'undo' ? manager.undoStack : manager.redoStack).length;}
     }
     if (!editor) closePanel(false);
@@ -111,7 +139,7 @@ function formatControls(row) {
     activate(entry) {active = entry; refresh();},
     refresh(entry) {if (entry === active) refresh();},
   };
-  row.replaceChildren(hint,...buttons,colorButton,imageButton,panel); render(); formatRows.set(row,tools);
+  row.replaceChildren(hint,...buttons,sizeGroup,colorButton,imageButton,panel); render(); formatRows.set(row,tools);
   return tools;
 }
 const presenceSessions = new WeakMap();
@@ -163,9 +191,11 @@ function publicContent(content) {
       if (!text) return null;
       const marks = (Array.isArray(node.marks) ? node.marks : []).flatMap(mark => {
         if (['bold','italic','underline'].includes(mark.type)) return [{type:mark.type}];
-        if (mark.type === 'textStyle' && /^#[\da-f]{3,8}$/i.test(mark.attrs?.color || '')) return [{type:'textStyle',attrs:{color:mark.attrs.color}}];
-        if (mark.type === 'textStyle' && /^rgb\(\s*(?:\d{1,3}\s*,\s*){2}\d{1,3}\s*\)$/.test(mark.attrs?.color || '') && mark.attrs.color.match(/\d+/g).every(n=>Number(n)<=255)) return [{type:'textStyle',attrs:{color:mark.attrs.color}}];
-        return [];
+        if (mark.type !== 'textStyle') return [];
+        const color = mark.attrs?.color || '', attrs = {};
+        if (/^#[\da-f]{3,8}$/i.test(color) || /^rgb\(\s*(?:\d{1,3}\s*,\s*){2}\d{1,3}\s*\)$/.test(color) && color.match(/\d+/g).every(n=>Number(n)<=255)) attrs.color = color;
+        if (validFontSize(mark.attrs?.fontSize)) attrs.fontSize = mark.attrs.fontSize;
+        return Object.keys(attrs).length ? [{type:'textStyle',attrs}] : [];
       });
       return {type:'text',text,...(marks.length ? {marks} : {})};
     }
@@ -252,6 +282,14 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
   if (signal?.aborted) {disposed=true;return api;}
   element.replaceChildren(content,message); element.dataset.editorState = 'loading';
   if (!readOnly) {
+    // A click anywhere on the note body edits: caret at the nearest text position, or the end when below the text.
+    element.addEventListener('mousedown',event=>{
+      if (event.button !== 0 || !editor || !writable() || editor.view.dom.contains(event.target) || event.target.closest('button,input,a,label')) return;
+      event.preventDefault();
+      const box = editor.view.dom.getBoundingClientRect(), clamp = (value,min,max) => Math.min(max,Math.max(min,value));
+      const hit = event.clientY <= box.bottom && editor.view.posAtCoords({left:clamp(event.clientX,box.left+1,box.right-1),top:clamp(event.clientY,box.top+1,box.bottom-1)});
+      hit ? editor.chain().focus().setTextSelection(hit.pos).run() : editor.commands.focus('end');
+    },{signal:controller.signal});
     if (formatRow) {format = formatControls(formatRow); unregister = format.add(entry); element.addEventListener('focusin',()=>format.activate(entry),{signal:controller.signal});}
     element.addEventListener('keydown',event=>{
       if (event.defaultPrevented || event.isComposing || !(event.ctrlKey||event.metaKey)) return;
@@ -259,7 +297,9 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
       if (key === 's') {event.preventDefault();event.stopPropagation();if(writable())client.flush().catch(report);}
       if (key === 'z' || key === 'y') {event.preventDefault();event.stopPropagation();if(event.shiftKey || key === 'y')redo();else undo();}
     }, {signal:controller.signal});
-    unsubscribe = client.subscribe(state=>{if(!state.writable){cleanup();return;}if(alive()&&state.error)report(state.error);});
+    // Sync errors clear once the client recovers (a later save succeeds), so a fixed failure does not linger on the note.
+    let syncError = false;
+    unsubscribe = client.subscribe(state=>{if(!state.writable){cleanup();return;}if(!alive())return;if(state.error){report(state.error);syncError=true;}else if(syncError){message.textContent='';syncError=false;}});
     if (alive()) start();
   } else unsubscribe = client.subscribe(renderPublic);
   signal?.addEventListener('abort',cleanup,{once:true});

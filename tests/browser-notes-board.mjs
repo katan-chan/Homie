@@ -28,6 +28,14 @@ try {
     assert.equal(await evaluate("document.querySelector('.note-author').textContent"),'Minh Lê');
     assert.deepEqual(await evaluate("[document.querySelectorAll('.notes-board-tab').length,document.querySelector('.notes-board-tab').getAttribute('aria-selected'),document.querySelector('.notes-board-tab').dataset.boardTab===boardId]"),[1,'true',true],'The + tab creates and selects a board');
     assert.deepEqual(await evaluate("[parseFloat(document.querySelector('.paper-note').style.width),parseFloat(document.querySelector('.paper-note').style.height)]"),[360,320],'New notes are 360x320');
+    // Clicking empty note body (well below the text) starts editing, caret at the end.
+    await wait("document.querySelector('.paper-note .note-text[data-editor-state=ready]')");
+    const blank=await evaluate("(()=>{document.querySelector('.paper-note .note-text').scrollIntoView({block:'center'});const r=document.querySelector('.paper-note .note-text').getBoundingClientRect(),t=document.querySelector('.paper-note .tiptap').getBoundingClientRect();const x=r.left+r.width/2,y=r.bottom-20;return {x,y,below:y>t.bottom,hit:document.elementFromPoint(x,y)?.className}})()");
+    assert.deepEqual([blank.below,blank.hit],[true,'note-text'],'Click target is the empty note body');
+    for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,x:blank.x,y:blank.y,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});
+    await wait("document.activeElement?.classList.contains('tiptap')&&document.activeElement.closest('.paper-note')");
+    await call('Input.insertText',{text:'Chạm là viết'});
+    await wait("document.querySelector('.paper-note .tiptap').textContent.includes('Chạm là viết')");
     // Content centre within 3px of the viewport centre, measured on rendered rects.
     const centred=`(root=>{const v=root.querySelector('.notes-viewport').getBoundingClientRect(),r=[...root.querySelectorAll('.paper-note,.paper-column')].map(e=>e.getBoundingClientRect()),x=(Math.min(...r.map(b=>b.left))+Math.max(...r.map(b=>b.right)))/2,y=(Math.min(...r.map(b=>b.top))+Math.max(...r.map(b=>b.bottom)))/2;return Math.abs(x-(v.left+v.width/2))<3&&Math.abs(y-(v.top+v.height/2))<3;})`;
     await wait(`${centred}(document)`);

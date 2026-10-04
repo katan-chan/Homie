@@ -6,7 +6,7 @@ services:
     region: singapore
     branch: main
     autoDeployTrigger: commit
-    buildCommand: node --check backend/server.js
+    buildCommand: npm ci --omit=dev && node --check backend/server.js
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -24,3 +24,7 @@ services:
         value: Lax
       - key: PROFILE_DATA_DIR
         value: .data
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

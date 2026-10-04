@@ -80,6 +80,26 @@ try {
       await a("document.querySelector('[data-color-action=apply]').click();client.flush()");
       assert.equal(await a(colorAt),'#123456','RGB mode applies lowercase #rrggbb');
       await wait(b,`${colorAt}==='#123456'`);
+      // Font size: typed number applies live, steppers and Word-style shortcuts adjust, and peers render it.
+      const sizeAt=colorAt.replace('attrs.color','attrs.fontSize'),sizeField="document.querySelector('.notes-format-row input[data-format=fontSize]')";
+      await a(`editor.commands.setTextSelection({from:3,to:7});${sizeField}.focus();${sizeField}.value='28';${sizeField}.dispatchEvent(new Event('input',{bubbles:true}));client.flush()`);
+      assert.equal(await a(sizeAt),'28px','Typed size applies textStyle fontSize');
+      assert.equal(await a("document.activeElement.dataset.format"),'fontSize','Typing keeps focus in the size field');
+      await wait(b,`${sizeAt}==='28px'`);
+      assert.equal(await b(`getComputedStyle(editor.view.dom.querySelector('span[style*=font-size]')).fontSize`),'28px','Peer renders the size');
+      await a(`${sizeField}.value='500';${sizeField}.dispatchEvent(new Event('change'))`);
+      assert.deepEqual([await a(sizeAt),await a(`${sizeField}.value`)],['72px','72'],'Out-of-range input clamps to 72');
+      await a("editor.commands.setTextSelection({from:3,to:7});document.querySelector('.notes-format-row [data-format=fontSizeDown]').click()");
+      assert.equal(await a(sizeAt),'71px','Minus steps down by 1');
+      const mod="(/Mac/.test(navigator.platform)?{metaKey:true}:{ctrlKey:true})";
+      await a(`editor.view.focus();editor.commands.setTextSelection({from:3,to:7});editor.view.dom.dispatchEvent(new KeyboardEvent('keydown',{key:'[',bubbles:true,cancelable:true,...${mod}}))`);
+      assert.equal(await a(sizeAt),'70px','Mod+[ steps down by 1');
+      await a(`editor.view.dom.dispatchEvent(new KeyboardEvent('keydown',{key:'<',shiftKey:true,bubbles:true,cancelable:true,...${mod}}))`);
+      assert.equal(await a(sizeAt),'68px','Mod+Shift+< steps down by 2');
+      assert.equal(await a(`${sizeField}.value`),'68','Field follows shortcut changes');
+      await a("editor.commands.setTextSelection(3);document.querySelector('.notes-format-row [data-format=fontSizeUp]').click()");
+      assert.deepEqual(await a("(()=>{const sizes=[];editor.state.doc.descendants(node=>{if(node.isText)sizes.push(node.marks.find(mark=>mark.type.name==='textStyle')?.attrs.fontSize);});return [new Set(sizes).size,sizes[0],editor.state.selection.empty,editor.state.selection.from]})()"),[1,'69px',true,3],'Caret-only + resizes the whole note and keeps the caret');
+      assert.equal(await a(colorAt),'#123456','Size keeps the colour');
       await a("editor.commands.setTextSelection({from:3,to:7});document.querySelector('.notes-format-row [data-format=color]').click();document.querySelector('[data-color-mode=wheel]').click();{const light=document.querySelector('.notes-color-light input');light.value='100';light.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.notes-color-wheel').scrollIntoView({block:'center'})");
       const wheel=await a("(()=>{const r=document.querySelector('.notes-color-wheel').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,r:r.width/2};})()");
       await ca.call('Input.dispatchMouseEvent',{type:'mousePressed',x:wheel.x,y:wheel.y,button:'left',buttons:1,clickCount:1});

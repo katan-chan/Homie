@@ -17,6 +17,9 @@ try {
       if (created.pending) throw Error('A connected new-board command must receive its persisted ACK');
       await client.command({type:'note.create',payload:{id:'${noteId}',columnId:null,x:0,y:0,width:240,height:200,color:'#ffeeee'}});
       await new Promise((resolve,reject) => {const timer=setTimeout(()=>reject(Error('online timeout')),5000);const stop=client.subscribe(s=>{if(s.connection==='online'){clearTimeout(timer);queueMicrotask(()=>stop());resolve();}});});
+      // note.create can queue while board.create reconnects; it must reach the server before the offline phase or the peer trash 404s.
+      await client.flush();
+      await new Promise((resolve,reject) => {const timer=setTimeout(()=>reject(Error('note.create ACK timeout')),5000);const stop=client.subscribe(s=>{if(s.durability==='saved'){clearTimeout(timer);queueMicrotask(()=>stop());resolve();}});});
     })()`);
     await call('Network.enable');
     await call('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });

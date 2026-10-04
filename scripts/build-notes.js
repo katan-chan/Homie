@@ -19,7 +19,7 @@ export async function buildNotes() {
         export { Bold } from '@tiptap/extension-bold';
         export { Italic } from '@tiptap/extension-italic';
         export { Underline } from '@tiptap/extension-underline';
-        export { TextStyle, Color } from '@tiptap/extension-text-style';
+        export { TextStyle, Color, FontSize } from '@tiptap/extension-text-style';
         export { BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem } from '@tiptap/extension-list';
         export { Collaboration } from '@tiptap/extension-collaboration';
         export { CollaborationCaret } from '@tiptap/extension-collaboration-caret';

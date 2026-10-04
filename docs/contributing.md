@@ -8,13 +8,13 @@ Dùng DOM API và textContent cho nội dung người dùng; không ghép nội 
 
 UI dùng semantic HTML, nhãn tiếng Việt, keyboard focus nhìn thấy, safe-area và nút chạm tối thiểu 44 px. Canvas trang trí không thay thế heading có thể đọc. Hiệu ứng phải hỗ trợ prefers-reduced-motion; không transform một wrapper nếu làm lệch canvas position:fixed.
 
-Không log secret, token hoặc nội dung riêng tư. Biến PUBLIC_* là public. Không coi tab ẩn hoặc CORS là bảo vệ dữ liệu. Khi có API ghi dữ liệu trong tương lai, thiết kế validation/auth trước khi nối UI.
+Không log secret, token hoặc nội dung riêng tư. Biến PUBLIC_* là public. Không coi tab ẩn hoặc CORS là bảo vệ dữ liệu. Với API ghi mới, thiết kế validation/auth trước khi nối UI.
 
 ## Kiểm tra theo thay đổi
 
 Khi thêm một tab đã được chốt: đọc interface, tạo `js/tabs/<id>.js`, đăng ký trong `js/tabs.js`, thêm CSS có phạm vi khi cần. Không sửa router cho tab mới. Kiểm tra vào/ra tab nhiều lần, chuyển nhanh khi đang tải, lỗi tải và mobile; cập nhật phạm vi. Ví dụ trong interfaces.md chỉ minh họa hợp đồng, không phải tab cần tự thêm.
 
-Repo có npm test cho Node HTTP/auth/profile và npm run test:browser cho CDP với các điều kiện trong authentication.md. Chưa có lint/typecheck. Các script khác trong /private/tmp và kết quả cũ không phải bộ test portable; không báo chúng đạt nếu chưa chạy.
+Repo có npm test (node:test cho HTTP/auth/profile/notes/media/Supabase giả) và các browser test tự chứa: mỗi script tự mở Chrome headless (CHROME_PATH hoặc Chrome/Chromium ở đường dẫn chuẩn), server HTTP local trên port tự cấp và credential fixture; không cần Chrome mở sẵn hay mật khẩu thật. Test media cần FFmpeg/ffprobe trên máy. Chưa có lint/typecheck. Các script khác trong /private/tmp và kết quả cũ không phải bộ test portable; không báo chúng đạt nếu chưa chạy.
 
 | Thay đổi | Kiểm tra tối thiểu |
 | --- | --- |
@@ -27,6 +27,8 @@ Repo có npm test cho Node HTTP/auth/profile và npm run test:browser cho CDP v�
 | Animation | Chuyển tab mượt và không lệch canvas; chế độ reduced motion không chạy hiệu ứng |
 | Backend | Health/method/path/Origin; import không listen; build không lộ backend/secret |
 | Auth/profile | npm test; guest public GET; session/CSRF; chỉ owner PUT; lỗi lưu/expired giữ draft; cookie/storage production |
+| Notes/board/media | npm test; npm run test:notes-browser; khách chỉ đọc; offline rồi kết nối lại; logout giữa chừng; hai trình duyệt cùng sửa |
+| Storage Supabase | npm run test:supabase với .env thật (ghi dưới tiền tố test- rồi tự xóa; thiếu biến thì SKIP) |
 
 Lệnh sẵn có:
 
@@ -37,6 +39,11 @@ npm run build
 node --check js/app.js
 node --check backend/server.js
 npm test
+npm run test:browser        # đăng nhập/hồ sơ
+npm run test:layout         # bố cục các viewport
+npm run test:notes-browser  # tuần tự tests/browser-notes*.mjs và browser-note-media.mjs
+npm run test:notes-stack    # proof editor/Yjs/bundle
+npm run test:supabase       # live, cần .env
 ```
 
 Chỉ chạy backend khi thay đổi liên quan. HTTP cần thiết cho ES modules; không kiểm tra bằng file://. Dùng URL mới hoặc reload thật khi kiểm tra để tránh navigation cùng URL giữ module cũ.

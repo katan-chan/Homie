@@ -73,7 +73,9 @@ export function render(container, { signal }) {
     trash.onclick=showBoardTrash;actions.append(trash,library);
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabButtons.values()];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});
-  const unsubscribe=subscribeBoards({signal},result=>{if(!alive())return;if(result.boards===null){status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';renderTabs();return;}
+  let catalogOffline=false;
+  const unsubscribe=subscribeBoards({signal},result=>{if(!alive())return;if(result.boards===null){renderTabs();status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';catalogOffline=true;return;}
+    if(catalogOffline){catalogOffline=false;status.textContent='';}
     boards=result.boards;catalogLoaded=true;pending=pending.filter(p=>!boards.some(b=>b.id===p.id));if(account)save(pendingKey(account),pending);reconcile();
   });
   function authChanged(){const next=getUser()?.id||null;if(next===account)return;stopCurrent();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();account=next;pending=account?stored(pendingKey(account),[]):[];explicitTrash=false;renderActions();reconcile();}

@@ -10,7 +10,7 @@ export async function mediaBytes(format = 'png', { width = 16, height = 16, dura
   if (format === 'mp4') args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
   args.push(path);
   try {
-    await new Promise((resolve, reject) => { const p = spawn(process.env.FFMPEG_PATH || '/opt/homebrew/bin/ffmpeg', args);let log='';p.stderr.on('data',c=>log+=c);p.on('error',reject);p.on('close',code=>code?reject(Error(log)):resolve()); });
+    await new Promise((resolve, reject) => { const p = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args);let log='';p.stderr.on('data',c=>log+=c);p.on('error',reject);p.on('close',code=>code?reject(Error(log)):resolve()); });
     return await readFile(path);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }

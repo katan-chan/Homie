@@ -63,7 +63,7 @@ test('editing trash merges retained Yjs without resurrection and metadata revisi
 
 test('Yjs rejects metadata roots, unexpected nodes, unsafe attributes and malformed bytes without committing', async t => {
   const f = await fixture(t), before = await readFile(join(f.dataDir, 'notes.json'), 'utf8');
-  for (const update of [new Uint8Array([255]), (() => { const d = new Y.Doc(); d.getMap('owner').set('authorId', 'haiyen'); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })(), (() => { const d = new Y.Doc(); const el = new Y.XmlElement('script'); d.getXmlFragment('body').insert(0, [el]); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })(), (() => { const d = new Y.Doc(); const el = new Y.XmlElement('paragraph'); el.setAttribute('onclick', 'evil()'); d.getXmlFragment('body').insert(0, [el]); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })()]) {
+  for (const update of [new Uint8Array([255]), (() => { const d = new Y.Doc(); d.getMap('owner').set('authorId', 'haiyen'); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })(), (() => { const d = new Y.Doc(); const el = new Y.XmlElement('script'); d.getXmlFragment('body').insert(0, [el]); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })(), (() => { const d = new Y.Doc(); const el = new Y.XmlElement('paragraph'); el.setAttribute('onclick', 'evil()'); d.getXmlFragment('body').insert(0, [el]); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })(), ...['1px;background:url(x)', '200px', '9px'].map(fontSize => { const d = new Y.Doc(); const el = new Y.XmlElement('paragraph'), text = new Y.XmlText(); el.insert(0, [text]); d.getXmlFragment('body').insert(0, [el]); text.insert(0, 'x', { textStyle: { fontSize } }); const u = Y.encodeStateAsUpdate(d); d.destroy(); return u; })]) {
     await assert.rejects(f.store.applyText('minhle', f.noteId, update, randomUUID()), { code: 'invalid_text' });
     assert.equal(await readFile(join(f.dataDir, 'notes.json'), 'utf8'), before);
   }
@@ -162,17 +162,17 @@ test('undo of a created container refuses to hide children added by a peer', asy
 
 test('installed Tiptap schema persists every approved list and formatting type, with concurrent Yjs edits', async t => {
   const [{ getSchema }, { default: Document }, { default: Paragraph }, { default: Text },
-    { default: Bold }, { default: Italic }, { default: Underline }, { TextStyle, Color },
+    { default: Bold }, { default: Italic }, { default: Underline }, { TextStyle, Color, FontSize },
     { BulletList, OrderedList, ListItem, TaskList, TaskItem }, { prosemirrorJSONToYDoc }] = await Promise.all([
     import('@tiptap/core'), import('@tiptap/extension-document'), import('@tiptap/extension-paragraph'),
     import('@tiptap/extension-text'), import('@tiptap/extension-bold'), import('@tiptap/extension-italic'),
     import('@tiptap/extension-underline'), import('@tiptap/extension-text-style'),
     import('@tiptap/extension-list'), import('@tiptap/y-tiptap'),
   ]);
-  const schema = getSchema([Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color,
+  const schema = getSchema([Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color, FontSize,
     BulletList, OrderedList, ListItem, TaskList, TaskItem]);
   const paragraph = { type: 'paragraph', content: [{ type: 'text', text: 'Việt Nam', marks: [
-    { type: 'bold' }, { type: 'italic' }, { type: 'underline' }, { type: 'textStyle', attrs: { color: '#ff00ff' } },
+    { type: 'bold' }, { type: 'italic' }, { type: 'underline' }, { type: 'textStyle', attrs: { color: '#ff00ff', fontSize: '28px' } },
   ] }] };
   const content = { type: 'doc', content: [paragraph,
     { type: 'bulletList', content: [{ type: 'listItem', content: [paragraph] }] },
@@ -198,6 +198,7 @@ test('installed Tiptap schema persists every approved list and formatting type, 
   const merged = json.content[0].content.map(node => node.text).join('');
   assert.ok(merged.includes('Minh ')); assert.ok(merged.includes('Yến ')); assert.ok(merged.includes('Việt Nam'));
   assert.deepEqual(json.content[1].content[0].content[0].content[0].marks.map(mark => mark.type).sort(), ['bold', 'italic', 'textStyle', 'underline'].sort());
+  assert.deepEqual(json.content[0].content.at(-1).marks.find(mark => mark.type === 'textStyle').attrs, { color: '#ff00ff', fontSize: '28px' });
   schema.nodeFromJSON(json).check();
 });
 

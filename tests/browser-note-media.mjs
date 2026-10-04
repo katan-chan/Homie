@@ -4,7 +4,7 @@ import { withBrowser } from './helpers/notes-browser.mjs';
 import { createNotesFixture, fixturePasswords } from './helpers/notes-fixture.mjs';
 import { mediaBytes } from './helpers/media-fixture.mjs';
 
-const fixture=await createNotesFixture({app:true,ffmpegPath:'/opt/homebrew/bin/ffmpeg',ffprobePath:'/opt/homebrew/bin/ffprobe'});
+const fixture=await createNotesFixture({app:true,ffmpegPath:process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath:process.env.FFPROBE_PATH || 'ffprobe'});
 try {await withBrowser(async(evaluate,{call})=>{
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   // Headless pages may lack window focus; emulate it so focusin activates the shared format row.

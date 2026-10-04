@@ -17,6 +17,8 @@ export async function createNotesFixture({ app = false, ...options } = {}) {
         path: req.url, method: req.method, headers: req.headers }, upstream => {
         res.writeHead(upstream.statusCode, upstream.headers); upstream.pipe(res);
         res.on('close', () => upstream.destroy());
+        // A dropped backend connection must drop the browser's too, like a real gateway (EventSource then reconnects).
+        upstream.on('close', () => { if (!upstream.complete) res.destroy(); });
       });
       proxy.on('error', () => { if (!res.headersSent) res.writeHead(503); res.end(); });
       req.pipe(proxy); req.on('aborted', () => proxy.destroy());

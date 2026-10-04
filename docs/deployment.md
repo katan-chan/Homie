@@ -6,14 +6,16 @@ Backend Render: [homie-api-vd9v.onrender.com](https://homie-api-vd9v.onrender.co
 
 Production frontend gọi `/api/...` cùng origin. `vercel.json` proxy các request này tới backend Render; không đặt `PUBLIC_API_BASE_URL` thành origin Render trong project Vercel khi dùng proxy. Cookie `HttpOnly; Secure; SameSite=Lax` không cần đổi sang cookie cross-site. Backend cho phép origin `https://homie-ecru.vercel.app`.
 
-Frontend là website tĩnh; backend có health, auth/session và public profile API. Không cần thư viện ngoài, dùng Node.js 22. Xem [contract](authentication.md).
+Frontend là website tĩnh; backend có health, auth/session, profile API và notes API (SSE, media). Dùng Node.js 22. Backend import `yjs` từ dependencies nên host phải chạy `npm ci` (có thể `--omit=dev`) trước khi start; `node --check` không phát hiện thiếu package. Xem [contract](authentication.md) và [interfaces](interfaces.md#notes-api).
 
-## Điều kiện trước khi deploy auth/profile
+## Điều kiện trước khi deploy auth/profile/notes
 
 - Đặt MINHLE_PASSWORD_HASH và HAIYEN_PASSWORD_HASH trong secret environment server; không đặt ở Vercel frontend/public env. Local .env không được tự gửi lên hosting.
 - Chọn proxy /api cùng origin hoặc domain frontend/API cùng site để cookie SameSite=Lax hoạt động. Vercel mặc định và Render mặc định khác site: chỉ đặt PUBLIC_API_BASE_URL chưa đủ. SESSION_SAME_SITE=None yêu cầu Secure production và browser cho phép cookie cross-site; không là đảm bảo tương thích mọi browser.
-- Storage bền: đặt `SUPABASE_URL` và `SUPABASE_SECRET_KEY` trên Render (Environment). Khi có hai biến này, hồ sơ và notes lưu trong bảng `public.documents` (mỗi khóa là một tài liệu JSON) và hình note lưu trong bucket private `note-media` của Supabase; thiếu biến thì backend dùng file trong `PROFILE_DATA_DIR` như local. Bảng tạo một lần bằng SQL Editor (`create table public.documents (key text primary key, value jsonb not null, updated_at timestamptz not null default now()); alter table public.documents enable row level security; revoke all on public.documents from anon, authenticated;`). Secret key chỉ ở server; publishable key không dùng. Kiểm tra với project thật bằng `npm run test:supabase` (ghi dưới tiền tố `test-…` rồi tự xóa). Chuyển đổi hình vẫn cần `ffmpeg`/`ffprobe` trên host backend; Render Node runtime hiện chưa có. Không tự đổi gói trả phí.
-- Session giữ RAM một instance; restart cần đăng nhập lại. Profile file chỉ hỗ trợ một process ghi. Rate limit socket-IP sau reverse proxy cần đánh giá trước production.
+- Storage bền: đặt `SUPABASE_URL` và `SUPABASE_SECRET_KEY` trên Render (Environment). Khi có hai biến này, hồ sơ và notes lưu trong bảng `public.documents` (mỗi khóa là một tài liệu JSON) và hình note lưu trong bucket private `note-media` của Supabase; thiếu biến thì backend dùng file trong `PROFILE_DATA_DIR` như local. Bảng tạo một lần bằng SQL Editor (`create table public.documents (key text primary key, value jsonb not null, updated_at timestamptz not null default now()); alter table public.documents enable row level security; revoke all on public.documents from anon, authenticated;`). Bucket private `note-media` cũng tạo một lần trong Storage (backend không tự tạo; đổi tên bằng `SUPABASE_BUCKET`). Media luôn đi qua backend, không dùng public URL. Secret key chỉ ở server; publishable key không dùng. `SUPABASE_PREFIX` chỉ dùng để tách dữ liệu test. Kiểm tra với project thật bằng `npm run test:supabase` (ghi dưới tiền tố `test-…` rồi tự xóa). Không tự đổi gói trả phí.
+- FFmpeg/ffprobe: upload hình cần hai executable trên host backend (`FFMPEG_PATH`, `FFPROBE_PATH`, mặc định tìm trong PATH). Backend không kiểm tra lúc khởi động; thiếu công cụ thì xem trước upload trả 503 `media_unavailable`, phần còn lại của notes vẫn chạy. Render native Node runtime không có FFmpeg nên upload trên production sẽ lỗi cho tới khi backend chạy trong môi trường có FFmpeg (ví dụ Docker image tự cài). Chưa triển khai Dockerfile.
+- Một process: session giữ RAM, restart cần đăng nhập lại. Snapshot notes được ghi lại toàn bộ mỗi mutation từ state trong RAM của process, nên không chạy nhiều instance hoặc scale ngang; hai process sẽ ghi đè lẫn nhau. Rate limit socket-IP sau reverse proxy cần đánh giá trước production.
+- Realtime dùng SSE (`GET /api/boards/:id/events`, heartbeat 3 giây, `X-Accel-Buffering: no`). Chưa kiểm chứng SSE đi qua rewrite `/api` của Vercel tới Render; nếu proxy buffer hoặc cắt stream, client mất cập nhật realtime. Cần kiểm tra trên môi trường review trước khi coi production sẵn sàng.
 
 ## 1. Render
 
@@ -21,7 +23,7 @@ Service hiện được tạo qua CLI từ URL repo. Trong [Account Settings](ht
 
 Điền `FRONTEND_ORIGINS` bằng URL frontend, ví dụ `https://your-project.vercel.app`. Có thể điền sau khi tạo project Vercel rồi restart backend. Nhiều origin cách nhau bằng dấu phẩy, không có dấu `/` cuối URL. Chỉ thêm URL preview cụ thể khi cần, không mở toàn bộ `*.vercel.app`.
 
-Nếu tạo Web Service thủ công: Root Directory để trống, Runtime Node, Build Command `node --check backend/server.js`, Start Command `npm start`, Health Check Path `/api/health`. Render tự cấp `PORT`; server lắng nghe trên `0.0.0.0`.
+Nếu tạo Web Service thủ công: Root Directory để trống, Runtime Node, Build Command `npm ci --omit=dev && node --check backend/server.js`, Start Command `npm start`, Health Check Path `/api/health`. `render.yaml` và service hiện tại vẫn ghi Build Command cũ chỉ có `node --check`; cần cập nhật trước khi deploy notes. Render tự cấp `PORT`; server lắng nghe trên `0.0.0.0`.
 
 Lưu URL thực tế Render cấp, ví dụ `https://your-api.onrender.com`, và kiểm tra `/api/health` trả `{"status":"ok"}`. Không giả định URL từ tên service vì Render có thể thêm hậu tố.
 
@@ -35,7 +37,7 @@ Kết nối project Vercel với repository GitHub và đặt Production Branch 
 
 Sau khi có domain Vercel, cập nhật `FRONTEND_ORIGINS` trên Render. Nếu dùng domain riêng, thêm origin đó. CORS chỉ giới hạn đọc qua trình duyệt, không thay thế xác thực.
 
-Build chỉ sao chép `index.html`, `styles.css`, `js/`, `assets/` vào `dist/`; backend, tài liệu và `.env` không được xuất bản. Hash routing `#garden`/`#dashboard` không cần SPA rewrite.
+Build tạo `assets/vendor/notes.js` rồi chỉ sao chép `index.html`, `styles.css`, `styles/`, `js/`, `assets/` vào `dist/`; backend, tài liệu, `.env` và `.data/` (gồm media) không được xuất bản. Hash routing `#garden`/`#dashboard` không cần SPA rewrite.
 
 ## Kết nối API khi thêm tính năng
 
@@ -48,12 +50,21 @@ if (!response.ok) throw new Error(`API returned ${response.status}`);
 const health = await response.json();
 ```
 
-js/auth.js gọi API với credentials: include. Mutation gửi X-Requested-With: Homie và JSON nếu có body. Profile GET công khai, PUT chỉ owner. Không dùng fetch mặc định không credentials cho session hoặc mutation.
+js/auth.js và js/notes/client.js gọi API với credentials: include. Mutation gửi X-Requested-With: Homie và JSON nếu có body. Profile và bảng ghi chú GET công khai; PUT profile chỉ owner, mutation notes cần session. Không dùng fetch mặc định không credentials cho session hoặc mutation.
 
 ## Chạy local
 
 Nếu chưa có .env, dùng .env.example làm cấu trúc và provision hai salted hash bằng hashPassword trong backend/auth.js; không ghi đè .env đang chứa hash. Chạy npm run dev:backend và npm run dev trong hai terminal. Mở http://localhost:8000/ hoặc http://127.0.0.1:8000/; source config local chọn API hostname khớp frontend. npm run build không tự đọc .env; node --env-file=.env scripts/build.js đọc env nhưng chỉ xuất config API public vào dist.
 
 Kiểm tra build bằng `npm run build` và backend bằng `GET /api/health`.
+
+## Sao lưu và khôi phục
+
+Snapshot notes tham chiếu media theo asset ID, nên phải sao lưu cùng lúc. Backend không xóa file media đã đăng ký (gỡ khỏi thư viện chỉ đánh dấu), vì vậy chép snapshot trước rồi media sau luôn cho bộ media đủ cho snapshot.
+
+- Supabase: xuất các hàng `profiles` và `notes` của bảng `public.documents` (SQL Editor hoặc `pg_dump --table public.documents`), rồi tải toàn bộ object trong bucket `note-media`. Tốt nhất khi không có ai đang sửa.
+- File: dừng backend, sao chép cùng lúc `.data/profiles.json`, `.data/notes.json` và `.data/note-media/`. Bỏ qua `.data/note-media-tmp/` (chỉ là file tạm).
+
+Khôi phục khi backend đã dừng: đưa media vào trước (cùng tên file), rồi ghi snapshot/tài liệu, sau đó khởi động. Backend chỉ đọc snapshot lúc khởi tạo notes và ghi đè toàn bộ ở mutation kế tiếp, nên khôi phục khi đang chạy sẽ bị ghi đè.
 
 Tham khảo: [Render Blueprint](https://render.com/docs/blueprint-spec), [Vercel configuration](https://vercel.com/docs/project-configuration/vercel-json).

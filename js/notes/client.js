@@ -132,10 +132,13 @@ export function createNotesStorage() {
 
 /** fn receives {boards,error?}. The stream stays established during boards-refresh GET. */
 export function subscribeBoards({ signal, transport = createNotesTransport() } = {}, fn) {
-  let closed = false, revision = 0;
+  let closed = false, revision = 0, close = () => {}, retry = null;
   const controller = new AbortController();
-  const close = transport.stream('/api/boards/events', { signal: controller.signal, onError: error => {
-    if (!closed) fn({ boards: null, error: error?.message ?? 'offline' });
+  // EventSource retries network drops itself but gives up (readyState CLOSED) after an HTTP error such as 503; reopen then.
+  const connect = () => { close = transport.stream('/api/boards/events', { signal: controller.signal, onError: error => {
+    if (closed) return;
+    fn({ boards: null, error: error?.message ?? 'offline' });
+    if (error?.target?.readyState === 2 && !retry) retry = setTimeout(() => { retry = null; if (!closed) { close(); connect(); } }, 3000);
   }, onEvent(name, data) {
     if (closed) return;
     if (name === 'boards') { revision++; fn(clone(data)); }
@@ -145,8 +148,9 @@ export function subscribeBoards({ signal, transport = createNotesTransport() } =
         if (!closed && request === revision) fn(value);
       }).catch(error => { if (!closed && request === revision) fn({ boards: null, error: error.message }); });
     }
-  } });
-  const cleanup = () => { if (closed) return; closed = true; controller.abort(); close(); signal?.removeEventListener('abort', cleanup); };
+  } }); };
+  connect();
+  const cleanup = () => { if (closed) return; closed = true; clearTimeout(retry); controller.abort(); close(); signal?.removeEventListener('abort', cleanup); };
   signal?.addEventListener('abort', cleanup, { once: true });
   if (signal?.aborted) cleanup();
   return cleanup;
@@ -610,6 +614,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   startStream();
   heartbeat = setInterval(() => {
     if (!closed) check();
+    // A 5xx or a stream closed by an HTTP error never fires the browser 'online' event; retry through a fresh stream.
+    if (connection === 'offline' && globalThis.navigator?.onLine !== false) { reconnect().catch(() => {}); return; }
     if (!writable() || connection !== 'online') return;
     for (const { target } of leases.values()) renewLease(target).catch(failure => { leases.clear(); leaseState = 'lost'; failed(failure); });
     if (latestPresence) publishPresence(latestPresence).catch(() => {});

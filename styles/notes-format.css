@@ -4,6 +4,7 @@
 .notes-format-row :focus-visible,.note-asset-picker :focus-visible{outline:3px solid #8b4f68;outline-offset:2px}
 .notes-format-hint{margin:0 6px;font:italic 14px/1.4 Georgia,serif;color:#7a5a60}
 .notes-format-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:44px;padding:6px 11px;border:1px solid #bf939666;border-radius:10px;background:#fffaf4;color:#654c51;font:15px/1.1 Georgia,serif;cursor:pointer;transition:background-color .15s,border-color .15s}
+.notes-format-size{display:inline-flex;align-items:center;gap:4px}.notes-format-size .notes-format-button{min-width:44px;padding:6px;font-size:18px}.notes-format-row .notes-format-size input{width:3.6em;min-width:0;min-height:44px;padding:6px 4px;border:1px solid #bf939666;border-radius:10px;background:#fffaf4;color:#654c51;font:15px/1.1 Georgia,serif;text-align:center;cursor:text;box-shadow:none}.notes-format-row .notes-format-size input:disabled{opacity:.45;border-style:dashed;background:#f6efe9;cursor:default}.notes-format-size-unit{font:13px Georgia,serif;color:#8a6b73;margin-left:-2px}
 .notes-format-button:hover:not(:disabled){background:#f8e4e8;border-color:#bd899b}
 .notes-format-button[aria-pressed=true]{background:#ecd2df;border-color:#9a3456;color:#6f2440}
 .notes-format-button[aria-expanded=true]{border-color:#9a3456;background:#f8e4e8}

@@ -13,6 +13,7 @@
     "test:notes-stack": "node --test tests/notes-stack.test.js",
     "test:browser": "node tests/browser-auth.mjs",
     "test:layout": "node tests/browser-layout.mjs",
+    "test:notes-browser": "for f in tests/browser-notes-*.mjs tests/browser-note-media.mjs; do echo \"== $f\"; node \"$f\" || exit 1; done",
     "test:supabase": "node --env-file-if-exists=.env tests/supabase-live.mjs"
   },
   "engines": {

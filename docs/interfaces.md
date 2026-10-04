@@ -25,7 +25,7 @@ js/tabs.js xuất mảng tabs. Thứ tự mảng là thứ tự menu; load khôn
 
 resolveTab(tabs, hash) trong js/routing.js là hàm thuần: chọn ID được bật; fallback garden được bật, rồi mục bật đầu tiên; trả null nếu tất cả tắt. Không sửa hash, DOM hoặc lịch sử bên trong resolver. App chuẩn hóa hash bằng history.replaceState.
 
-Các ID hiện có: garden, dashboard, minhle, haiyen. Chỉ dashboard có requiresAuth; hai hồ sơ và garden công khai. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
+Các ID hiện có: garden, dashboard, minhle, haiyen; hiện không tab nào đặt requiresAuth (app vẫn hỗ trợ field này). Dashboard công khai, tự ẩn thao tác ghi khi chưa đăng nhập. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
 
 ## Tab render và cleanup
 
@@ -68,7 +68,8 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/background.js | Hai canvas dùng chung, tải ảnh độc lập, image retry, resize và cleanup của shell |
 | js/tabs/garden.js | Tiêu đề, lettering fallback và cleanup nội dung homepage |
 | js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
-| js/tabs/dashboard.js | UI giữ chỗ của dashboard |
+| js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
+| js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
 | scripts/build.js | Tạo dist/ và thay cấu hình API public |
@@ -83,7 +84,7 @@ Nền tồn tại qua chuyển tab, cả màn hình yêu cầu đăng nhập và
 
 js/config.js xuất API_BASE_URL. Local mặc định http://localhost:3001; build lấy PUBLIC_API_BASE_URL, chỉ chấp nhận HTTP(S) origin không credentials, path, query hoặc hash. Frontend deploy Vercel không cấu hình API thì giá trị rỗng. Không tự gọi fetch với giá trị rỗng khi cần một backend riêng; UI phải xử lý trạng thái chưa cấu hình nếu tính năng đó được bổ sung.
 
-Backend xuất createBackend(frontendOrigins?, options?), trả Node http.Server chưa listen. Entry point đọc PORT và listen; import module để test không mở port. FRONTEND_ORIGINS là danh sách origin phân cách bằng dấu phẩy, so khớp chính xác. options hỗ trợ credentials, dataDir, production, sessionTtlMs, sameSite cho test; không nhận options từ HTTP request. Auth/profile contract chính thức tại [authentication.md](authentication.md).
+Backend xuất createBackend(frontendOrigins?, options?), trả Node http.Server chưa listen. Entry point đọc PORT và listen; import module để test không mở port. FRONTEND_ORIGINS là danh sách origin phân cách bằng dấu phẩy, so khớp chính xác. options hỗ trợ credentials, dataDir, production, sessionTtlMs, sameSite, remote (storage Supabase giả hoặc null), ffmpegPath, ffprobePath cho test; không nhận options từ HTTP request. Server env: PORT, FRONTEND_ORIGINS, PROFILE_DATA_DIR (mặc định `.data`, dùng cho cả notes và media khi không có Supabase), SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_BUCKET (mặc định `note-media`), SUPABASE_PREFIX (namespace cho test), FFMPEG_PATH, FFPROBE_PATH (mặc định tìm `ffmpeg`/`ffprobe` trong PATH); không biến nào là PUBLIC_*. Auth/profile contract chính thức tại [authentication.md](authentication.md).
 
 | Request hiện có | Kết quả |
 | --- | --- |
@@ -93,7 +94,33 @@ Backend xuất createBackend(frontendOrigins?, options?), trả Node http.Server
 | Path khác | 404, JSON { "error": "Not found" } |
 | Origin gửi lên ngoài allowlist | 403, JSON { "error": "Origin not allowed" } |
 
-CORS check chạy trước route. Public GET/HEAD không yêu cầu Origin; mutation POST/PUT luôn yêu cầu allowlisted Origin và X-Requested-With: Homie. CORS cho phép credentials, GET/HEAD/POST/PUT/OPTIONS và Content-Type/X-Requested-With. Auth cookie/session quyết định danh tính; PUT profile so owner với ID lấy từ session. Chưa có notes API hoặc database. Hồ sơ lưu file atomic, một process; không tự suy ra schema ghi chép từ dashboard.
+CORS check chạy trước route. Public GET/HEAD không yêu cầu Origin; mutation POST/PUT luôn yêu cầu allowlisted Origin và X-Requested-With: Homie. CORS cho phép credentials, GET/HEAD/POST/PUT/OPTIONS và Content-Type/X-Requested-With (route notes thêm X-Note-Metadata). Auth cookie/session quyết định danh tính; PUT profile so owner với ID lấy từ session. Notes khởi tạo lazily ở request notes đầu tiên; lỗi khởi tạo trả 503 `storage_unavailable` cho route notes và được thử lại ở request sau, không ảnh hưởng health/auth/profile.
+
+## Notes API
+
+Route trong backend/notes-api.js (`notesRoute`). Mọi lỗi trả JSON `{ error, code }`; ID là UUID, sai trả 400. POST/PUT cần session, Origin allowlist và X-Requested-With: Homie (thiếu 401/403); `accountId` trong body phải bằng session, khác trả 403 `account_mismatch`. Method sai trả 405 kèm Allow; mọi route nhận OPTIONS 204.
+
+| Request | Quyền | Kết quả |
+| --- | --- | --- |
+| GET/HEAD /api/boards | Công khai | `{ boards }` đang hoạt động |
+| GET/HEAD /api/boards/events | Công khai, SSE | `boards` (hoặc `boards-refresh` khi frame quá lớn) |
+| GET/HEAD /api/boards/trash | Session | `{ boards }` đã bỏ vào thùng rác |
+| GET/HEAD /api/boards/:id | Công khai | `{ board }` projection công khai; 404 nếu không còn hoạt động |
+| GET/HEAD /api/boards/:id/collaboration | Session | `{ board }` riêng: text Yjs base64 và mục trong thùng rác |
+| GET/HEAD /api/boards/:id/events?clientId= | Công khai, SSE | `snapshot`, `projection`, `projection-refresh`; có session thêm `text-update`, `refresh`, `presence`, kết thúc bằng `auth-required` khi session hết |
+| POST /api/boards/commands | Session | `{ command: { operationId, accountId, boardId, baseRevision, type, payload }, clientId, leaseTokens? }`, tối đa 16 KiB |
+| POST /api/notes/:id/text | Session | `{ accountId, operationId, update }`, update là Yjs base64 tối đa 256 KiB |
+| POST /api/boards/:id/leases | Session | `{ accountId, clientId, action: acquire\|renew\|release, target \| leaseToken }` → `{ leaseToken, expiresAt }` hoặc `{ released: true }`; lease 10 giây |
+| POST /api/boards/:id/presence | Session | `{ accountId, clientId, pointer, editors }` (≤16 editor, ≤8 KiB) → `{ expiresAt }`; hết hạn sau 15 giây |
+| GET/HEAD /api/note-assets | Session | `{ assets }` thư viện |
+| POST /api/note-assets[?preview=1] | Session | Body `application/octet-stream` ≤10 MiB, header X-Note-Metadata là JSON base64 `{ accountId, operationId, hash, name, mimeType, spritesheet?, previewId? }`. `preview=1` trả `{ previewId, expiresAt, asset }`; xác nhận cần previewId còn hạn của cùng session, nếu không 409 `preview_required` |
+| PUT /api/note-assets/:id | Session | `{ accountId, operationId, action: "rename", name }` hoặc `action: "remove"` |
+| GET/HEAD /api/note-assets/:id/file\|poster | Khách: chỉ asset đang được chèn vào note còn hoạt động; session: mọi asset | Stream file, `X-Content-Type-Options: nosniff` |
+| GET/HEAD /api/note-assets/previews/:id/file\|poster | Session đã tạo preview | Bản chuyển đổi chờ xác nhận, hết hạn sau 5 phút |
+
+Command `type`: `board.create|rename|trash|restore`, `column.create|update|trash|restore`, `note.create|update|move|trash|restore`, `decoration.add|update|remove`, `command.undo`. Server lấy tác giả từ session, từ chối field lạ; đổi geometry cần lease của chính client. Lặp lại cùng operationId và nội dung trả kết quả gốc; khác nội dung trả 409 `operation_conflict`.
+
+Mã trạng thái chính: 400 dữ liệu sai; 401 `unauthorized`; 403 `forbidden`/`account_mismatch`; 404 `not_found`; 408 `media_timeout`; 409 `lease_conflict`, `lease_required`, `deleted`, `undo_conflict`, `wrong_board`, `preview_required`, `presence_conflict`; 413 `body_too_large`/`media_too_large`; 415 sai Content-Type; 429 `stream_limit`, `lease_limit`, `presence_limit`, `media_busy`; 503 `storage_unavailable`, `durability_uncertain` (đã có thể ghi, thử lại cùng operationId), `store_closed`, `media_unavailable` (thiếu FFmpeg/ffprobe). SSE gửi `retry: 1000`, heartbeat 3 giây và header `X-Accel-Buffering: no`; mỗi session tối đa 16 stream, toàn server 128.
 
 ## Thay đổi interface
 
@@ -104,13 +131,13 @@ Trước khi đổi signature, field registry, route hoặc config export: tìm 
 
 `js/notes/client.js` xuất `openBoardClient({boardId,accountId=null,signal,transport?,storage?,session?}) -> Promise<Client>`, `createNotesTransport(options?)`, `createNotesStorage()` và `subscribeBoards({signal,transport?},fn) -> cleanup`. Promise mở client hoàn tất sau khi đọc cache; `subscribe(fn)` gọi ngay và tiếp tục báo `{snapshot,connection,writable,pending,durability,error,leaseState,leases,presence,history}`. Không coi mở client là đã kết nối hoặc đã ACK. `API_BASE_URL` rỗng dùng `/api` cùng origin theo proxy hiện tại.
 
-`Client` có `command(command)`, `applyText(noteId,Uint8Array)`, `flush()`, `close()`, `reconnect()`, `refresh()`, `getState()`, `getPending()`, `discardPending(operationId)`, `getDocument(noteId)`, `getAwareness(noteId)`, `acquireLease(target)`, `renewLease(target)`, `releaseLease(target)`, `publishPresence({pointer,editors})`, `undo()`, `redo()`, `listTrash()`, `authenticatedRequest(path,options)` và `queueUpload({path,file,name,fields,operationId})`. Command nhận envelope đầy đủ hoặc `{type,payload,operationId?,baseRevision?}`; client bổ sung account/board hiện tại. Offline trả `{operationId,pending:true}` sau khi persist; ACK trả result server. Receipt ACK và fingerprint được lưu cùng queue theo account+board; retry cùng ID/cùng nội dung trả result gốc, khác nội dung bị `operation_conflict`. `flush()` trả state, không bảo đảm mọi queue item đã được ACK: kiểm tra `pending` và `error`. `close()` idempotent, chờ các write local đã bắt đầu, giữ draft/queue.
+`Client` có `command(command)`, `applyText(noteId,Uint8Array)`, `flush()`, `close()`, `reconnect()`, `refresh()`, `getState()`, `getPending()`, `discardPending(operationId)`, `getDocument(noteId)`, `getAwareness(noteId)`, `acquireLease(target)`, `renewLease(target)`, `releaseLease(target)`, `publishPresence({pointer,editors})`, `undo()`, `redo()`, `listTrash()`, `authenticatedRequest(path,options)`, `queueUpload({path,file,name,fields,operationId})` và `getUploadReceipt(operationId)`. Command nhận envelope đầy đủ hoặc `{type,payload,operationId?,baseRevision?}`; client bổ sung account/board hiện tại. Offline trả `{operationId,pending:true}` sau khi persist; ACK trả result server. Receipt ACK và fingerprint được lưu cùng queue theo account+board; retry cùng ID/cùng nội dung trả result gốc, khác nội dung bị `operation_conflict`. `flush()` trả state, không bảo đảm mọi queue item đã được ACK: kiểm tra `pending` và `error`. `close()` idempotent, chờ các write local đã bắt đầu, giữ draft/queue.
 
 `getDocument` chỉ cho account gốc đang live, trả per-note Y.Doc có root `body`. Editor dùng chính document này qua bundle vendor, không seed từ public JSON. Authenticated SSE được mở trước GET collaboration; mọi snapshot/delta merge bằng Yjs. `js/auth.js` bổ sung read-only `getAuthGeneration()`; signature cũ của `apiRequest` giữ nguyên. 401 ở mọi helper request được xử lý chung theo generation; response lỗi muộn từ generation cũ trả `stale_client`, không expire session mới. Logout/401 dừng write/presence/upload, dọn private UI state rồi lấy public projection mới; không đổi account của client cũ. Chỉ login lại cùng account với generation mới mới tiếp tục queue.
 
 Queue namespace gồm account+board; database note y-indexeddb thêm note ID. `durability` khởi đầu là `unknown` khi chỉ có cache/chưa xác nhận server, sau đó là `saving`, `local` (persist local, chưa ACK), `saved` (không pending), hoặc `unsaved` (write local thất bại). Guest chỉ cache projection công khai. Lease mất khi offline, geometry replay phải acquire token mới và defer khi peer giữ. Undo chỉ nhận operation thuộc history của chính client; server vẫn kiểm tra revision/lease. Text vẫn có thể ACK dưới tombstone mà không restore note.
 
-Upload helper persist Blob tối đa 50 MiB, tên và fields dạng string; khi gửi tạo multipart gồm accountId, operationId, fields và file. Endpoint `/api/assets` và media protocol thuộc Task 7, chưa được helper này triển khai server. Blob giữ account gốc qua logout; không cache cookie/mật khẩu. Chi tiết wire và handoff producer nằm trong report Task 3/4.
+`queueUpload` nhận file tối đa 10 MiB, tính SHA-256 rồi persist Blob vào hàng đợi; tổng file chờ trên thiết bị tối đa 50 MiB (`upload_quota`). Khi gửi, body là file thô và metadata nằm trong X-Note-Metadata như bảng Notes API; mặc định path `/api/note-assets`, thư viện dùng `?preview=1` trước khi xác nhận. `getUploadReceipt(operationId)` trả kết quả ACK đã lưu. Blob giữ account gốc qua logout; không cache cookie/mật khẩu.
 
 ## Editor ghi chú và presence
 
@@ -118,7 +145,7 @@ Upload helper persist Blob tối đa 50 MiB, tên và fields dạng string; khi 
 
 `mountBoardNoteEditor(element,{note,client,signal,formatRow}) -> cleanup` là adapter hook thực tế của dashboard. Board giữ keyed slot khi geometry/projection đổi; chỉ tạo lại hook khi visibility/writable đổi. Guest chỉ nhận JSON công khai đã lọc qua schema; không gọi document, awareness hoặc pending queue. Khi expire/logout, board gỡ subtree private trước khi mount nội dung công khai, kể cả draft chưa ACK đang được client giữ trên thiết bị.
 
-Schema gồm paragraph/text; bold/italic/underline/color; bullet/ordered list và checklist. Font Patrick Hand tự host và OFL trong `assets/fonts/`, chỉ áp dụng nội dung ghi chú. Mỗi board có đúng một hàng định dạng `.notes-format-row` do board.js tạo dưới toolbar; editor ghi được đăng ký vào một controller theo hàng đó (WeakMap trong editor.js) và cleanup tự gỡ đăng ký. Nút tác động lên editor có focus gần nhất (vẫn giữ sau blur); khi không có editor nào active thì nút bị vô hiệu và hiện gợi ý. Hàng có B/I/U, danh sách, hoàn tác/làm lại văn bản, Màu chữ (5 màu nhanh, chế độ RGB và Vòng màu, chỉ ghi khi bấm Áp dụng, luôn xuất `#rrggbb` chữ thường) và Chèn hình. Chế độ công khai không tạo control. Control tối thiểu 44px và xuống dòng thay vì cuộn ngang. `js/notes/library.js` xuất thêm `openAssetPicker(container,{client,noteId,signal}) -> cleanup`: dialog chỉ duyệt thư viện và chèn bằng `decoration.add`; upload/đổi tên/gỡ vẫn nằm trong `openLibrary` (nút Thư viện hình). Note không còn nút + Hình riêng. Text cuộn trong `.note-text`; decorations vẫn ở layer riêng. Nhập/dán text qua UI giới hạn 100.000 ký tự; validation byte/schema/depth/node phía server vẫn là giới hạn authoritative cho mọi update, gồm IME và API editor.
+Schema gồm paragraph/text; bold/italic/underline/color/cỡ chữ (`fontSize` 10–72px, mặc định 23px; nhập số, nút −/+, Ctrl/⌘+Shift+>/< ±2, Ctrl/⌘+]/[ ±1); bullet/ordered list và checklist. Font Patrick Hand tự host và OFL trong `assets/fonts/`, chỉ áp dụng nội dung ghi chú. Mỗi board có đúng một hàng định dạng `.notes-format-row` do board.js tạo dưới toolbar; editor ghi được đăng ký vào một controller theo hàng đó (WeakMap trong editor.js) và cleanup tự gỡ đăng ký. Nút tác động lên editor có focus gần nhất (vẫn giữ sau blur); khi không có editor nào active thì nút bị vô hiệu và hiện gợi ý. Hàng có B/I/U, danh sách, hoàn tác/làm lại văn bản, Màu chữ (5 màu nhanh, chế độ RGB và Vòng màu, chỉ ghi khi bấm Áp dụng, luôn xuất `#rrggbb` chữ thường) và Chèn hình. Chế độ công khai không tạo control. Control tối thiểu 44px và xuống dòng thay vì cuộn ngang. `js/notes/library.js` xuất thêm `openAssetPicker(container,{client,noteId,signal}) -> cleanup`: dialog chỉ duyệt thư viện và chèn bằng `decoration.add`; upload/đổi tên/gỡ vẫn nằm trong `openLibrary` (nút Thư viện hình). Note không còn nút + Hình riêng. Text cuộn trong `.note-text`; decorations vẫn ở layer riêng. Nhập/dán text qua UI giới hạn 100.000 ký tự; validation byte/schema/depth/node phía server vẫn là giới hạn authoritative cho mọi update, gồm IME và API editor.
 
 `mountBoardPresence(viewport,{client,signal,worldPoint}) -> cleanup` dùng chung một coordinator theo client với các editor, hợp nhất pointer world và relative cursor từ Awareness thành `publishPresence({pointer,editors})`, throttle ít nhất 50ms và không publish song song. Chỉ gửi caret của note chứa focus (hàng định dạng chung nằm ngoài note nên focus ở đó không gửi caret) và có cặp relative position non-null; focus trên board không gửi caret editor. Các cursor cũ của note không active không chiếm giới hạn 16 editor của server. Helper client vẫn sở hữu ACK-before-caret, retry và xác thực. Tên/màu peer chỉ lấy từ state presence do server xác thực; không gửi raw awareness blob. Guest không publish hoặc render presence. Unmount withdraw cursor/pointer; cleanup sau auth downgrade không publish private dữ liệu.
 

@@ -36,6 +36,9 @@ function cssColor(value) {
   return typeof value === 'string' && (/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value)
     || /^rgb\(\s*(?:\d{1,3}\s*,\s*){2}\d{1,3}\s*\)$/.test(value) && value.match(/\d+/g).every(n => Number(n) <= 255));
 }
+function cssFontSize(value) {
+  return typeof value === 'string' && /^\d{2}px$/.test(value) && parseInt(value) >= 10 && parseInt(value) <= 72;
+}
 function readRichText(doc) {
   if ([...doc.share.keys()].some(key => key !== 'body')) throw textError();
   const root = doc.getXmlFragment('body');
@@ -56,8 +59,9 @@ function readRichText(doc) {
           const node = { type: 'text', text: part.insert }, marks = [];
           for (const [type, attrs] of Object.entries(part.attributes ?? {})) {
             if (!['bold', 'italic', 'underline', 'textStyle'].includes(type)) throw textError();
-            requireKeys(attrs, [], type === 'textStyle' ? ['color'] : []);
+            requireKeys(attrs, [], type === 'textStyle' ? ['color', 'fontSize'] : []);
             if (type === 'textStyle' && attrs.color !== undefined && attrs.color !== null && !cssColor(attrs.color)) throw textError();
+            if (type === 'textStyle' && attrs.fontSize !== undefined && attrs.fontSize !== null && !cssFontSize(attrs.fontSize)) throw textError();
             marks.push({ type, ...(Object.keys(attrs).length ? { attrs } : {}) });
           }
           if (marks.length) node.marks = marks;
