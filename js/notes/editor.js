@@ -26,10 +26,19 @@ function presenceSession(client) {
     catch { /* Client exposes transport/auth failures through its reactive state. */ }
     finally { inFlight = false; if (!session.owners) withdraw(); else if (dirty) schedule(); }
   }
-  function withdraw() { if (client.getState().writable) client.publishPresence({pointer:null,editors:[]}).catch(()=>{}); }
+  async function withdraw() {
+    dirty = false; inFlight = true; lastSent = performance.now();
+    try { if (client.getState().writable) await client.publishPresence({pointer:null,editors:[]}); }
+    catch { /* Cleanup can outlive the client's authenticated connection. */ }
+    finally {
+      inFlight = false;
+      if (session.owners) schedule();
+      else if (presenceSessions.get(client) === session) presenceSessions.delete(client);
+    }
+  }
   function release() {
     session.owners--;
-    if (!session.owners) { clearTimeout(timer); timer = null; session.editors.clear(); session.pointer = null; presenceSessions.delete(client); if (!inFlight) withdraw(); }
+    if (!session.owners) { clearTimeout(timer); timer = null; session.editors.clear(); session.containers.clear(); session.pointer = null; if (!inFlight) withdraw(); }
   }
   return session;
 }
