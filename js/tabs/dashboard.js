@@ -26,7 +26,7 @@ export function render(container, { signal }) {
     const list=available();
     for(const [id,control] of tabButtons)if(!list.some(b=>b.id===id)){control.remove();tabButtons.delete(id);}
     for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
-    if(!current && !list.length){status.textContent=catalogLoaded?'Chưa có bảng nào. '+(account?'Tạo một bảng trống và đặt tên cho những điều muốn giữ.':'Khi có bảng, bạn có thể ghé vào xem ở đây.'):'Đang tìm những trang giấy…';}
+    if(!current && !list.length){status.textContent=catalogLoaded?'Chưa có bảng nào. '+(account?'Tạo một bảng trống và đặt tên cho những điều muốn giữ.':'Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. '):'Đang tìm những trang giấy…';if(catalogLoaded&&!account)status.append(loginButton());}
   }
   async function selectBoard(id, { trash = false, force = false } = {}) {
     if(!alive() || current?.id===id && !force)return;
@@ -65,7 +65,9 @@ export function render(container, { signal }) {
       const close=button('Đóng','trash-close');close.onclick=()=>dialog.close();dialog.append(close);dialog.onclose=()=>dialog.remove();root.append(dialog);dialog.showModal();
     }catch(error){if(owner===account)showError(error);}finally{if(temporary){temporary.abort();client?.close();}}
   }
-  function renderActions(){actions.replaceChildren();strip.replaceChildren(tabs);if(!account)return;
+  // Guests get a sign-in entry; the shell owns the login dialog (app.js listens for 'login-request').
+  function loginButton(){const control=document.createElement('button');control.type='button';control.className='notes-button notes-login';control.dataset.action='login';control.textContent='Đăng nhập để viết';control.onclick=()=>authEvents.dispatchEvent(new Event('login-request'));return control;}
+  function renderActions(){actions.replaceChildren();strip.replaceChildren(tabs);if(!account){actions.append(loginButton());return;}
     // The "+" sits after the tablist (not inside it) so arrow keys and tab roles only cover real boards.
     const create=button('+','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');create.className='notes-tab-new';create.setAttribute('aria-label','Tạo bảng mới');strip.append(create);
     create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});

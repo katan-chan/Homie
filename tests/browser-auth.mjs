@@ -43,8 +43,13 @@ try {
 
     // Dashboard is public read-only for guests (js/tabs.js has no requiresAuth; dashboard.js renderActions returns early without an account).
     await select('dashboard'); await until('!!document.querySelector("#panel-dashboard:not([aria-busy]) .notes-dashboard")');
-    await until('document.querySelector(".notes-catalog-status").textContent.includes("ghé vào xem")');
+    await until('document.querySelector(".notes-catalog-status").textContent.includes("ghé lại xem")');
     await check('guest sees public dashboard without mutation controls', 'location.hash==="#dashboard"&&!document.querySelector(".login-form")&&document.querySelectorAll("[data-mutation]").length===0&&!document.querySelector("[contenteditable=true]")');
+    await check('guest empty state offers sign-in', 'document.querySelectorAll(".notes-dashboard [data-action=login]").length>=1&&getComputedStyle(document.querySelector(".notes-catalog-actions .notes-login")).display==="none"');
+    await ev('const b=document.querySelector(".notes-catalog-status .notes-login");b.focus();b.click()'); await until('!!document.querySelector("dialog.shell-login[open] .login-form")');
+    await check('dashboard sign-in opens the shell login dialog', 'document.activeElement?.closest("dialog.shell-login")!==null');
+    await ev('document.querySelector("dialog.shell-login .secondary-button").click()'); await until('!document.querySelector("dialog.shell-login")');
+    await check('closing it returns focus to the sign-in button', 'document.activeElement?.dataset.action==="login"');
 
     await shellSignIn('minhle', 'incorrect-fixture'); await until('!!document.querySelector(".login-error").textContent');
     await check('incorrect password retains login', '!!document.querySelector("dialog.shell-login[open] .login-form")&&!document.querySelector(".account-name")&&document.querySelectorAll(".notes-dashboard [data-mutation]").length===0');

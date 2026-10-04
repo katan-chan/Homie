@@ -81,6 +81,8 @@ function updateAccountControls() {
   accountControls.append(button, message);
 }
 authEvents.addEventListener('change', updateAccountControls);
+// Tabs ask for the shell login without importing the shell.
+authEvents.addEventListener('login-request', openLogin);
 updateAccountControls();
 
 // Shell login is an account action, independent of any tab's access policy.

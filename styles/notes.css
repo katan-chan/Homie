@@ -104,3 +104,4 @@
 .note-decoration-inspector { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; }
 .note-decoration-inspector label { display:grid; gap:4px; margin:12px 0; }
 .note-library button,.note-decoration-inspector button { min-width:44px; min-height:44px; }
+.notes-catalog-status .notes-login{margin-left:6px;vertical-align:middle}.notes-dashboard:has(.notes-catalog-status:not(:empty)) .notes-catalog-actions .notes-login{display:none}
