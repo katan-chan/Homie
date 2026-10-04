@@ -59,3 +59,14 @@
 @media(prefers-reduced-motion:reduce){.notes-dashboard *{scroll-behavior:auto;transition:none;animation:none}}
 
 @media(max-width:600px),(max-height:500px) and (orientation:landscape){.notes-board{display:flex;flex-direction:column}.notes-toolbar{order:0}.notes-error{order:1}.notes-camera{order:2}.notes-viewport{order:3}.notes-inspector{order:4}.notes-hint{order:5}}
+
+@font-face{font-family:'Homie Patrick Hand';src:url('../assets/fonts/PatrickHand-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+.note-text .tiptap{font:23px/1.45 'Homie Patrick Hand',cursive;white-space:pre-wrap;min-height:80px;padding:9px 2px 18px;outline-offset:-2px!important}
+.note-text .tiptap p{margin:0 0 8px}.note-text .tiptap ul,.note-text .tiptap ol{padding-left:24px;margin:8px 0}
+.note-format-tools{display:flex;gap:4px;position:sticky;top:0;z-index:3;background:#fffaf2ed;border-bottom:1px solid #bf939644;padding:4px 0;overflow-x:auto;white-space:normal;scrollbar-width:thin}
+.note-format-button,.note-format-color{flex-shrink:0;min-width:44px;min-height:44px;padding:5px;border:1px solid #bf939666;background:#fffaf4;color:#654c51;border-radius:7px;font:14px system-ui;cursor:pointer}
+.note-format-button[aria-pressed=true]{background:#ecd2df;border-color:#9a3456}.note-format-button:disabled{opacity:.4;cursor:default}
+.note-text:has(.note-format-tools){padding-top:0}.note-editor-status{font:12px/1.5 system-ui;color:#963f51;margin:0}.note-editor-status:empty{display:none}
+.note-text .tiptap ul[data-type=taskList]{list-style:none;padding:0}.note-text .tiptap li[data-checked]{display:flex;gap:8px;align-items:flex-start}.note-text .tiptap li[data-checked]>label{display:flex;flex:0 0 44px;min-height:44px;align-items:center;justify-content:center;cursor:pointer}.note-text .tiptap li[data-checked]>label input{min-width:20px;min-height:20px;accent-color:#9a3456;margin:0;cursor:pointer}.note-text .tiptap li[data-checked]>div{flex:1;min-width:0;padding-top:5px}
+.collaboration-carets__caret{border-left:2px solid;border-right:0;margin-left:-1px;margin-right:-1px;pointer-events:none;position:relative;word-break:normal}.collaboration-carets__label{position:absolute;left:-2px;top:-22px;border-radius:4px 4px 4px 0;padding:2px 5px;color:white;font:11px/1.4 system-ui;white-space:nowrap;user-select:none;z-index:4}
+.notes-peer-pointers{position:absolute;inset:0;pointer-events:none;z-index:8}.notes-peer-pointer{position:absolute;pointer-events:none;font:12px system-ui;white-space:nowrap;text-shadow:0 1px 2px #fff}.notes-peer-pointer:before{content:'↖';margin-right:3px;font-size:20px}

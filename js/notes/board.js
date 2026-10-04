@@ -1,4 +1,5 @@
 import { clampPaperSize } from './model.js';
+import { mountBoardPresence } from './editor.js';
 
 // Board owns geometry and camera. Editor/media hooks own their stable note slots.
 const colors = ['#fff0b8', '#f9dbe5', '#deead9', '#dce9f5', '#e8ddf1', '#fffaf0'];
@@ -34,7 +35,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const root = element('section', 'notes-board'); root.dataset.boardId = client.boardId;
   const toolbar = element('div', 'notes-toolbar'); toolbar.setAttribute('aria-label', 'Công cụ bảng');
   const mutations = element('div', 'notes-tools');
-  mutations.append(button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Lưu', 'save', true));
+  mutations.append(button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
   const error = element('p', 'notes-error'); error.setAttribute('role', 'alert');
   const viewport = element('div', 'notes-viewport'); viewport.tabIndex = 0; viewport.setAttribute('aria-label', 'Mặt bảng. Dùng phím mũi tên để di chuyển góc nhìn.');
@@ -107,6 +108,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if (!alive()) return;
     const modeChanged = state && next.writable !== state.writable;
     state = next;
+    mutations.querySelector('[data-action=undo]').disabled = !state.history.canUndo;
+    mutations.querySelector('[data-action=redo]').disabled = !state.history.canRedo;
     if (modeChanged) { cancelDrag(); for (const record of records.values()) destroyRecord(record); records.clear(); selection = null; }
     if(state.writable)toolbar.prepend(mutations);else {mutations.remove();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();}
     // Hidden mutation DOM is removed on auth downgrade, including editor/media slots.
@@ -170,6 +173,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (action === 'fit') { const all = [...records.values()].map(r => r.entity); if (!all.length) {Object.assign(camera,{x:32,y:32,scale:1});applyCamera();return;} const minX=Math.min(...all.map(e=>e.x)),minY=Math.min(...all.map(e=>e.y)),maxX=Math.max(...all.map(e=>e.x+e.width)),maxY=Math.max(...all.map(e=>e.y+e.height));camera.scale=clamp(Math.min((viewport.clientWidth-64)/(maxX-minX),(viewport.clientHeight-64)/(maxY-minY)),.2,1.5);camera.x=32-minX*camera.scale;camera.y=32-minY*camera.scale;applyCamera();return; }
       if (!state.writable) return;
       if (action === 'save') await client.flush();
+      if (action === 'undo') await client.undo();
+      if (action === 'redo') await client.redo();
       if (action === 'note-new') {const point=creationPoint();await mutate('note.create',{id:crypto.randomUUID(),columnId:selection?.kind==='column'?selection.id:null,x:point.x-120,y:point.y-80,width:260,height:240,color:colors[0]});}
       if (action === 'column-new') askName(root,{title:'Tên cột mới',signal:controller.signal,onSubmit:name=>run(()=>{const p=creationPoint();return mutate('column.create',{id:crypto.randomUUID(),name,x:p.x-160,y:p.y-110,width:360,height:480});})});
       if (action === 'board-rename') askName(root,{title:'Đổi tên bảng',value:state.snapshot?.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('board.rename',{name}))});
@@ -189,6 +194,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   root.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='s' && state.writable) {event.preventDefault();run(()=>client.flush());return;}
     if (event.target.closest('input,select,textarea,[contenteditable=true],.note-text')) return;
+    if ((event.ctrlKey || event.metaKey) && ['z','y'].includes(event.key.toLowerCase()) && state.writable) {event.preventDefault();run(()=>event.shiftKey || event.key.toLowerCase()==='y' ? client.redo() : client.undo());return;}
     if(event.key==='Escape') {cancelDrag();return;}
     const delta={ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key]; if(!delta)return;
     const handle=event.target.closest('[data-drag]');
@@ -231,6 +237,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   }
   viewport.addEventListener('pointerup',event=>endPointer(event),events);viewport.addEventListener('pointercancel',event=>endPointer(event,true),events);viewport.addEventListener('lostpointercapture',event=>{if(drag?.pointerId===event.pointerId)endPointer(event,true);},events);
   const unsubscribe=client.subscribe(render);applyCamera();
-  function cleanup(){if(disposed)return;disposed=true;cancelDrag();controller.abort();unsubscribe();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
+  const stopPresence=mountBoardPresence(viewport,{client,signal:controller.signal,worldPoint});
+  function cleanup(){if(disposed)return;disposed=true;cancelDrag();controller.abort();unsubscribe();stopPresence();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
   signal?.addEventListener('abort',cleanup,{once:true});return cleanup;
 }
