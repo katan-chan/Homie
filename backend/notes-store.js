@@ -250,10 +250,17 @@ function rebaseUndo(state, original) {
   return undo;
 }
 
-export async function createNotesStore({ dataDir }) {
+/** remote: optional Supabase storage (backend/supabase.js); otherwise notes.json in dataDir. */
+export async function createNotesStore({ dataDir, remote = null }) {
   const path = join(dataDir, 'notes.json');
+  const read = async () => {
+    if (!remote) return JSON.parse(await readFile(path, 'utf8'));
+    const saved = await remote.getDocument('notes');
+    if (saved === null) throw Object.assign(new Error('No notes yet'), { code: 'ENOENT' });
+    return saved;
+  };
   let state;
-  try { state = validateSnapshot(JSON.parse(await readFile(path, 'utf8'))); }
+  try { state = validateSnapshot(await read()); }
   catch (error) {
     if (error.code !== 'ENOENT') throw notesError('storage_unavailable', 'Notes snapshot is invalid or unavailable', 503);
     state = { formatVersion: NOTES_FORMAT_VERSION, revision: 0, ...emptyNotesState(), texts: {}, operations: [], assets: [] };
@@ -261,12 +268,23 @@ export async function createNotesStore({ dataDir }) {
   let writes = Promise.resolve(), closing = false, needsSync = false, unavailable = false;
   const listeners = new Set();
   async function syncDirectory() {
+    if (remote) return;
     const directory = await open(dataDir, 'r');
     try { await directory.sync(); }
     catch (error) { if (!['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) throw error; }
     finally { await directory.close(); }
   }
   async function persist(candidate) {
+    // ponytail: rewrites the whole snapshot per commit; fine for two accounts, move to per-board rows if it grows.
+    if (remote) {
+      try { await remote.putDocument('notes', candidate); return; }
+      catch {
+        // The upsert may have committed before the network failed: reconcile before any retry can overwrite it.
+        try { const saved = validateSnapshot(await read()); if (saved.revision === candidate.revision) { state = saved; needsSync = true; throw notesError('durability_uncertain', 'Commit reached storage; retry the same operation ID', 503); } }
+        catch (error) { if (error.code === 'durability_uncertain') throw error; }
+        throw notesError('storage_unavailable', 'Notes write failed (remote)', 503);
+      }
+    }
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomUUID()}.tmp`;
     let renamed = false;

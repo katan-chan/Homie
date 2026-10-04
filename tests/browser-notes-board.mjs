@@ -16,6 +16,8 @@ try {
     await evaluate(`document.querySelector('#login-account').value='minhle';document.querySelector('#login-password').value=${JSON.stringify(fixturePasswords.minhle)};document.querySelector('.login-form').requestSubmit()`);
     await wait("document.querySelector('[data-action=board-new]')");
     assert.equal(await evaluate("document.querySelector('#sidebar').open"),true,'Login keeps sidebar open');
+    // Board creation lives in a "+" after the tablist, shown even before any board exists; the header has no create button.
+    assert.deepEqual(await evaluate("(()=>{const plus=document.querySelector('[data-action=board-new]');return{tabs:document.querySelectorAll('.notes-board-tab').length,label:plus.getAttribute('aria-label'),text:plus.textContent,role:plus.getAttribute('role'),inStrip:plus.parentElement.classList.contains('notes-tab-strip'),last:plus===plus.parentElement.lastElementChild,inTablist:!!plus.closest('[role=tablist]'),header:[...document.querySelectorAll('.notes-heading button')].some(b=>b.textContent.includes('Bảng mới')||b.dataset.action==='board-new')}})()"),{tabs:0,label:'Tạo bảng mới',text:'+',role:null,inStrip:true,last:true,inTablist:false,header:false});
     await evaluate("document.querySelector('.menu-close').click();document.querySelector('[data-action=board-new]').click()");
     await wait("document.querySelector('.notes-name-form')");
     await evaluate("document.querySelector('.notes-name-form input').value='Những ngày bình yên';document.querySelector('.notes-name-form').requestSubmit()");
@@ -24,8 +26,15 @@ try {
     await evaluate("window.boardId=document.querySelector('[data-board-id]').dataset.boardId;document.querySelector('[data-action=note-new]').click()");
     await wait("document.querySelector('.paper-note')");
     assert.equal(await evaluate("document.querySelector('.note-author').textContent"),'Minh Lê');
+    assert.deepEqual(await evaluate("[document.querySelectorAll('.notes-board-tab').length,document.querySelector('.notes-board-tab').getAttribute('aria-selected'),document.querySelector('.notes-board-tab').dataset.boardTab===boardId]"),[1,'true',true],'The + tab creates and selects a board');
+    assert.deepEqual(await evaluate("[parseFloat(document.querySelector('.paper-note').style.width),parseFloat(document.querySelector('.paper-note').style.height)]"),[360,320],'New notes are 360x320');
+    // Content centre within 3px of the viewport centre, measured on rendered rects.
+    const centred=`(root=>{const v=root.querySelector('.notes-viewport').getBoundingClientRect(),r=[...root.querySelectorAll('.paper-note,.paper-column')].map(e=>e.getBoundingClientRect()),x=(Math.min(...r.map(b=>b.left))+Math.max(...r.map(b=>b.right)))/2,y=(Math.min(...r.map(b=>b.top))+Math.max(...r.map(b=>b.bottom)))/2;return Math.abs(x-(v.left+v.width/2))<3&&Math.abs(y-(v.top+v.height/2))<3;})`;
+    await wait(`${centred}(document)`);
     await evaluate("document.querySelector('[data-action=column-new]').click();document.querySelector('.notes-name-form input').value='Kỷ niệm';document.querySelector('.notes-name-form').requestSubmit()");
     await wait("document.querySelector('.paper-column')");
+    await evaluate("document.querySelector('[data-action=zoom-out]').click();document.querySelector('[data-action=fit]').click()");
+    assert.equal(await evaluate(`${centred}(document)`),true,'Fit centres the content bounding box');
     const ids=await evaluate("({board:boardId,note:document.querySelector('.paper-note').dataset.noteId,column:document.querySelector('.paper-column').dataset.columnId})");
     await evaluate("document.querySelector('.note-handle').click()");
     await wait("document.querySelector('[data-action=object-column]')");
@@ -37,7 +46,7 @@ try {
     assert.equal(await evaluate("parseFloat(document.querySelector('.paper-note').style.top)"),before.y);
     // Focus remains on keyed controls across state updates and controls work without dragging.
     await evaluate("document.querySelector('.note-handle').focus();document.querySelector('.note-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
-    await wait(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-${before.y+10})<.01`);
+    await wait(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-(${before.y+10}))<.01`);
     assert.equal(await evaluate("document.activeElement.classList.contains('note-handle')"),true);
     await evaluate("{const width=document.querySelector('[name=width]');width.value='10';width.dispatchEvent(new Event('change',{bubbles:true}));}");
     await wait("parseFloat(document.querySelector('.paper-note').style.width)===180");
@@ -47,15 +56,18 @@ try {
     for(const [width,height] of [[320,740],[390,844],[768,1024],[1440,1000],[844,390]]) {
       await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
       await evaluate('scrollTo(0,0)');
-      const layout=await evaluate(`({fitBottom:document.querySelector('[data-action=fit]').getBoundingClientRect().bottom,overflow:document.documentElement.scrollWidth>innerWidth,viewport:document.querySelector('.notes-viewport').getBoundingClientRect().width,small:[...document.querySelectorAll('.notes-dashboard button')].filter(e=>e.getClientRects().length&&e.getBoundingClientRect().width<43).length})`);
+      const layout=await evaluate(`({fitBottom:document.querySelector('[data-action=fit]').getBoundingClientRect().bottom,overflow:document.documentElement.scrollWidth>innerWidth,verticalScroll:document.documentElement.scrollHeight-innerHeight,dashboardOverflow:[...document.querySelectorAll('.notes-dashboard,.notes-dashboard *')].filter(e=>e.scrollWidth>e.clientWidth+1&&getComputedStyle(e).overflowX!=='hidden'&&!e.closest('.notes-viewport')).map(e=>e.className),viewport:document.querySelector('.notes-viewport').getBoundingClientRect().width,small:[...document.querySelectorAll('.notes-dashboard button')].filter(e=>!e.closest('.notes-world')&&e.getClientRects().length&&e.getBoundingClientRect().width<43).map(e=>e.className+':'+e.dataset.action)})`);
       if(width===390 || width===1440) { const screenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(`/private/tmp/task-5-${width}.png`,Buffer.from(screenshot.data,'base64')); }
-      assert.equal(layout.overflow,false,`${width}: no page overflow`);assert.ok(layout.viewport>200);assert.equal(layout.small,0,`${width}: 44px targets`);if(width<=390 || height<500)assert.ok(layout.fitBottom<=height,`${width}: camera/fit controls visible without page scrolling`);
+      assert.equal(layout.overflow,false,`${width}: no page overflow`);if(width>600&&height>500)assert.ok(layout.verticalScroll<=1,`${width}: desktop/tablet dashboard fits the screen without a vertical page scrollbar (${layout.verticalScroll}px)`);assert.deepEqual(layout.dashboardOverflow,[],`${width}: no horizontal scroller in the dashboard`);assert.ok(layout.viewport>200);assert.deepEqual(layout.small,[],`${width}: 44px targets outside the zoomable world`);if(width<=390 || height<500)assert.ok(layout.fitBottom<=height,`${width}: camera/fit controls visible without page scrolling`);
     }
     await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     // Board switching is local to the dashboard, and renamed/trash catalog entries stay live.
     await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Bảng thứ hai';document.querySelector('.notes-name-form').requestSubmit()");
     await wait("document.querySelectorAll('.notes-board-tab').length===2 && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
     assert.equal(await evaluate("document.querySelectorAll('.paper-note').length"),0);
+    // Arrow keys move only between board tabs; the + is not part of the tab set.
+    assert.deepEqual(await evaluate("(()=>{const t=[...document.querySelectorAll('.notes-board-tab')],key=k=>{document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return document.activeElement.dataset.boardTab;};t[0].focus();return[key('ArrowRight')===t[1].dataset.boardTab,key('ArrowRight')===t[0].dataset.boardTab,key('End')===t[1].dataset.boardTab];})()"),[true,true,true]);
+    await wait("document.querySelector('.notes-durability')?.dataset.durability==='saved'");
     const secondBoard=await evaluate("document.querySelector('[data-board-id]').dataset.boardId");
     await evaluate("document.querySelector('[data-action=board-rename]').click();document.querySelector('.notes-name-form input').value='Bảng đổi tên';document.querySelector('.notes-name-form').requestSubmit()");
     await wait(`document.querySelector('[data-board-tab="${secondBoard}"]').textContent==='Bảng đổi tên'`);
@@ -130,6 +142,15 @@ try {
       document.querySelector('#board-test-host [data-action=fit]').click();
     })()`);
     const counts=await evaluate('({...mountCounts})');
+    // Resizing re-fits while the camera follows fit, and keeps the user's camera after a manual pan.
+    const frames="new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))";
+    assert.equal(await evaluate(`${centred}(document.querySelector('#board-test-host'))`),true,'Isolated fit centres content');
+    await evaluate(`document.querySelector('#board-test-host').style.width='560px';${frames}`);
+    assert.equal(await evaluate(`${centred}(document.querySelector('#board-test-host'))`),true,'Resize re-fits an untouched camera');
+    await evaluate("const v=document.querySelector('#board-test-host .notes-viewport');v.focus();v.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))");
+    const panned=await evaluate("document.querySelector('#board-test-host .notes-world').style.transform");
+    await evaluate(`document.querySelector('#board-test-host').style.width='';${frames}`);
+    assert.equal(await evaluate("document.querySelector('#board-test-host .notes-world').style.transform"),panned,'Resize respects a manually panned camera');
     await evaluate(`testClient.command({type:'note.update',payload:{id:'${ids.note}',color:'#deead9'}})`);
     assert.deepEqual(await evaluate('({...mountCounts})'),counts,'Metadata updates preserve editor/media slots');
     // Text wheel is not consumed by the board; background wheel keeps the point under cursor.

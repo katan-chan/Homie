@@ -1,1 +1,37 @@
 /* Shared board format row, text colour picker and image picker. */
+.notes-format-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 16px 0;padding:6px;border:1px solid #bf939666;border-radius:14px;background:#fffaf4;color:#654c51;box-shadow:0 2px 0 #98777b0b;min-width:0}
+.notes-format-row:empty,.notes-format-row[hidden],.notes-format-row [hidden],.note-asset-picker [hidden]{display:none!important}
+.notes-format-row :focus-visible,.note-asset-picker :focus-visible{outline:3px solid #8b4f68;outline-offset:2px}
+.notes-format-hint{margin:0 6px;font:italic 14px/1.4 Georgia,serif;color:#7a5a60}
+.notes-format-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:44px;padding:6px 11px;border:1px solid #bf939666;border-radius:10px;background:#fffaf4;color:#654c51;font:15px/1.1 Georgia,serif;cursor:pointer;transition:background-color .15s,border-color .15s}
+.notes-format-button:hover:not(:disabled){background:#f8e4e8;border-color:#bd899b}
+.notes-format-button[aria-pressed=true]{background:#ecd2df;border-color:#9a3456;color:#6f2440}
+.notes-format-button[aria-expanded=true]{border-color:#9a3456;background:#f8e4e8}
+.notes-format-button:disabled{opacity:.45;cursor:default;border-style:dashed;background:#f6efe9}
+.notes-format-button[data-format=toggleBold]{font-weight:700}.notes-format-button[data-format=toggleItalic]{font-style:italic}.notes-format-button[data-format=toggleUnderline]{text-decoration:underline}
+.notes-format-swatch{width:16px;height:16px;flex:none;border-radius:50%;border:1px solid #654c5166}
+.notes-color-panel{flex:1 1 100%;display:grid;gap:12px;margin-top:2px;padding:12px 6px 6px;border-top:1px dashed #bf939699;min-width:0}
+.notes-color-presets,.notes-color-modes,.notes-color-actions,.notes-color-preview{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.notes-color-preset{width:44px;height:44px;border-radius:50%;border:3px solid #fffaf4;box-shadow:0 0 0 1px #bf9396;cursor:pointer}
+.notes-color-preset:hover{box-shadow:0 0 0 2px #9a3456}
+.notes-color-rgb{display:grid;gap:6px;max-width:420px}
+.notes-color-channel{display:grid;grid-template-columns:22px minmax(0,1fr) 76px;align-items:center;gap:8px}
+.notes-color-channel label{font:700 15px Georgia,serif}
+.notes-format-row input[type=range]{min-height:44px;min-width:0;width:100%;margin:0;padding:0;border:0;background:transparent;box-shadow:none;accent-color:#9a3456}
+.notes-format-row input[type=number]{min-height:44px;width:76px;min-width:0;padding:6px 8px;border:1px solid #bf939666;border-radius:10px;background:#fffaf4;color:#654c51;font:15px Georgia,serif}
+.notes-color-wheel-section{display:grid;gap:8px;justify-items:start}
+.notes-color-wheel{position:relative;width:min(200px,100%);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle closest-side,#fff,#fff0),conic-gradient(red,#ff0,lime,cyan,blue,#f0f,red);box-shadow:0 0 0 1px #bf9396;touch-action:none;cursor:crosshair}
+.notes-color-wheel::after{content:'';position:absolute;inset:0;border-radius:50%;background:#000;opacity:var(--wheel-dim,0);pointer-events:none}
+.notes-color-wheel:focus-visible{outline-offset:4px}
+.notes-color-marker{position:absolute;z-index:1;width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px #654c51;transform:translate(-50%,-50%);pointer-events:none}
+.notes-color-light{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;width:min(260px,100%);font:15px Georgia,serif}
+.notes-color-preview .notes-format-swatch{width:28px;height:28px}
+.notes-color-hex{font:15px ui-monospace,Menlo,monospace;color:#654c51}
+.note-asset-picker{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
+.note-picker-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:12px 0 16px}
+.note-picker-item{display:grid;justify-items:center;gap:8px;padding:10px;border:1px solid #d9b9b5;border-radius:12px;background:#fffaf4;text-align:center}
+.note-picker-item>.note-media-image{width:96px;height:96px;object-fit:contain}
+.note-picker-name{overflow-wrap:anywhere;font-size:14px}
+.note-asset-picker button{min-width:44px;min-height:44px}
+@media(max-width:600px){.notes-format-row{margin:8px 10px 0;gap:5px}.notes-format-button{padding:6px 9px}}
+@media(prefers-reduced-motion:reduce){.notes-format-button{transition:none}}

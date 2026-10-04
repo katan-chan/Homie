@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { open } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { validateMediaMetadata } from './note-media.js';
 import * as Y from 'yjs';
@@ -276,6 +277,16 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
           const file = route.name === 'asset-preview' ? media.resolvePreview(route.id, session.token, route.part === 'poster')
             : session ? media.resolveAsset(route.id, route.part === 'poster') : media.resolvePublicAsset(route.id, route.part === 'poster');
           if (!file) throw notesError('not_found', 'Asset not found', 404);
+          if (file.remoteKey) {
+            const remoteFile = await media.fetchRemote(file.remoteKey);
+            if (!remoteFile) throw notesError('not_found', 'Asset file not found', 404);
+            if (session) { try { sessionRequired(session); } catch (error) { await remoteFile.body?.cancel(); throw error; } }
+            res.setHeader('Content-Type', file.mimeType); res.setHeader('X-Content-Type-Options', 'nosniff');
+            const length = remoteFile.headers.get('content-length'); if (length) res.setHeader('Content-Length', length);
+            if (req.method === 'HEAD') { await remoteFile.body?.cancel(); send(res, 200); }
+            else { res.writeHead(200); await pipeline(Readable.fromWeb(remoteFile.body), res); }
+            return true;
+          }
           let handle;
           try { handle = await open(file.path, 'r'); }
           catch { throw notesError('not_found', 'Asset file not found', 404); }

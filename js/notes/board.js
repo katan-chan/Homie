@@ -48,19 +48,28 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   cameraTools.append(button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
   const hint = element('p', 'notes-hint', 'Chuột phải kéo góc nhìn · Cuộn trên nền để zoom · Hai ngón để di chuyển trên điện thoại');
-  toolbar.append(mutations, durability); root.append(toolbar, formatRow, error, viewport, cameraTools, inspector, hint); container.replaceChildren(root);
+  // Camera sits in the toolbar and hint/inspector float over the board, so the board fills the screen without page scroll.
+  toolbar.append(mutations, durability, cameraTools); viewport.append(hint); root.append(toolbar, formatRow, error, viewport, inspector); container.replaceChildren(root);
   let state, disposed = false, selection = null, drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
   const cameraKey = `homie-notes:camera:${client.boardId}`;
   const camera = { x: 32, y: 32, scale: 1 }, records = new Map(), pointers = new Map();
-  try { const saved = JSON.parse(localStorage.getItem(cameraKey)); if (saved && ['x', 'y', 'scale'].every(key => Number.isFinite(saved[key]))) Object.assign(camera, { x: saved.x, y: saved.y, scale: clamp(saved.scale, .2, 3) }); } catch { /* Camera preference does not affect note durability. */ }
+  // follow: camera tracks fit() until the user pans/zooms; awaitContent: fit once when the first content arrives.
+  let follow = true, awaitContent = true;
+  try { const saved = JSON.parse(localStorage.getItem(cameraKey)); if (saved && !saved.fit && ['x', 'y', 'scale'].every(key => Number.isFinite(saved[key]))) { Object.assign(camera, { x: saved.x, y: saved.y, scale: clamp(saved.scale, .2, 3) }); follow = awaitContent = false; } } catch { /* Camera preference does not affect note durability. */ }
   function alive() { return !disposed && !controller.signal.aborted; }
   function report(cause) { if (alive()) error.textContent = cause?.code === 'lease_conflict' ? 'Người kia đang di chuyển đối tượng này. Hãy thử lại sau.' : cause?.message || 'Chưa thể lưu. Bản nháp vẫn được giữ trên thiết bị.'; }
   async function run(action) { try { return await action(); } catch (cause) { report(cause); } }
-  function applyCamera() { world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`; zoomLabel.value = `${Math.round(camera.scale * 100)}%`; try { localStorage.setItem(cameraKey, JSON.stringify(camera)); } catch { /* The current view still works without local storage. */ } }
+  function applyCamera(manual = false) { if (manual) follow = false; world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`; zoomLabel.value = `${Math.round(camera.scale * 100)}%`; try { localStorage.setItem(cameraKey, JSON.stringify({ ...camera, fit: follow })); } catch { /* The current view still works without local storage. */ } }
+  function fit() {
+    const w = viewport.clientWidth, h = viewport.clientHeight, all = [...records.values()].map(r => r.entity); if (!alive() || !w || !h) return; follow = true;
+    if (!all.length) Object.assign(camera, { x: w / 2, y: h / 2, scale: 1 });
+    else { awaitContent = false; const minX=Math.min(...all.map(e=>e.x)),minY=Math.min(...all.map(e=>e.y)),maxX=Math.max(...all.map(e=>e.x+e.width)),maxY=Math.max(...all.map(e=>e.y+e.height));camera.scale=clamp(Math.min((w-64)/(maxX-minX),(h-64)/(maxY-minY)),.2,1.5);camera.x=w/2-(minX+maxX)/2*camera.scale;camera.y=h/2-(minY+maxY)/2*camera.scale; }
+    applyCamera();
+  }
   function worldPoint(x, y) { const rect = viewport.getBoundingClientRect(); return { x: (x - rect.left - camera.x) / camera.scale, y: (y - rect.top - camera.y) / camera.scale }; }
   function zoom(scale, x, y) {
     const rect = viewport.getBoundingClientRect(), point = worldPoint(x, y); camera.scale = clamp(scale, .2, 3);
-    camera.x = x - rect.left - point.x * camera.scale; camera.y = y - rect.top - point.y * camera.scale; applyCamera();
+    camera.x = x - rect.left - point.x * camera.scale; camera.y = y - rect.top - point.y * camera.scale; applyCamera(true);
   }
   function visible(kind, entity) { return !state.snapshot?.deletedAt && !entity.deletedAt && (kind !== 'note' || !entity.columnId || state.snapshot.columns.some(c => c.id === entity.columnId && !c.deletedAt)); }
   function selected() { return selection && records.get(selection.id)?.entity; }
@@ -137,6 +146,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if (selection && !records.has(selection.id)) selection = null;
     empty.textContent = state.snapshot?.deletedAt ? 'Bảng đang ở thùng rác. Khôi phục bảng để xem nội dung.' : state.snapshot ? 'Một mặt giấy trống, dành cho những điều của chúng mình.' : 'Đang mở mặt giấy…';
     if (!records.size) viewport.append(empty); else empty.remove();
+    if (follow && awaitContent && records.size) fit();
     updateInspector();
   }
   async function mutate(type, payload) { if (!state.writable || !alive()) return; return client.command({type,payload}); }
@@ -173,12 +183,12 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const action = control.dataset.action, entity = selected();
     run(async () => {
       if (action === 'zoom-in' || action === 'zoom-out') { const rect = viewport.getBoundingClientRect(); zoom(camera.scale * (action === 'zoom-in' ? 1.2 : 1 / 1.2), rect.left + rect.width / 2, rect.top + rect.height / 2); return; }
-      if (action === 'fit') { const all = [...records.values()].map(r => r.entity); if (!all.length) {Object.assign(camera,{x:32,y:32,scale:1});applyCamera();return;} const minX=Math.min(...all.map(e=>e.x)),minY=Math.min(...all.map(e=>e.y)),maxX=Math.max(...all.map(e=>e.x+e.width)),maxY=Math.max(...all.map(e=>e.y+e.height));camera.scale=clamp(Math.min((viewport.clientWidth-64)/(maxX-minX),(viewport.clientHeight-64)/(maxY-minY)),.2,1.5);camera.x=32-minX*camera.scale;camera.y=32-minY*camera.scale;applyCamera();return; }
+      if (action === 'fit') { fit(); return; }
       if (!state.writable) return;
       if (action === 'save') await client.flush();
       if (action === 'undo') await client.undo();
       if (action === 'redo') await client.redo();
-      if (action === 'note-new') {const point=creationPoint();await mutate('note.create',{id:crypto.randomUUID(),columnId:selection?.kind==='column'?selection.id:null,x:point.x-120,y:point.y-80,width:260,height:240,color:colors[0]});}
+      if (action === 'note-new') {const point=creationPoint();await mutate('note.create',{id:crypto.randomUUID(),columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0]});}
       if (action === 'column-new') askName(root,{title:'Tên cột mới',signal:controller.signal,onSubmit:name=>run(()=>{const p=creationPoint();return mutate('column.create',{id:crypto.randomUUID(),name,x:p.x-160,y:p.y-110,width:360,height:480});})});
       if (action === 'board-rename') askName(root,{title:'Đổi tên bảng',value:state.snapshot?.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('board.rename',{name}))});
       if (action === 'board-trash') await mutate('board.trash',{});
@@ -202,7 +212,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const delta={ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key]; if(!delta)return;
     const handle=event.target.closest('[data-drag]');
     if(handle && state.writable) {event.preventDefault();const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column';select(kind,node.dataset.noteId||node.dataset.columnId);const e=selected(),amount=event.shiftKey?5:1;run(()=>geometry(kind,e,current=>({x:current.x+delta[0]*amount,y:current.y+delta[1]*amount})));}
-    else if(event.target===viewport) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera();}
+    else if(event.target===viewport) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera(true);}
   },events);
   function cancelDrag() {
     const previous=drag;drag=null;
@@ -223,8 +233,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   },events);
   viewport.addEventListener('pointermove',event=>{
     if(pointers.has(event.pointerId))pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
-    if(pinch && pointers.size>=2){const[a,b]=[...pointers.values()],rect=viewport.getBoundingClientRect();camera.scale=clamp(pinch.scale*Math.hypot(a.x-b.x,a.y-b.y)/Math.max(1,pinch.distance),.2,3);camera.x=(a.x+b.x)/2-rect.left-pinch.point.x*camera.scale;camera.y=(a.y+b.y)/2-rect.top-pinch.point.y*camera.scale;applyCamera();return;}
-    if(cameraDrag?.id===event.pointerId){camera.x=cameraDrag.startX+event.clientX-cameraDrag.x;camera.y=cameraDrag.startY+event.clientY-cameraDrag.y;applyCamera();return;}
+    if(pinch && pointers.size>=2){const[a,b]=[...pointers.values()],rect=viewport.getBoundingClientRect();camera.scale=clamp(pinch.scale*Math.hypot(a.x-b.x,a.y-b.y)/Math.max(1,pinch.distance),.2,3);camera.x=(a.x+b.x)/2-rect.left-pinch.point.x*camera.scale;camera.y=(a.y+b.y)/2-rect.top-pinch.point.y*camera.scale;applyCamera(true);return;}
+    if(cameraDrag?.id===event.pointerId){camera.x=cameraDrag.startX+event.clientX-cameraDrag.x;camera.y=cameraDrag.startY+event.clientY-cameraDrag.y;applyCamera(true);return;}
     if(!drag?.ready||drag.pointerId!==event.pointerId)return;
     drag.dx=(event.clientX-drag.x)/camera.scale;drag.dy=(event.clientY-drag.y)/camera.scale;
     for(const record of records.values())if(record.entity.id===drag.id || !drag.resize && drag.kind==='column' && record.entity.columnId===drag.id){const e=record.entity;place(record.node,drag.resize?{...e,width:clampPaperSize(drag.kind,drag.entity.width+drag.dx),height:clampPaperSize(drag.kind,drag.entity.height+drag.dy)}:{...e,x:e.x+drag.dx,y:e.y+drag.dy});}
@@ -239,8 +249,9 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);
   }
   viewport.addEventListener('pointerup',event=>endPointer(event),events);viewport.addEventListener('pointercancel',event=>endPointer(event,true),events);viewport.addEventListener('lostpointercapture',event=>{if(drag?.pointerId===event.pointerId)endPointer(event,true);},events);
-  const unsubscribe=client.subscribe(render);applyCamera();
+  const unsubscribe=client.subscribe(render);if(follow)fit();else applyCamera();
+  const resizeObserver=new ResizeObserver(()=>{if(follow)fit();});resizeObserver.observe(viewport);
   const stopPresence=mountBoardPresence(viewport,{client,signal:controller.signal,worldPoint});
-  function cleanup(){if(disposed)return;disposed=true;cancelDrag();controller.abort();unsubscribe();stopPresence();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
+  function cleanup(){if(disposed)return;disposed=true;resizeObserver.disconnect();cancelDrag();controller.abort();unsubscribe();stopPresence();for(const record of records.values())destroyRecord(record);records.clear();signal?.removeEventListener('abort',cleanup);root.remove();}
   signal?.addEventListener('abort',cleanup,{once:true});return cleanup;
 }

@@ -13,14 +13,17 @@ export function validateProfile(body) {
   return { displayName, bio };
 }
 
-export function createProfiles(dataDir) {
+/** remote: optional Supabase storage (backend/supabase.js); otherwise profiles.json in dataDir. */
+export function createProfiles(dataDir, remote = null) {
   const path = join(dataDir, 'profiles.json');
   let profiles;
   let loadError = false;
   let writes = Promise.resolve();
-  const loaded = (async () => {
+  const load = async () => {
+    loadError = false;
     try {
-      const saved = JSON.parse(await readFile(path, 'utf8'));
+      const saved = remote ? await remote.getDocument('profiles') : JSON.parse(await readFile(path, 'utf8'));
+      if (saved === null) throw Object.assign(new Error('No profiles yet'), { code: 'ENOENT' });
       if (!saved || Array.isArray(saved) || typeof saved !== 'object' || Object.keys(saved).length !== 2) throw new Error('Invalid profiles');
       profiles = {};
       for (const id of accountIds) {
@@ -41,9 +44,12 @@ export function createProfiles(dataDir) {
         haiyen: { id: 'haiyen', displayName: 'Hải Yến', bio: '' },
       };
     }
-  })();
+  };
+  let loaded = load();
   async function ensureLoaded() {
     await loaded;
+    // A network blip at boot must not disable remote profiles until restart; retry on the next request.
+    if (loadError && remote) { loaded = load(); await loaded; }
     if (loadError) throw new Error('Profile storage is unavailable');
   }
 
@@ -56,6 +62,7 @@ export function createProfiles(dataDir) {
       const operation = writes.then(async () => {
         await ensureLoaded();
         const next = { ...profiles, [id]: { id, ...fields } };
+        if (remote) { await remote.putDocument('profiles', next); profiles = next; return { ...profiles[id] }; }
         await mkdir(dataDir, { recursive: true, mode: 0o700 });
         const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`;
         try {

@@ -11,9 +11,9 @@ function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value
 export function render(container, { signal }) {
   if (signal.aborted) return () => {};
   const root = document.createElement('section'); root.className = 'notes-dashboard';
-  root.innerHTML = '<div class="notes-heading"><div><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><div class="notes-catalog-actions"></div></div><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
+  root.innerHTML = '<div class="notes-heading"><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><div class="notes-catalog-bar"><div class="notes-tab-strip"><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div></div><div class="notes-catalog-actions"></div></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
   container.replaceChildren(root);
-  const tabs = root.querySelector('.notes-tabs'), actions = root.querySelector('.notes-catalog-actions'), status = root.querySelector('.notes-catalog-status'), host = root.querySelector('.notes-board-host');
+  const tabs = root.querySelector('.notes-tabs'), strip = root.querySelector('.notes-tab-strip'), actions = root.querySelector('.notes-catalog-actions'), status = root.querySelector('.notes-catalog-status'), host = root.querySelector('.notes-board-host');
   let disposed = false, boards = [], catalogLoaded = false, selectedId = stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false, closeGlobalLibrary = null;
   const tabButtons = new Map();
   function alive() { return !disposed && !signal.aborted; }
@@ -65,11 +65,12 @@ export function render(container, { signal }) {
       const close=button('Đóng','trash-close');close.onclick=()=>dialog.close();dialog.append(close);dialog.onclose=()=>dialog.remove();root.append(dialog);dialog.showModal();
     }catch(error){if(owner===account)showError(error);}finally{if(temporary){temporary.abort();client?.close();}}
   }
-  function renderActions(){actions.replaceChildren();if(!account)return;
-    const create=button('+ Bảng mới','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');
+  function renderActions(){actions.replaceChildren();strip.replaceChildren(tabs);if(!account)return;
+    // The "+" sits after the tablist (not inside it) so arrow keys and tab roles only cover real boards.
+    const create=button('+','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');create.className='notes-tab-new';create.setAttribute('aria-label','Tạo bảng mới');strip.append(create);
     create.onclick=()=>askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});
-    library.onclick=async()=>{closeGlobalLibrary?.();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||request!==generation){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});closeGlobalLibrary=()=>{cleanup();if(temporary){temporary.abort();client.close();}};root.querySelector('.note-library')?.addEventListener('close',()=>{closeGlobalLibrary?.();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
-    trash.onclick=showBoardTrash;actions.append(create,trash,library);
+    library.onclick=async()=>{closeGlobalLibrary?.();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||request!==generation){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});const closer=()=>{cleanup();if(temporary){temporary.abort();client.close();}};closeGlobalLibrary=closer;root.querySelector('.note-library')?.addEventListener('close',()=>{/* A replaced dialog's close event fires later; ignore it. */if(closeGlobalLibrary!==closer)return;closer();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
+    trash.onclick=showBoardTrash;actions.append(trash,library);
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabButtons.values()];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});
   const unsubscribe=subscribeBoards({signal},result=>{if(!alive())return;if(result.boards===null){status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';renderTabs();return;}

@@ -34,7 +34,7 @@ export function openLibrary(container,{client,noteId=null,signal}={}) {
   function run(job){Promise.resolve().then(job).catch(failure);}
   async function load(){const request=++loading;try{const result=await client.authenticatedRequest('/api/note-assets');if(!alive()||request!==loading)return;stopMedia(list);list.replaceChildren();
     if(!result.assets.length)list.append(el('p','note-library-empty','Thư viện đang trống. Chọn một hình để bắt đầu.'));
-    for(const asset of result.assets){const row=el('article','note-library-item'),label=el('span','',asset.name),image=visual(asset,true),insert=button('Chèn vào note','media-insert'),rename=button('Đổi tên','media-rename'),remove=button('Gỡ khỏi thư viện','media-remove');row.dataset.assetId=asset.id;insert.disabled=!noteId;
+    for(const asset of result.assets){const row=el('article','note-library-item'),label=el('span','',asset.name),image=visual(asset,true),insert=button('Chèn vào note','media-insert'),rename=button('Đổi tên','media-rename'),remove=button('Gỡ khỏi thư viện','media-remove');row.dataset.assetId=asset.id;insert.hidden=!noteId;
       insert.onclick=()=>run(async()=>{await client.command({type:'decoration.add',payload:{id:crypto.randomUUID(),noteId,assetId:asset.id,x:20,y:20,width:Math.min(100,asset.width),height:Math.min(100,asset.height),rotation:0,z:0}});if(alive())cleanup();});
       rename.onclick=()=>askName(dialog,{title:'Đổi tên tài nguyên',value:asset.name,signal:controller.signal,onSubmit:newName=>run(async()=>{await client.authenticatedRequest(`/api/note-assets/${asset.id}`,{method:'PUT',body:{accountId:client.accountId,operationId:crypto.randomUUID(),action:'rename',name:newName}});await load();})});
       remove.onclick=()=>run(async()=>{await client.authenticatedRequest(`/api/note-assets/${asset.id}`,{method:'PUT',body:{accountId:client.accountId,operationId:crypto.randomUUID(),action:'remove'}});await load();});
@@ -85,12 +85,33 @@ export function openLibrary(container,{client,noteId=null,signal}={}) {
   signal?.addEventListener('abort',cleanup,{once:true});dialog.showModal();load();return cleanup;
 }
 
+/** Browse-only picker for the shared format row; uploads and library edits stay in openLibrary. */
+export function openAssetPicker(container,{client,noteId,signal}={}) {
+  if(signal?.aborted || !client.getState().writable)return ()=>{};
+  const generation=getAuthGeneration(),opener=document.activeElement,controller=new AbortController();
+  const dialog=el('dialog','notes-dialog note-asset-picker'),heading=el('h2','','Chèn hình vào ghi chú'),status=el('p','notes-media-status','Đang tải thư viện hình…'),list=el('div','note-picker-list'),close=button('Đóng','picker-close');
+  heading.id=`note-asset-picker-${crypto.randomUUID()}`;dialog.setAttribute('aria-labelledby',heading.id);status.setAttribute('role','status');dialog.append(heading,status,list,close);container.append(dialog);
+  let disposed=false;
+  const alive=()=>!disposed&&!signal?.aborted&&generation===getAuthGeneration()&&client.getState().writable;
+  const failure=error=>{if(alive())status.textContent=error.message || 'Chưa thể tải thư viện hình.';};
+  async function load(){try{const result=await client.authenticatedRequest('/api/note-assets');if(!alive())return;
+    status.textContent=result.assets.length?'':'Thư viện hình đang trống. Hãy vào mục Thư viện hình ở đầu Góc ghi chép để thêm hình.';
+    for(const asset of result.assets){const row=el('article','note-picker-item'),insert=button('Chèn','picker-insert');row.dataset.assetId=asset.id;insert.setAttribute('aria-label',`Chèn ${asset.name || 'hình'}`);
+      insert.onclick=()=>{insert.disabled=true;client.command({type:'decoration.add',payload:{id:crypto.randomUUID(),noteId,assetId:asset.id,x:20,y:20,width:Math.min(100,asset.width),height:Math.min(100,asset.height),rotation:0,z:0}}).then(()=>{if(alive())cleanup();},error=>{if(alive()){insert.disabled=false;failure(error);}});};
+      row.append(visual(asset,true),el('span','note-picker-name',asset.name),insert);list.append(row);
+    }
+  }catch(error){failure(error);}}
+  close.onclick=()=>dialog.close();dialog.addEventListener('close',()=>cleanup(),{signal:controller.signal});
+  const unsubscribe=client.subscribe(()=>{if(!disposed&&!alive())cleanup();});
+  function cleanup(){if(disposed)return;disposed=true;controller.abort();unsubscribe?.();stopMedia(dialog);signal?.removeEventListener('abort',cleanup);dialog.remove();if(opener?.isConnected)opener.focus();}
+  signal?.addEventListener('abort',cleanup,{once:true});dialog.showModal();load();return cleanup;
+}
+
 export function mountNoteMedia(layer,{client,note,signal}={}) {
   if(signal?.aborted)return ()=>{};
-  const controller=new AbortController(),motion=matchMedia('(prefers-reduced-motion: reduce)'),records=new Map();let disposed=false,state=client.getState(),visible=true,drag=null,serial=Promise.resolve(),closeLibrary,closeInspector;
+  const controller=new AbortController(),motion=matchMedia('(prefers-reduced-motion: reduce)'),records=new Map();let disposed=false,state=client.getState(),visible=true,drag=null,serial=Promise.resolve(),closeInspector;
   const alive=()=>!disposed&&!signal?.aborted;
   const status=el('span','notes-media-status');status.setAttribute('role','status');
-  const add=button('+ Hình','media-add');add.classList.add('note-media-add');add.onclick=()=>{closeLibrary?.();closeLibrary=openLibrary(layer.closest('.notes-board'),{client,noteId:note.id,signal:controller.signal});};
   function report(error){if(alive())status.textContent=error.message || 'Chưa đổi được trang trí.';}
   const current=id=>state.snapshot?.decorations.find(d=>d.id===id&&!d.deletedAt);
   const scale=()=>layer.closest('.paper-note').getBoundingClientRect().width/layer.closest('.paper-note').offsetWidth || 1;
@@ -110,7 +131,7 @@ export function mountNoteMedia(layer,{client,note,signal}={}) {
     if(record.image.tagName==='VIDEO')record.image.play().catch(()=>{});
   }
   function render(next){if(!alive())return;state=next;if(drag&&(state.leaseState==='lost'||!state.writable))cancelDrag();
-    if(state.writable){if(!add.isConnected)layer.append(add,status);}else {add.remove();status.remove();closeLibrary?.();closeInspector?.();}
+    if(state.writable){if(!status.isConnected)layer.append(status);}else {status.remove();closeInspector?.();}
     const items=(state.snapshot?.decorations || []).filter(d=>d.noteId===note.id&&!d.deletedAt);
     for(const [id,record] of records)if(!items.some(d=>d.id===id)){stopMedia(record.node);record.node.remove();records.delete(id);}
     for(const decoration of items){const data=state.snapshot.media?.find(a=>a.id===decoration.assetId);if(!data)continue;const asset={...data,fileUrl:`/api/note-assets/${data.id}/file`,posterUrl:`/api/note-assets/${data.id}/poster`};let record=records.get(decoration.id);
@@ -129,6 +150,6 @@ export function mountNoteMedia(layer,{client,note,signal}={}) {
   const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;for(const record of records.values())animate(record);},{root:layer.closest('.notes-viewport')});observer.observe(layer.closest('.paper-note'));
   const refreshAnimation=()=>{for(const record of records.values())animate(record);};motion.addEventListener('change',refreshAnimation,{signal:controller.signal});document.addEventListener('visibilitychange',refreshAnimation,{signal:controller.signal});
   const unsubscribe=client.subscribe(render);
-  function cleanup(){if(disposed)return;disposed=true;cancelDrag();controller.abort();unsubscribe();observer.disconnect();closeLibrary?.();closeInspector?.();for(const record of records.values()){stopMedia(record.node);record.node.remove();}records.clear();add.remove();status.remove();signal?.removeEventListener('abort',cleanup);}
+  function cleanup(){if(disposed)return;disposed=true;cancelDrag();controller.abort();unsubscribe();observer.disconnect();closeInspector?.();for(const record of records.values()){stopMedia(record.node);record.node.remove();}records.clear();status.remove();signal?.removeEventListener('abort',cleanup);}
   signal?.addEventListener('abort',cleanup,{once:true});return cleanup;
 }

@@ -24,11 +24,11 @@ try {
     const before = await evaluate(`import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration')).then(v=>({x:v.board.notes[0].x,revision:v.board.revision}))`);
     await evaluate("document.querySelector('[data-action=move-right]').click();document.querySelector('[data-action=move-right]').click()");
     await wait(`(await import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration'))).board.revision>=${before.revision+2}`);
-    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.left)-${before.x+20})<.01`),'I3: two rapid button moves must contribute two deltas');
+    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.left)-(${before.x+20}))<.01`),'I3: two rapid button moves must contribute two deltas');
     const keyBefore = await evaluate(`import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration')).then(v=>({y:v.board.notes[0].y,revision:v.board.revision}))`);
     await evaluate("document.querySelector('.note-handle').focus();for(let i=0;i<2;i++)document.querySelector('.note-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',repeat:i>0,bubbles:true}))");
     await wait(`(await import('/js/auth.js').then(m=>m.apiRequest('/api/boards/${existing}/collaboration'))).board.revision>=${keyBefore.revision+2}`);
-    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-${keyBefore.y+20})<.01`),'I3: repeated keys must contribute two deltas');
+    check(await evaluate(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-(${keyBefore.y+20}))<.01`),'I3: repeated keys must contribute two deltas');
     await evaluate(`document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Fast switch';document.querySelector('.notes-name-form').requestSubmit();document.querySelector('[data-board-tab="${existing}"]').click()`);
     const fast = await evaluate("JSON.parse(localStorage.getItem('homie-notes:pending-boards:minhle')).find(b=>b.name==='Fast switch').id");
     await evaluate(`document.querySelector('[data-board-tab="${fast}"]').click()`);await wait(`document.querySelector('[data-board-id]')?.dataset.boardId==='${fast}'`);

@@ -14,7 +14,7 @@ async function prepare(evaluate, account, boardId) {
     window.boardId=${boardId ? JSON.stringify(boardId) : 'crypto.randomUUID()'};
     window.client=await openBoardClient({boardId,accountId:'${account}'});
     if(!${!!boardId})await client.command({type:'board.create',baseRevision:0,payload:{name:'Kiểm chứng văn bản'}});
-    const css=document.createElement('link');css.rel='stylesheet';css.href='/styles/notes.css';document.head.append(css);
+    for(const href of ['/styles/notes.css','/styles/notes-format.css']){const css=document.createElement('link');css.rel='stylesheet';css.href=href;document.head.append(css);}
     document.body.className='notes-dashboard';window.host=document.createElement('div');document.body.append(host);
     window.stop=mountBoard(host,{client,mountEditor:mountBoardNoteEditor});
   })()`);
@@ -22,14 +22,18 @@ async function prepare(evaluate, account, boardId) {
 }
 try {
   await withBrowser(async (a, ca) => {
+    // Two headless pages run side by side; emulate page focus so real focusin events reach the editors.
+    await ca.call('Emulation.setFocusEmulationEnabled',{enabled:true});
     await prepare(a,'minhle');
     await a("client.command({type:'note.create',payload:{id:crypto.randomUUID(),columnId:null,x:30,y:30,width:520,height:450,color:'#fff0b8'}})");
     await wait(a,"document.querySelector('.tiptap[contenteditable=true]')");
     const ids=await a("({board:boardId,note:document.querySelector('.paper-note').dataset.noteId})");
     await withBrowser(async (b, cb) => {
+      await cb.call('Emulation.setFocusEmulationEnabled',{enabled:true});
       await prepare(b,'haiyen',ids.board);
       await wait(b,"document.querySelector('.tiptap[contenteditable=true]')");
       await wait(b,"client.getState().presence.find(peer=>peer.clientId===client.clientId)?.editors.length===0");
+      assert.deepEqual(await b("({rows:document.querySelectorAll('.notes-format-row').length,perNote:document.querySelectorAll('.note-text .note-format-tools,.note-text .notes-format-button').length,hint:!document.querySelector('.notes-format-hint').hidden,disabled:[...document.querySelectorAll('.notes-format-row > button')].every(node=>node.disabled)})"),{rows:1,perNote:0,hint:true,disabled:true},'One shared format row stays disabled until a note is focused');
       await b(`(async()=>{
         window.boundedWire=[];const publish=client.publishPresence;client.publishPresence=value=>{boundedWire.push(value.editors.map(editor=>editor.noteId));return publish(value)};
         window.extraNotes=[];
@@ -45,7 +49,18 @@ try {
       assert.deepEqual(await b('boundedWire.at(-1)'),[ids.note],'Wire itself contains only the focused note despite 17 stale cursor records');
       await wait(b,"client.getState().presence.find(peer=>peer.clientId===client.clientId)?.editors.length===1");
       assert.equal(await b("client.getState().presence.find(peer=>peer.clientId===client.clientId).editors[0].noteId"),ids.note,'Only the focused note uses a bounded wire caret slot');
+      assert.equal(await b("document.querySelectorAll('.notes-format-row').length"),1,'Eighteen notes still share exactly one format row');
+      await b(`(async()=>{
+        window.target=[...document.querySelectorAll('.tiptap')].find(node=>node.closest('.paper-note').dataset.noteId===extraNotes[3]).editor;
+        target.view.focus();target.commands.insertContent('Đậm riêng');target.commands.selectAll();
+        document.querySelector('.note-handle').focus();
+        document.querySelector('.notes-format-row [data-format=toggleBold]').click();await client.flush();
+      })()`);
+      assert.equal(await b("JSON.stringify(target.getJSON()).includes('bold')"),true,'Bold applies to the most recently focused note after blur');
+      assert.equal(await b("JSON.stringify(editor.getJSON()).includes('bold')"),false,'Other notes are untouched');
+      assert.equal(await b("document.querySelector('.notes-format-row [data-format=toggleBold]').getAttribute('aria-pressed')"),'true','aria-pressed follows the active editor');
       await b("(async()=>{for(const id of extraNotes)await client.command({type:'note.trash',payload:{id}});await client.flush()})()");
+      await wait(b,"document.querySelector('.notes-format-row [data-format=toggleBold]').disabled && !document.querySelector('.notes-format-hint').hidden");
       await a("window.editor=document.querySelector('.tiptap').editor;editor.commands.insertContentAt(1,'Minh Lê: ')");
       await b("window.editor=document.querySelector('.tiptap').editor;editor.commands.insertContentAt(1,'Hải Yến: ')");
       await wait(a,"editor.getText().includes('Hải Yến')");await wait(b,"editor.getText().includes('Minh Lê')");
@@ -57,6 +72,26 @@ try {
       await wait(b,"editor.getJSON().content[0].type==='taskList'");
       assert.deepEqual(await a('editor.getJSON()'),await b('editor.getJSON()'));
       assert.ok(JSON.stringify(await b('editor.getJSON()')).includes('underline'));
+      const colorAt=`(()=>{const marks=editor.getJSON().content[0].content[0].content[0].content[0].marks||[];return marks.find(mark=>mark.type==='textStyle')?.attrs.color;})()`;
+      await a("editor.view.focus();editor.commands.setTextSelection({from:3,to:7});document.querySelector('.notes-format-row [data-format=color]').click()");
+      assert.equal(await a("!document.querySelector('.notes-color-panel').hidden && !!document.activeElement.closest('.notes-color-panel')"),true,'Colour panel opens with focus inside');
+      await a("document.querySelector('[data-color-mode=rgb]').click();for(const [channel,value] of [['R',18],['G',52],['B',86]]){const input=document.querySelector(`input[type=number][data-channel=${channel}]`);input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));}");
+      assert.equal(await a("document.querySelector('.notes-color-hex').value"),'#123456');
+      await a("document.querySelector('[data-color-action=apply]').click();client.flush()");
+      assert.equal(await a(colorAt),'#123456','RGB mode applies lowercase #rrggbb');
+      await wait(b,`${colorAt}==='#123456'`);
+      await a("editor.commands.setTextSelection({from:3,to:7});document.querySelector('.notes-format-row [data-format=color]').click();document.querySelector('[data-color-mode=wheel]').click();{const light=document.querySelector('.notes-color-light input');light.value='100';light.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.notes-color-wheel').scrollIntoView({block:'center'})");
+      const wheel=await a("(()=>{const r=document.querySelector('.notes-color-wheel').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,r:r.width/2};})()");
+      await ca.call('Input.dispatchMouseEvent',{type:'mousePressed',x:wheel.x,y:wheel.y,button:'left',buttons:1,clickCount:1});
+      await ca.call('Input.dispatchMouseEvent',{type:'mouseMoved',x:wheel.x+wheel.r+30,y:wheel.y,button:'left',buttons:1});
+      await ca.call('Input.dispatchMouseEvent',{type:'mouseReleased',x:wheel.x+wheel.r+30,y:wheel.y,button:'left',buttons:0,clickCount:1});
+      assert.equal(await a("document.querySelector('.notes-color-hex').value"),'#80ff00','Wheel drag picks hue by angle and saturation by distance');
+      await a("for(let i=0;i<6;i++)document.querySelector('.notes-color-wheel').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}))");
+      assert.equal(await a("document.querySelector('.notes-color-hex').value"),'#ffff00','Arrow keys on the wheel adjust hue');
+      await a("document.querySelector('[data-color-action=apply]').click();client.flush()");
+      assert.equal(await a(colorAt),'#ffff00','Wheel mode applies lowercase #rrggbb');
+      await a("document.querySelector('.notes-format-row [data-format=color]').click();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+      assert.equal(await a("document.querySelector('.notes-color-panel').hidden && document.activeElement.dataset.format==='color'"),true,'Escape closes the colour panel and returns focus to its trigger');
       await b("editor.commands.focus('end')");
       await wait(a,"document.querySelector('.collaboration-carets__label')?.textContent==='Hải Yến'");
       await b("window.presenceTimes=[];const publish=client.publishPresence;client.publishPresence=value=>{presenceTimes.push(performance.now());return publish(value)};for(let i=0;i<80;i++)document.querySelector('.notes-viewport').dispatchEvent(new PointerEvent('pointermove',{clientX:200+i,clientY:250,bubbles:true}));");
@@ -103,19 +138,30 @@ try {
       await wait(a,"client.getState().pending.total===0");await wait(b,"client.getState().pending.total===0");
       const font=await a("(async()=>{await document.fonts.load('23px \"Homie Patrick Hand\"','Tiếng Việt Ắ ệ ỗ');await document.fonts.ready;return {loaded:document.fonts.check('23px \"Homie Patrick Hand\"'),family:getComputedStyle(editor.view.dom).fontFamily}})()");
       assert.equal(font.loaded,true);assert.match(font.family,/Homie Patrick Hand/);
-      assert.equal(await a("[...document.querySelectorAll('.note-format-button,.note-format-color')].every(node=>node.getBoundingClientRect().width>=44 && node.getBoundingClientRect().height>=44)"),true,'Formatting targets are at least 44px');
+      assert.equal(await a("[...document.querySelectorAll('.notes-format-row button')].filter(node=>node.getClientRects().length).every(node=>node.getBoundingClientRect().width>=44 && node.getBoundingClientRect().height>=44)"),true,'Formatting targets are at least 44px');
       assert.equal(await a("getComputedStyle(document.querySelector('.tiptap li[data-checked]')).display"),'flex','Checklist checkbox stays beside its text');
       await withBrowser(async guest=>{
         await guest(`(async()=>{const {openBoardClient}=await import('/js/notes/client.js');const {mountBoard}=await import('/js/notes/board.js');const {mountBoardNoteEditor}=await import('/js/notes/editor.js');window.client=await openBoardClient({boardId:'${ids.board}'});window.privateCalls=0;for(const name of ['getDocument','getAwareness','getPending'])client[name]=()=>{privateCalls++;throw Error('Guest private call')};window.host=document.createElement('div');document.body.append(host);window.stop=mountBoard(host,{client,mountEditor:mountBoardNoteEditor});})()`);
         await wait(guest,"document.querySelector('.tiptap')?.textContent.includes('Tiếng Việt')");
-        assert.equal(await guest("document.querySelectorAll('[contenteditable=true],.note-format-tools,.collaboration-carets__label,.notes-peer-pointer,[data-mutation]').length"),0,'Guest has no mutation or private presence DOM');
+        assert.equal(await guest("document.querySelectorAll('[contenteditable=true],.note-format-tools,.notes-format-row button,.collaboration-carets__label,.notes-peer-pointer,[data-mutation]').length"),0,'Guest has no mutation or private presence DOM');
+        assert.equal(await guest("document.querySelector('.notes-format-row').hidden"),true,'Read-only board hides the shared format row');
         assert.equal(await guest('privateCalls'),0,'Guest renderer never requests private documents/awareness/queue');
         assert.equal(await guest("[...document.querySelectorAll('input[type=checkbox]')].every(input=>input.disabled)"),true);
         assert.deepEqual(await guest('client.getState().presence'),[]);
         await guest('stop();client.close()');
       },undefined,{origin:fixture.origin});
-      for(const width of [1440,390]) {
+      for(const width of [1440,390,320]) {
         await ca.call('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+        if(width===320){
+          await a("editor.view.focus();document.querySelector('.notes-format-row [data-format=color]').click();document.querySelector('[data-color-mode=wheel]').click()");
+          for(const colorMode of ['rgb','wheel']){
+            await a(`document.querySelector('[data-color-mode=${colorMode}]').click()`);
+            const fit=await a("(()=>{const row=document.querySelector('.notes-format-row'),panel=row.querySelector('.notes-color-panel').getBoundingClientRect();return {rowScroll:row.scrollWidth<=row.clientWidth,panelInside:panel.left>=0&&panel.right<=innerWidth,small:[...row.querySelectorAll('button,input')].filter(node=>node.getClientRects().length&&node.getBoundingClientRect().height<44||node.tagName==='BUTTON'&&node.getClientRects().length&&node.getBoundingClientRect().width<44).length,pageScroll:document.documentElement.scrollWidth>innerWidth};})()");
+            assert.deepEqual(fit,{rowScroll:true,panelInside:true,small:0,pageScroll:false},`320px ${colorMode} panel fits without scrollbars`);
+          }
+          const shot=await ca.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile('/private/tmp/task-format-320.png',Buffer.from(shot.data,'base64'));
+          await a("document.querySelector('[data-color-action=close]').click()");
+        }
         if(width===390){await a("{const input=document.querySelector('[name=width]');input.value='260';input.dispatchEvent(new Event('change',{bubbles:true}));}");await wait(a,"parseFloat(document.querySelector('.paper-note').style.width)===260");}
         assert.equal(await a('document.documentElement.scrollWidth>innerWidth'),false,'No page overflow');
         const shot=await ca.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(`/private/tmp/task-6-${width}.png`,Buffer.from(shot.data,'base64'));
@@ -150,7 +196,7 @@ try {
     assert.equal(await evaluate('previous.isDestroyed'),true);
     await evaluate("location.hash='dashboard'");await wait(evaluate,"document.querySelector('.tiptap[contenteditable=true]')");
     await evaluate('auth.logout()');await wait(evaluate,"document.querySelector('.tiptap[contenteditable=false]')");
-    assert.equal(await evaluate("document.querySelectorAll('.note-format-tools,[data-mutation],.collaboration-carets__label').length"),0,'Explicit logout replaces private editor with public mode');
+    assert.equal(await evaluate("document.querySelectorAll('.note-format-tools,.notes-format-row button,[data-mutation],.collaboration-carets__label').length"),0,'Explicit logout replaces private editor with public mode');
     assert.equal(await evaluate("document.querySelector('.tiptap').textContent"),'Trang công khai');
     await evaluate(`auth.login('minhle',${JSON.stringify(fixturePasswords.minhle)})`);
     await wait(evaluate,"document.querySelector('.tiptap[contenteditable=true]')");
@@ -162,7 +208,7 @@ try {
     await evaluate("document.querySelector('[data-action=save]')?.click();auth.refreshSession()");
     await wait(evaluate,"document.querySelector('.tiptap[contenteditable=false]')");
     assert.equal(await evaluate('privateEditor.isDestroyed'),true,'Expired session destroys private editor');
-    assert.equal(await evaluate("document.querySelectorAll('.note-format-tools,[data-mutation],.notes-peer-pointer').length"),0);
+    assert.equal(await evaluate("document.querySelectorAll('.note-format-tools,.notes-format-row button,[data-mutation],.notes-peer-pointer').length"),0);
     assert.equal(await evaluate("document.body.textContent.includes('NHÁP RIÊNG CHƯA ACK')"),false,'Expiry clears unacknowledged private draft from DOM');
     assert.equal(await evaluate("document.querySelector('.tiptap').textContent"),'Trang công khai','Expiry renders only committed public projection');
   },undefined,{origin:lifecycle.origin});

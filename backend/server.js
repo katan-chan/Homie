@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { createAuth } from './auth.js';
+import { supabaseFromEnv } from './supabase.js';
 import { accountIds, createProfiles, validateProfile } from './profiles.js';
 import { createNotesStore } from './notes-store.js';
 import { createNotesApi, notesRoute } from './notes-api.js';
@@ -42,14 +43,17 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   // The Vercel /api proxy preserves the browser Origin for this allowlist.
   const allowed = new Set(frontendOrigins.split(',').map((origin) => origin.trim()).filter(Boolean));
   const auth = createAuth(options);
-  const profiles = createProfiles(options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data');
+  // Supabase when SUPABASE_URL + SUPABASE_SECRET_KEY are set (production); files in dataDir otherwise. Tests may pass options.remote.
+  const remote = 'remote' in options ? options.remote : supabaseFromEnv();
+  const profiles = createProfiles(options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', remote);
   let notesReady, closing = false;
   const notes = () => {
     if (!notesReady) {
-      notesReady = createNotesStore({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data' })
-        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', store, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }));
+      notesReady = createNotesStore({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', remote })
+        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', store, remote, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }));
       // Observe initialization even if a request disconnects; notes failure never affects health/auth/profile.
-      notesReady.catch(() => {});
+      // A failed start (for example remote storage unreachable) is retried on the next request instead of cached.
+      notesReady.catch(() => { notesReady = null; });
     }
     return notesReady;
   };

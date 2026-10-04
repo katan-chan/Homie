@@ -1,11 +1,119 @@
 import { Editor, Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color,
   BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem,
   Collaboration, CollaborationCaret, Y, yUndoPluginKey } from '../../assets/vendor/notes.js';
+import { openAssetPicker } from './library.js';
 
 const extensions = [Document, Paragraph, Text, Bold, Italic, Underline, TextStyle, Color,
   BulletList, OrderedList, ListItem, ListKeymap, TaskList, TaskItem.configure({ nested: true, a11y: { checkboxLabel: node => `Đánh dấu việc: ${node.textContent || 'Việc chưa có tên'}` } })];
-const colors = ['#654c51', '#9a3456', '#37664c', '#345d85', '#79549a'];
+const colors = [['#654c51','Mực nâu'], ['#9a3456','Hồng'], ['#37664c','Xanh lá'], ['#345d85','Xanh dương'], ['#79549a','Tím']];
+const formatButtons = [['B','In đậm','toggleBold','bold'],['I','In nghiêng','toggleItalic','italic'],['U','Gạch dưới','toggleUnderline','underline'],['•','Danh sách chấm','toggleBulletList','bulletList'],['1.','Danh sách số','toggleOrderedList','orderedList'],['☑','Danh sách việc','toggleTaskList','taskList'],['↶','Hoàn tác văn bản','undo'],['↷','Làm lại văn bản','redo']];
 const maximumCharacters = 100000;
+// Lowercase #rrggbb passes publicContent, model and backend cssColor text-mark validation.
+const hex = rgb => '#'+rgb.map(n=>Math.round(n).toString(16).padStart(2,'0')).join('');
+const hsvToRgb = ([h,s,v]) => [5,3,1].map(n=>{const k=(n+h/60)%6;return Math.round(255*v*(1-s*Math.max(0,Math.min(k,4-k,1))));});
+function rgbToHsv([r,g,b], hue = 0) {
+  const max = Math.max(r,g,b), d = max-Math.min(r,g,b);
+  return [!d ? hue : max===r ? 60*(((g-b)/d+6)%6) : max===g ? 60*((b-r)/d+2) : 60*((r-g)/d+4), max ? d/max : 0, max/255];
+}
+const parseHex = value => value.match(/[\da-f]{2}/gi).map(part=>parseInt(part,16));
+const make = (tag, className, text) => {const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
+const formatRows = new WeakMap();
+let panelSerial = 0;
+// One controller per board format row; buttons act on the note editor that last had focus.
+function formatControls(row) {
+  let tools = formatRows.get(row); if (tools) return tools;
+  const controller = new AbortController(), on = (node,type,fn) => node.addEventListener(type,fn,{signal:controller.signal});
+  const entries = new Set(), controls = [];
+  let active = null, closePicker = null, rgb = hsvToRgb([0,0,.4]), hsv = rgbToHsv(rgb), mode = 'rgb';
+  const current = () => active?.editor() || null;
+  const hint = make('p','notes-format-hint','Chọn một ghi chú để định dạng');
+  function control(label, title, command, mark) {
+    const node = make('button','notes-format-button',label); node.type = 'button'; node.title = title; node.setAttribute('aria-label',title); node.dataset.format = command;
+    on(node,'mousedown',event=>event.preventDefault()); controls.push({node,command,mark}); return node;
+  }
+  const buttons = formatButtons.map(([label,title,command,mark])=>{const node=control(label,title,command,mark);on(node,'click',()=>{current()?.chain().focus()[command]().run();refresh();});return node;});
+  const colorButton = control('Màu chữ','Màu chữ','color'), swatch = make('span','notes-format-swatch'); swatch.setAttribute('aria-hidden','true'); colorButton.prepend(swatch);
+  const imageButton = control('Chèn hình','Chèn hình vào ghi chú','image');
+  const panel = make('div','notes-color-panel'); panel.id = `notes-color-panel-${++panelSerial}`; panel.hidden = true; panel.setAttribute('role','group'); panel.setAttribute('aria-label','Chọn màu chữ');
+  colorButton.setAttribute('aria-expanded','false'); colorButton.setAttribute('aria-controls',panel.id);
+  const presets = make('div','notes-color-presets');
+  for (const [value,name] of colors) {const node=make('button','notes-color-preset');node.type='button';node.style.background=value;node.title=name;node.setAttribute('aria-label',name);node.dataset.color=value;on(node,'click',()=>{setRgb(parseHex(value));apply();});presets.append(node);}
+  const modes = make('div','notes-color-modes'), sections = {rgb:make('div','notes-color-rgb'), wheel:make('div','notes-color-wheel-section')};
+  const modeButtons = [['rgb','RGB'],['wheel','Vòng màu']].map(([key,label])=>{const node=make('button','notes-format-button',label);node.type='button';node.dataset.colorMode=key;on(node,'click',()=>{mode=key;render();});modes.append(node);return node;});
+  const channels = ['R','G','B'].map((label,index)=>{
+    const wrapper = make('div','notes-color-channel'), name = make('label','',label), range = make('input'), number = make('input');
+    range.type = 'range'; number.type = 'number'; for (const input of [range,number]) {input.min='0';input.max='255';input.step='1';}
+    range.id = `${panel.id}-${label}`; name.htmlFor = range.id; number.setAttribute('aria-label',`${label} (0–255)`); range.dataset.channel = number.dataset.channel = label;
+    for (const input of [range,number]) on(input,'input',()=>{const value=Number(input.value);if(!Number.isFinite(value))return;const next=[...rgb];next[index]=Math.min(255,Math.max(0,Math.round(value)));setRgb(next);});
+    wrapper.append(name,range,number); sections.rgb.append(wrapper); return {range,number};
+  });
+  const wheel = make('div','notes-color-wheel'), marker = make('span','notes-color-marker'); wheel.tabIndex = 0; wheel.setAttribute('role','slider'); wheel.setAttribute('aria-label','Vòng màu: trái/phải đổi sắc màu, lên/xuống đổi độ đậm'); wheel.setAttribute('aria-valuemin','0'); wheel.setAttribute('aria-valuemax','359'); wheel.append(marker);
+  const lightLabel = make('label','notes-color-light','Độ sáng '), light = make('input'); light.type = 'range'; light.min = '0'; light.max = '100'; lightLabel.append(light); sections.wheel.append(wheel,lightLabel);
+  const preview = make('div','notes-color-preview'), previewSwatch = make('span','notes-format-swatch'), output = make('output','notes-color-hex'); previewSwatch.setAttribute('aria-hidden','true'); preview.append(previewSwatch,output);
+  const applyButton = make('button','notes-format-button','Áp dụng'), closeButton = make('button','notes-format-button','Đóng'); applyButton.type = closeButton.type = 'button'; applyButton.dataset.colorAction = 'apply'; closeButton.dataset.colorAction = 'close';
+  const actions = make('div','notes-color-actions'); actions.append(applyButton,closeButton);
+  panel.append(presets,modes,sections.rgb,sections.wheel,preview,actions);
+  function setRgb(next) {rgb = next; hsv = rgbToHsv(rgb,hsv[0]); render();}
+  function setHsv(next) {hsv = next; rgb = hsvToRgb(hsv); render();}
+  function render() {
+    const value = hex(rgb);
+    channels.forEach(({range,number},index)=>{range.value=number.value=String(rgb[index]);});
+    for (const node of modeButtons) node.setAttribute('aria-pressed',String(node.dataset.colorMode===mode));
+    sections.rgb.hidden = mode !== 'rgb'; sections.wheel.hidden = mode !== 'wheel';
+    const angle = hsv[0]*Math.PI/180; marker.style.left = `${50+50*hsv[1]*Math.sin(angle)}%`; marker.style.top = `${50-50*hsv[1]*Math.cos(angle)}%`;
+    wheel.style.setProperty('--wheel-dim',String(1-hsv[2])); light.value = String(Math.round(hsv[2]*100));
+    wheel.setAttribute('aria-valuenow',String(Math.round(hsv[0])%360)); wheel.setAttribute('aria-valuetext',`Sắc màu ${Math.round(hsv[0])%360}°, độ đậm ${Math.round(hsv[1]*100)}%`);
+    for (const node of [swatch,previewSwatch,marker]) node.style.background = value;
+    output.value = value; panel.dataset.color = value;
+  }
+  function pick(event) {const box=wheel.getBoundingClientRect(),x=event.clientX-box.left-box.width/2,y=event.clientY-box.top-box.height/2;setHsv([(Math.atan2(x,-y)*180/Math.PI+360)%360,Math.min(1,Math.hypot(x,y)/(box.width/2)),hsv[2]]);}
+  on(wheel,'pointerdown',event=>{if(event.button!==0)return;event.preventDefault();wheel.focus();wheel.setPointerCapture(event.pointerId);pick(event);});
+  on(wheel,'pointermove',event=>{if(wheel.hasPointerCapture(event.pointerId))pick(event);});
+  on(wheel,'keydown',event=>{
+    const step = event.shiftKey ? 3 : 1, change = {ArrowLeft:[-5,0],ArrowRight:[5,0],ArrowUp:[0,.05],ArrowDown:[0,-.05]}[event.key]; if (!change) return;
+    event.preventDefault(); event.stopPropagation(); setHsv([(hsv[0]+change[0]*step+360)%360,Math.min(1,Math.max(0,hsv[1]+change[1]*step)),hsv[2]]);
+  });
+  on(light,'input',()=>setHsv([hsv[0],hsv[1],Number(light.value)/100]));
+  function openPanel() {
+    const color = current()?.getAttributes('textStyle').color;
+    if (/^#[\da-f]{6}$/i.test(color || '')) setRgb(parseHex(color)); else render();
+    panel.hidden = false; colorButton.setAttribute('aria-expanded','true'); modeButtons.find(node=>node.dataset.colorMode===mode).focus();
+  }
+  function closePanel(returnFocus) {
+    if (panel.hidden) return; panel.hidden = true; colorButton.setAttribute('aria-expanded','false');
+    if (returnFocus && !colorButton.disabled) colorButton.focus();
+  }
+  function apply() {current()?.chain().focus().setColor(hex(rgb)).run();closePanel(false);refresh();}
+  on(colorButton,'click',()=>{if(!current())return;if(panel.hidden)openPanel();else closePanel(true);});
+  on(applyButton,'click',apply); on(closeButton,'click',()=>closePanel(true));
+  on(panel,'keydown',event=>{if(event.key!=='Escape')return;event.preventDefault();event.stopPropagation();closePanel(true);});
+  on(imageButton,'click',()=>{
+    const entry = active; if (!entry?.editor()) return;
+    closePicker?.(); closePicker = openAssetPicker(row.closest('.notes-board') || document.body,{client:entry.client,noteId:entry.noteId,signal:entry.signal});
+  });
+  // Text history shortcuts stay with the active note while focus is on the shared row.
+  on(row,'keydown',event=>{
+    const key = event.key.toLowerCase(); if (event.defaultPrevented || !(event.ctrlKey||event.metaKey) || !['z','y'].includes(key) || !current()) return;
+    event.preventDefault(); event.stopPropagation(); current().commands[event.shiftKey || key === 'y' ? 'redo' : 'undo']();
+  });
+  function refresh() {
+    const editor = current(); hint.hidden = !!editor;
+    for (const {node,command,mark} of controls) {
+      node.disabled = !editor;
+      if (mark) node.setAttribute('aria-pressed',String(!!editor?.isActive(mark)));
+      if (editor && (command === 'undo' || command === 'redo')) {const manager = yUndoPluginKey.getState(editor.state)?.undoManager; node.disabled = !manager || !(command === 'undo' ? manager.undoStack : manager.redoStack).length;}
+    }
+    if (!editor) closePanel(false);
+  }
+  function destroy() {controller.abort();closePicker?.();row.replaceChildren();formatRows.delete(row);}
+  tools = {
+    add(entry) {entries.add(entry);refresh();return ()=>{if(!entries.delete(entry))return;if(active===entry)active=null;if(entries.size)refresh();else destroy();};},
+    activate(entry) {active = entry; refresh();},
+    refresh(entry) {if (entry === active) refresh();},
+  };
+  row.replaceChildren(hint,...buttons,colorButton,imageButton,panel); render(); formatRows.set(row,tools);
+  return tools;
+}
 const presenceSessions = new WeakMap();
 function presenceSession(client) {
   let session = presenceSessions.get(client);
@@ -71,31 +179,18 @@ function publicContent(content) {
   return result?.type === 'doc' ? result : {type:'doc',content:[{type:'paragraph'}]};
 }
 
-export function mountNoteEditor(element, { noteId, client, signal, readOnly = false }) {
-  let disposed = false, editor = null, awareness = null, presence = null, unsubscribe = () => {}, lastPublic = '', localChange = null;
+export function mountNoteEditor(element, { noteId, client, signal, readOnly = false, formatRow = null }) {
+  let disposed = false, editor = null, awareness = null, presence = null, unsubscribe = () => {}, lastPublic = '', localChange = null, format = null, unregister = null;
   const controller = new AbortController();
-  const toolbar = document.createElement('div'); toolbar.className = 'note-format-tools'; toolbar.setAttribute('role','toolbar'); toolbar.setAttribute('aria-label','Định dạng ghi chú');
   const content = document.createElement('div'); content.className = 'note-editor';
   const message = document.createElement('p'); message.className = 'note-editor-status'; message.setAttribute('role','status');
-  const controls = [];
+  const entry = {noteId, client, signal: controller.signal, editor: () => writable() ? editor : null};
   function alive() { return !disposed && !signal?.aborted && !controller.signal.aborted; }
   function writable() { return alive() && !readOnly && client.getState().writable; }
   function report(error) { if (alive()) message.textContent = error?.message || 'Chưa thể mở văn bản. Hãy thử lại.'; }
   function undo() { return writable() && !!editor?.commands.undo(); }
   function redo() { return writable() && !!editor?.commands.redo(); }
-  function updateControls() {
-    if (!editor || !alive()) return;
-    for (const {node,active,command} of controls) {
-      if (active) node.setAttribute('aria-pressed',String(editor.isActive(active)));
-      if (command === 'undo' || command === 'redo') { const manager = yUndoPluginKey.getState(editor.state)?.undoManager; node.disabled = !manager || !(command === 'undo' ? manager.undoStack : manager.redoStack).length; }
-    }
-  }
-  function addButton(label, title, command, active) {
-    const node = document.createElement('button'); node.type = 'button'; node.className = 'note-format-button'; node.textContent = label; node.setAttribute('aria-label',title); node.title = title; node.dataset.format = command;
-    node.addEventListener('mousedown', event=>event.preventDefault(),{signal:controller.signal});
-    node.addEventListener('click',()=>{if(!writable() || !editor)return;editor.chain().focus()[command]().run();updateControls();},{signal:controller.signal});
-    toolbar.append(node); controls.push({node,command,active});
-  }
+  function updateControls() { if (editor && alive()) format?.refresh(entry); }
   function create(options) {
     editor = new Editor({ element: content, extensions, editable: !readOnly,
       editorProps: {
@@ -146,7 +241,7 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
     } catch (error) { report(error); }
   }
   function cleanup() {
-    if (disposed) return; disposed = true; controller.abort(); unsubscribe();
+    if (disposed) return; disposed = true; controller.abort(); unsubscribe(); unregister?.();
     if (awareness && localChange) awareness.off('change',localChange);
     editor?.destroy(); editor = null;
     awareness?.setLocalState(null);
@@ -157,10 +252,7 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
   if (signal?.aborted) {disposed=true;return api;}
   element.replaceChildren(content,message); element.dataset.editorState = 'loading';
   if (!readOnly) {
-    for (const row of [['B','In đậm','toggleBold','bold'],['I','In nghiêng','toggleItalic','italic'],['U','Gạch dưới','toggleUnderline','underline'],['•','Danh sách chấm','toggleBulletList','bulletList'],['1.','Danh sách số','toggleOrderedList','orderedList'],['☑','Danh sách việc','toggleTaskList','taskList'],['↶','Hoàn tác văn bản','undo'],['↷','Làm lại văn bản','redo']]) addButton(...row);
-    const palette = document.createElement('select'); palette.className = 'note-format-color'; palette.setAttribute('aria-label','Màu chữ');
-    for (const [index,color] of colors.entries()) {const option=document.createElement('option');option.value=color;option.textContent=['Mực nâu','Hồng','Xanh lá','Xanh dương','Tím'][index];palette.append(option);}
-    palette.addEventListener('change',()=>{if(writable()&&editor)editor.chain().focus().setColor(palette.value).run();},{signal:controller.signal});toolbar.append(palette);element.prepend(toolbar);
+    if (formatRow) {format = formatControls(formatRow); unregister = format.add(entry); element.addEventListener('focusin',()=>format.activate(entry),{signal:controller.signal});}
     element.addEventListener('keydown',event=>{
       if (event.defaultPrevented || event.isComposing || !(event.ctrlKey||event.metaKey)) return;
       const key = event.key.toLowerCase();
@@ -174,8 +266,8 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
   return api;
 }
 
-export function mountBoardNoteEditor(element, { note, client, signal }) {
-  return mountNoteEditor(element,{noteId:note.id,client,signal,readOnly:!client.getState().writable}).cleanup;
+export function mountBoardNoteEditor(element, { note, client, signal, formatRow }) {
+  return mountNoteEditor(element,{noteId:note.id,client,signal,readOnly:!client.getState().writable,formatRow}).cleanup;
 }
 
 export function mountBoardPresence(viewport, { client, signal, worldPoint }) {

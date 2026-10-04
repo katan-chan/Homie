@@ -4,6 +4,8 @@ Logo riêng: hoa cosmos hồng và cúc kem, hai nhành lá sage đan vào nhau.
 
 - `garden-logo.png`: bản gốc nền trong suốt, tạo bằng công cụ imagegen tích hợp ngày 2026-10-01.
 - `garden-logo.webp`: bản dùng trên website, mã hóa quality 90, alpha quality 100.
+- `favicon-32.png`: icon tab trình duyệt, cắt viền trong suốt của `garden-logo.png` rồi thu về 32×32, nền trong suốt.
+- `apple-touch-icon.png`: icon 180×180 khi thêm vào màn hình chính iOS; logo 140px trên nền hồng `#f8e8ee` vì iOS tô nền trong suốt thành đen.
 
 ## Prompt
 

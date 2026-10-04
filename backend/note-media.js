@@ -40,10 +40,10 @@ function run(binary,args,signal) {
 async function syncFile(path) {const handle=await open(path,'r');try{await handle.sync();}finally{await handle.close();}}
 
 /** Files and stages stay outside the web root. The existing notes store alone owns durable metadata/receipts. */
-export function createNoteMedia({dataDir,store,ffmpegPath=process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath=process.env.FFPROBE_PATH || 'ffprobe'}) {
+export function createNoteMedia({dataDir,store,remote=null,ffmpegPath=process.env.FFMPEG_PATH || 'ffmpeg',ffprobePath=process.env.FFPROBE_PATH || 'ffprobe'}) {
   const files=join(dataDir,'note-media'),temporary=join(dataDir,'note-media-tmp'),stages=new Map(),controllers=new Set(),publishing=new Map();
   let active=0,closed=false;const waiters=[],jobs=new Set();
-  const ready=(async()=>{await mkdir(files,{recursive:true});await rm(temporary,{recursive:true,force:true});await mkdir(temporary,{recursive:true});})();ready.catch(()=>{});
+  const ready=(async()=>{if(!remote)await mkdir(files,{recursive:true});await rm(temporary,{recursive:true,force:true});await mkdir(temporary,{recursive:true});})();ready.catch(()=>{});
   async function prune() {for(const [id,s] of stages)if(s.expiresAt<=Date.now()){stages.delete(id);await rm(s.dir,{recursive:true,force:true});}}
   const timer=setInterval(()=>prune().catch(()=>{}),30000);timer.unref();
   async function slot(signal) {
@@ -81,11 +81,14 @@ export function createNoteMedia({dataDir,store,ffmpegPath=process.env.FFMPEG_PAT
           const id=meta.operationId,record={...stage.asset,id,name:meta.name,fileName:`${id}.${stage.asset.mimeType==='image/gif'?'gif':'webm'}`,posterName:`${id}.png`};
           const targets=[[source,`${id}.source`],[join(stage.dir,'converted'),record.fileName],[join(stage.dir,'poster.png'),record.posterName]],created=[];
           try {
-            for(const [input,name] of targets){fence();const dest=join(files,name),scratch=`${dest}.${randomUUID()}.tmp`;try{await copyFile(input,scratch);await syncFile(scratch);await rename(scratch,dest);created.push(dest);}finally{await rm(scratch,{force:true});}}
-            await syncFile(files);fence();await authorize();
+            // Remote mode uploads to the private bucket; local mode copies into dataDir. Either way files exist before registration.
+            if(remote){const contentTypes=[meta.mimeType,record.mimeType,'image/png'];for(const [index,[input,name]] of targets.entries()){fence();await remote.putFile(name,await readFile(input),contentTypes[index]);created.push(name);}}
+            else {for(const [input,name] of targets){fence();const dest=join(files,name),scratch=`${dest}.${randomUUID()}.tmp`;try{await copyFile(input,scratch);await syncFile(scratch);await rename(scratch,dest);created.push(dest);}finally{await rm(scratch,{force:true});}}
+              await syncFile(files);}
+            fence();await authorize();
             const result=await store.registerAsset(meta.accountId,record,meta.operationId,{authorize,uploadIdentity});
             return {...result,asset:assetView(result.asset)};
-          }catch(error){if(!store.asset(id))await Promise.all(created.map(path=>rm(path,{force:true})));throw error;}
+          }catch(error){if(!store.asset(id))await (remote?remote.removeFiles(created).catch(()=>{}):Promise.all(created.map(path=>rm(path,{force:true}))));throw error;}
         })();publishing.set(key,{binding:binding(meta),promise:job});try{return await job;}finally{publishing.delete(key);}
       }
       if(stages.size>=MEDIA_LIMITS.previews)throw notesError('media_busy','Too many outstanding previews',429);
@@ -127,11 +130,14 @@ export function createNoteMedia({dataDir,store,ffmpegPath=process.env.FFMPEG_PAT
       return {previewId,expiresAt:stages.get(previewId).expiresAt,asset:assetView(asset,`/api/note-assets/previews/${previewId}`)};
     }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controllers.delete(controller);if(acquired)release();if(dir&&!retained)await rm(dir,{recursive:true,force:true});}
   }
+  const stored=(asset,poster)=>{const name=poster?asset.posterName:asset.fileName,mimeType=poster?'image/png':asset.mimeType;return remote?{remoteKey:name,mimeType}:{path:join(files,name),mimeType};};
   return {ingest(options){const job=ingest(options);jobs.add(job);job.finally(()=>jobs.delete(job)).catch(()=>{});return job;},list:()=>store.library().map(asset=>assetView(asset)),
     rename:(id,name,{accountId,operationId,authorize}={})=>store.updateAsset(accountId,id,{name},operationId,{authorize}),
     remove:(id,{accountId,operationId,authorize}={})=>store.updateAsset(accountId,id,{removed:true},operationId,{authorize}),
-    resolvePublicAsset(id,poster=false){const asset=store.asset(id);return asset&&store.isAssetPublic(id)?{path:join(files,poster?asset.posterName:asset.fileName),mimeType:poster?'image/png':asset.mimeType}:null;},
-    resolveAsset(id,poster=false){const asset=store.asset(id);return asset?{path:join(files,poster?asset.posterName:asset.fileName),mimeType:poster?'image/png':asset.mimeType}:null;},
+    resolvePublicAsset(id,poster=false){const asset=store.asset(id);return asset&&store.isAssetPublic(id)?stored(asset,poster):null;},
+    resolveAsset(id,poster=false){const asset=store.asset(id);return asset?stored(asset,poster):null;},
+    /** Remote files: a fetch Response to stream, or null when missing. */
+    fetchRemote:key=>remote.getFile(key),
     resolvePreview(id,token,poster=false){const stage=stages.get(id);return stage&&stage.sessionToken===token&&stage.expiresAt>Date.now()?{path:join(stage.dir,poster?'poster.png':'converted'),mimeType:poster?'image/png':stage.asset.mimeType}:null;},
     async close(){if(closed)return;closed=true;clearInterval(timer);for(const c of controllers)c.abort(notesError('store_closed','Media is closing',503));await Promise.allSettled([...jobs]);await Promise.all([...stages.values()].map(s=>rm(s.dir,{recursive:true,force:true})));stages.clear();},
   };
