@@ -1,1 +1,85 @@
-/* Phần B sở hữu file này. */
+/* Phần B: tab Lịch (.cal-page) và sheet của nó (.cal-sheet). Mọi selector có tiền tố cal-. */
+.cal-page{--cal-card:#fffdf9;--cal-line:#ecd5dc;--cal-border:#d9b6c1;--cal-muted:#866b77;--cal-lilac:#ece2f3;--cal-lilac-ink:#6a4a7d;--cal-warn:#fbe1d2;--cal-warn-ink:#8a4520;
+  position:relative;margin:104px 0 48px;padding:24px;min-width:0;color:var(--ink);background:#fff8f2f2;border:1px solid var(--cal-line);border-radius:24px;box-shadow:0 12px 40px #6543550b}
+.cal-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 4px}
+.cal-sub{margin:0 0 18px;color:var(--cal-muted)}
+.cal-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.cal-month{font:600 20px Georgia,"Times New Roman",serif;margin:0 8px;min-width:150px}
+.cal-spacer{flex:1}
+.cal-btn{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--cal-border);border-radius:12px;background:var(--cal-card);color:var(--ink)}
+.cal-btn.small{padding:0 10px;font-size:13px}
+.cal-btn.primary{background:var(--accent);border-color:transparent;color:#fff}
+.cal-btn.danger{color:#a3304e}
+.cal-note{font-size:13px;color:var(--cal-muted);margin:0}
+.cal-legend{margin-top:10px}
+.cal-partial{margin-bottom:8px}
+.cal-alert{display:grid;gap:8px;padding:10px 12px;border-radius:12px;background:var(--cal-warn);color:var(--cal-warn-ink);font-size:14px;margin-bottom:8px}
+.cal-alert[hidden]{display:none}
+.cal-split{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px;align-items:start}
+
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:0}
+.cal-dow{font-size:12px;color:var(--cal-muted);text-align:center;padding:4px 0}
+.cal-day{min-height:92px;min-width:0;overflow:hidden;border:1px solid var(--cal-line);border-radius:10px;background:var(--cal-card);padding:6px;text-align:left;display:grid;align-content:start;gap:2px;font-size:12px;color:var(--ink)}
+.cal-day.other{opacity:.5}
+.cal-day.today .cal-n{color:var(--accent);text-decoration:underline}
+.cal-day.cycle{background:linear-gradient(180deg,var(--cal-card) 70%,var(--cal-lilac) 70%)}
+.cal-day[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.cal-grid[aria-busy=true] .cal-day{cursor:progress}
+.cal-n{font-weight:700;font-size:13px}
+.cal-dots{display:flex;gap:3px;align-items:center;min-height:12px}
+.cal-dots i,.cal-who i{width:12px;height:12px;border-radius:50%;border:1px solid #0002;flex:none}
+.cal-marks{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+.cal-panel{background:var(--cal-card);border:1px solid var(--cal-line);border-radius:18px;padding:16px;display:grid;gap:10px;min-width:0}
+.cal-panel h2{font:600 19px Georgia,"Times New Roman",serif;margin:0}
+.cal-who{display:flex;align-items:center;gap:8px;font-size:14px;overflow-wrap:anywhere}
+.cal-who i{width:18px;height:18px}
+.cal-totals{margin:4px 0}
+.cal-list{display:grid;gap:8px}
+.cal-item{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;min-height:44px;text-align:left;font-size:14px;padding:8px 12px;border:1px solid var(--cal-line);border-radius:12px;background:#fff;min-width:0;color:var(--ink)}
+.cal-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.cal-type{flex:none;font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:#f9dbe5;color:#8a3556}
+.cal-type.occasion{background:#fff0b8;color:#7a5a12}
+.cal-type.activity{background:#deead9;color:#3f6a4b}
+.cal-type.cycle{background:var(--cal-lilac);color:var(--cal-lilac-ink)}
+
+/* Small jar balls; temporary copy of the jar skin until js/features/jar/colors.js and its styles merge. */
+.cal-page .skin{position:relative;display:inline-block;width:11px;height:11px;margin-right:1px;vertical-align:-1px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 32% 28%,#ffffffee 0 9%,#ffffff00 27%),radial-gradient(circle at 44% 40%,var(--c) 0 52%,color-mix(in oklab,var(--c) 70%,#5d3c4c) 100%);
+  box-shadow:inset -2px -3px 5px #5d3c4c26,0 1px 2px #5d3c4c47}
+
+.cal-toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;max-width:calc(100% - 32px);padding:10px 16px;border-radius:12px;background:#4b3340;color:#fff;font-size:14px}
+
+.cal-sheet{width:min(580px,calc(100% - 48px));max-height:calc(100dvh - 64px);padding:0;border:0;border-radius:20px;background:#fff8f2;color:var(--ink);box-shadow:0 -10px 30px -12px #3b2a3366}
+.cal-sheet::backdrop{background:#3b2a3366}
+.cal-sheet-body{display:grid;gap:12px;padding:20px}
+.cal-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cal-sheet-head h2{font:600 19px Georgia,"Times New Roman",serif;margin:0;overflow-wrap:anywhere}
+.cal-icon-btn{width:44px;height:44px;flex:none;border:0;border-radius:12px;background:transparent;color:var(--ink);font-size:24px}
+.cal-field{display:grid;gap:4px;font-size:14px;min-width:0}
+.cal-field>span{color:#866b77;font-size:13px}
+.cal-field input,.cal-field select,.cal-field textarea{min-height:44px;width:100%;min-width:0;border:1px solid #d9b6c1;border-radius:12px;background:#fff;padding:8px 10px;font:inherit;color:inherit}
+.cal-field textarea{min-height:110px;resize:vertical}
+.cal-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cal-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.cal-meta{margin:0;color:#866b77;font-size:14px}
+.cal-audience{font-size:13px;padding:8px 12px;border-radius:10px;background:#ece2f3;color:#6a4a7d}
+.cal-sheet .cal-alert{margin:0}
+.cal-sheet .cal-item{background:#fffdf9}
+
+@media(max-width:900px){.cal-split{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){
+  .cal-page{margin:88px -6px 32px;padding:16px 10px;border-radius:20px}
+  .cal-title{font-size:34px}
+  .cal-month{min-width:0;font-size:18px;margin:0 4px}
+  .cal-spacer{display:none}
+  .cal-grid{gap:3px}
+  .cal-day{min-height:58px;padding:3px;gap:1px;justify-items:center;text-align:center}
+  .cal-dots i{width:9px;height:9px}
+  .cal-marks{font-size:10px;white-space:normal;line-height:1.15;overflow-wrap:anywhere}
+  .cal-page .skin{width:8px;height:8px}
+  .cal-row2{grid-template-columns:1fr}
+  .cal-sheet{width:100%;max-width:none;margin:auto 0 0;max-height:90dvh;border-radius:22px 22px 0 0}
+  .cal-sheet-body{padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px))}
+}
+@media(prefers-reduced-motion:reduce){.cal-page *,.cal-sheet *{transition:none!important;animation:none!important}}
