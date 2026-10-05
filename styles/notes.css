@@ -225,3 +225,12 @@
 /* Dialogs open as bottom sheets. */
 .notes-dialog{width:100%;max-width:100%;margin:auto 0 0;border-radius:22px 22px 0 0;padding:20px 16px calc(16px + env(safe-area-inset-bottom,0px))}
 }
+/* Journals, memories and the "open note from elsewhere" highlight. */
+.notes-journal{min-height:44px;cursor:pointer}.notes-journal[hidden]{display:none}.notes-journal input{width:20px;height:20px;margin:0;accent-color:#a46c84}
+.notes-memory-edit{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-basis:100%}.notes-memory-edit label{display:flex;align-items:center;gap:6px}.notes-memory-edit input{min-height:44px}
+.notes-memory-edit [aria-pressed=true]{background:#dcebd9;border-color:#9fbf98;color:#3f5a3b}
+.note-label.is-memory-date{background:#fbe7ee;border-color:#e2b3c3;color:#8a3f5c}.note-label.is-garden{background:#dcebd9;border-color:#b5cdae;color:#4f6b4b}
+.paper-note.is-focused{outline:4px solid #d27a9b;outline-offset:4px;animation:notes-focus 1.2s ease-in-out 2}
+@keyframes notes-focus{50%{outline-color:#f3c3d3}}
+@media(prefers-reduced-motion:reduce){.paper-note.is-focused{animation:none}}
+.notes-name-form .notes-name-option{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;font:15px system-ui;cursor:pointer}.notes-name-form .notes-name-option input{width:20px;height:20px;margin:0;accent-color:#a46c84}
