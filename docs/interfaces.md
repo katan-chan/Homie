@@ -25,7 +25,7 @@ js/tabs.js xuất mảng tabs. Thứ tự mảng là thứ tự menu; load khôn
 
 resolveTab(tabs, hash) trong js/routing.js là hàm thuần: chọn ID được bật; fallback garden được bật, rồi mục bật đầu tiên; trả null nếu tất cả tắt. Không sửa hash, DOM hoặc lịch sử bên trong resolver. App chuẩn hóa hash bằng history.replaceState.
 
-Các ID hiện có: garden, dashboard, minhle, haiyen; hiện không tab nào đặt requiresAuth (app vẫn hỗ trợ field này). Dashboard công khai, tự ẩn thao tác ghi khi chưa đăng nhập. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
+Các ID hiện có theo thứ tự menu: garden, dashboard, jar (Hũ), calendar (Lịch), seminar (Gợi ý chủ đề seminar), activity (Hoạt động chung), minhle, haiyen. Bốn tab jar/calendar/seminar/activity đặt requiresAuth: true; hiện là stub hiện "Đang làm" cho tới khi phần sở hữu làm thật (xem Feature APIs). Dashboard công khai, tự ẩn thao tác ghi khi chưa đăng nhập. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
 
 ## Tab render và cleanup
 
@@ -121,6 +121,45 @@ Route trong backend/notes-api.js (`notesRoute`). Mọi lỗi trả JSON `{ error
 Command `type`: `board.create|rename|share|trash|restore`, `column.create|update|trash|restore`, `note.create|update|move|trash|restore`, `decoration.add|update|remove`, `command.undo`. Decoration (sticker) nằm trên bảng theo tọa độ bảng: `{ id, boardId, noteId|null, columnId|null, assetId, x, y, width, height, rotation, z }`; `noteId`/`columnId` (tối đa một) là thứ sticker đi theo: kéo note/cột thì sticker gắn vào dời theo, bỏ note/cột vào thùng rác thì sticker ẩn theo; `null` cả hai là sticker tự do. `decoration.add|update` nhận `noteId`/`columnId` tùy chọn; client gắn theo note trên cùng chứa tâm sticker khi thả, rồi tới cột. Lease note/cột tranh chấp với sticker gắn vào nó. Ai xem: board có `authorId` và `visibility` (`public`, `shared` hoặc account ID); `board.create` nhận `visibility` tùy chọn (mặc định account tạo), `board.share { visibility }` chỉ cho tác giả và chỉ `public|shared|<chính mình>`. Note có `visibility` (`null` theo bảng, `shared` hoặc account tác giả; chỉ tác giả đổi) và `labels` (≤12 chuỗi 1–32 ký tự sau khi trim/gộp khoảng trắng, không trùng không phân biệt hoa/thường), qua `note.create|update`. Người xem thấy note khi cả bảng lẫn note cho phép (`canSee` trong js/notes/model.js); sticker theo note thì theo note. Mọi đọc, SSE (`projection`, `text-update`, presence editors), text, lease và command lọc theo session; entity bị ẩn trả 404 `not_found`. Snapshot notes ở `formatVersion` 5 (bản 4 thêm: board Công khai với tác giả là người chạy `board.create` đầu tiên, note theo bảng, chưa nhãn); bản 2 (sticker theo note, tọa độ trong note) giữ note và đổi sang tọa độ bảng, bản 3 gắn theo vị trí tâm; lịch sử undo cũ bị bỏ. Server lấy tác giả từ session, từ chối field lạ; đổi geometry cần lease của chính client. Lặp lại cùng operationId và nội dung trả kết quả gốc; khác nội dung trả 409 `operation_conflict`.
 
 Mã trạng thái chính: 400 dữ liệu sai; 401 `unauthorized`; 403 `forbidden`/`account_mismatch`; 404 `not_found`; 408 `media_timeout`; 409 `lease_conflict`, `lease_required`, `deleted`, `undo_conflict`, `wrong_board`, `preview_required`, `presence_conflict`; 413 `body_too_large`/`media_too_large`; 415 sai Content-Type; 429 `stream_limit`, `lease_limit`, `presence_limit`, `media_busy`; 503 `storage_unavailable`, `durability_uncertain` (đã có thể ghi, thử lại cùng operationId), `store_closed`, `media_unavailable` (thiếu FFmpeg/ffprobe). SSE gửi `retry: 1000`, heartbeat 3 giây và header `X-Accel-Buffering: no`; mỗi session tối đa 16 stream, toàn server 128.
+
+## Feature APIs
+
+Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi module xuất `route(path) -> boolean` và `create(deps) -> { handle(req, res), close?() }` (có thể trả Promise). `server.js` chạy kiểm tra Origin allowlist và CORS chung trước, rồi dispatch module đầu tiên có `route` khớp, trước các route lõi. OPTIONS trên route feature trả 204. Mỗi module được tạo lazily ở request đầu tiên của nó, chỉ một lần; `create` lỗi trả 503 `storage_unavailable` và được thử lại ở request sau. Khi server dừng, các module được `close()` trước notes. Không sửa `server.js` hay `features.js` để thêm route: phần sở hữu chỉ sửa file module của mình.
+
+`deps = { auth, allowedOrigins, dataDir, remote, notesStore }`: `allowedOrigins` là Set origin; `remote` là storage Supabase hoặc null; `notesStore()` trả Promise tới notes store đang chạy (khởi tạo notes nếu chưa, cùng cơ chế thử lại với Notes API).
+
+| Prefix | Module | Phần sở hữu |
+| --- | --- | --- |
+| /api/jar | backend/jar-api.js | A Hũ |
+| /api/calendar, /api/cycles | backend/calendar-api.js | B Lịch, dịp, chu kỳ |
+| /api/ideas | backend/ideas-api.js | C Seminar, Hoạt động chung |
+| /api/rules | backend/rules-api.js | E Nội quy |
+| /api/garden | backend/garden-api.js | G Hoa kỷ niệm |
+
+Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Stub hiện trả 404 `{ error: "Not implemented", code: "not_implemented" }` cho mọi path thuộc prefix.
+
+Hợp đồng chung cho mọi feature API:
+
+- Lỗi là JSON `{ error, code }`; response luôn có `Cache-Control: no-store`.
+- Đọc cần session thành viên (401 `unauthorized`), trừ khi phần đó ghi rõ là công khai (`/api/garden` trả danh sách rỗng cho khách).
+- Ghi (POST/PUT) cần Origin allowlist và `X-Requested-With: Homie` (403 `forbidden`), rồi session (401). Account lấy từ session, không bao giờ từ body.
+- Lệnh tạo nhận `requestId` (UUID): gửi lại cùng requestId trả kết quả gốc, không tạo bản ghi trùng. Lệnh sửa nhận `version`; lệch thì 409 `version_conflict`.
+- Nội dung riêng tư không lộ ra: thứ người xem không được thấy trả 404 như không tồn tại, không có số đếm ẩn, không log nội dung.
+- Thời điểm lưu ISO UTC; ngày địa phương tính theo `Asia/Ho_Chi_Minh`.
+
+Helper dùng chung (giữ signature; cần đổi thì báo F0/phiên chính):
+
+- `backend/http.js`: `httpError(status, code, message = code)`; `sendJson(res, status, body)`; `readJson(req, { limit = 32768 } = {}) -> Promise<any>` (415 `unsupported_media_type`, 413 `body_too_large`, 400 `invalid_body`); `requireMember(req, auth) -> 'minhle' | 'haiyen'` (401); `requireWrite(req, { auth, allowedOrigins }) -> account id` (403 rồi 401); `handleErrors(res, fn)` chạy `fn` và chuyển lỗi có `status` thành `{ error, code }`, lỗi khác thành 500 `internal_error` không kèm message.
+- `backend/doc-store.js`: `createDocStore({ key, dataDir, remote, empty, validate }) -> { read(), update(mutator), close() }`. Một JSON document mỗi domain: `remote.getDocument/putDocument(key)` (`public.documents`) hoặc `<dataDir>/<key>.json` (ghi file tạm rồi rename). `empty()` tạo document đầu tiên; `validate(saved)` trả document (có thể migrate) hoặc throw, khi đó store trả 503 `storage_unavailable` và không ghi đè dữ liệu cũ. `read()` trả bản sao. `update(mutator)` chạy tuần tự, `mutator(draft)` sửa bản nháp và trả kết quả; mutator throw thì document giữ nguyên; ghi lỗi thì 503 và lần sau đọc lại storage (phòng trường hợp ghi đã tới nhưng mất response). Sau `close()` thì 503 `store_closed`. `rememberRequest(doc, requestId, value)` / `recalled(doc, requestId)` lưu kết quả lệnh tạo trong `doc.requests` (500 requestId gần nhất); `validate` phải giữ field này.
+- `backend/dates.js`: `ZONE`, `localDate(iso) -> 'YYYY-MM-DD'`, `localTime(iso) -> 'HH:MM'`, `isDate(value)`, `addDays(date, n)`, `parseRange(from, to, { maxDays = 400 } = {}) -> { from, to }` (khoảng gồm cả hai đầu; sai định dạng, ngược hoặc dài quá thì 400 `invalid_range`).
+- `backend/notes-memories.js` (phần D làm thật): `listMemories(store, viewerId, { from, to, gardenOnly } = {}) -> [{ noteId, boardId, title, memoryDate, garden }]`, đồng bộ, chỉ gồm note `viewerId` (account hoặc null cho khách) được xem, bỏ note trong thùng rác. Stub trả `[]`.
+
+Frontend dùng chung:
+
+- `js/notes/rules-panel.js` (phần E): `mountRulesPanel(container, { signal }) -> cleanup`; dashboard mount nó thay mặt bảng khi chọn tab "Nội quy".
+- Mở một note từ tab khác: ghi `sessionStorage['homie-notes:focus'] = JSON.stringify({ boardId, noteId })` rồi đặt `location.hash = 'dashboard'`. Dashboard đọc giá trị một lần rồi xoá (phần D).
+- CSS có phạm vi theo phần: `styles/jar.css`, `styles/calendar.css`, `styles/roulette.css`, `styles/rules.css`, `styles/garden-flowers.css`, đã link trong `index.html`.
+- Browser test của từng phần đặt tên `tests/browser-feature-<phần>.mjs`; `npm run test:features` chạy lần lượt và bỏ qua khi chưa có file nào.
 
 ## Thay đổi interface
 
