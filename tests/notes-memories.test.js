@@ -32,7 +32,7 @@ test('listMemories returns only memories the viewer may see, skips trash, filter
   await store.applyText('minhle', sea, textUpdate('Đi biển Vũng Tàu'), randomUUID());
   const plain = await note('minhle', open, { labels: ['Ý tưởng'] });
   const secret = await note('haiyen', journal, { labels: ['kỷ niệm'], memoryDate: '2026-09-01', visibility: 'haiyen' });
-  const shared = await note('haiyen', journal, { labels: ['Kỷ niệm'], memoryDate: '2026-11-02', garden: true });
+  const shared = await note('haiyen', journal, { labels: ['Kỷ niệm'], memoryDate: '2026-11-02', garden: true, visibility: null });
   const trashed = await note('minhle', open, { labels: ['Kỷ niệm'], memoryDate: '2026-10-01', garden: true });
   await send('minhle', open, 'note.trash', { id: trashed });
   const ids = (viewer, options) => listMemories(store, viewer, options).map(m => m.noteId);

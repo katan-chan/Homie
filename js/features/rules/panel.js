@@ -41,7 +41,7 @@ export function mountRulesPanel(container, { signal } = {}) {
   const announce = text => { status.textContent = text; };
   const find = id => rules.find(rule => rule.id === id);
   const replace = next => { const at = rules.findIndex(rule => rule.id === next.id); if (at < 0) rules.push(next); else rules[at] = next; };
-  const send = (path, body) => apiRequest(path, { method: 'POST', body: { ...body, requestId: crypto.randomUUID() }, signal: controller.signal });
+  const send = (path, body, requestId = crypto.randomUUID()) => apiRequest(path, { method: 'POST', body: { ...body, requestId }, signal: controller.signal });
   const quiet = error => disposed || error?.name === 'AbortError';
   function setBusy(value) { busy = value; root.toggleAttribute('aria-busy', value); }
   function focusRule(id) { (list.querySelector(`[data-card="${CSS.escape(id)}"] h3`) ?? newButton).focus(); }
@@ -166,6 +166,8 @@ export function mountRulesPanel(container, { signal } = {}) {
       ]),
     ]);
     const submit = el('button', { type: 'submit', className: 'rules-button is-primary', textContent: 'Gửi đề xuất' });
+    // One requestId per open sheet, so resending after a lost response cannot create a second rule.
+    const requestId = crypto.randomUUID();
     const form = el('form', { className: 'rules-form' }, [
       el('p', { className: 'rule-note', textContent: rule ? 'Bản đang áp dụng giữ nguyên tới khi cả hai đồng ý bản mới.' : 'Nội quy chỉ có hiệu lực khi cả hai đồng ý.' }),
       conflict, error,
@@ -181,8 +183,8 @@ export function mountRulesPanel(container, { signal } = {}) {
       const values = { title: title.value, text: text.value };
       try {
         const data = rule
-          ? await send(`/api/rules/${encodeURIComponent(rule.id)}/revisions`, { ...values, reason: reason.value, version: rule.version })
-          : await send('/api/rules', values);
+          ? await send(`/api/rules/${encodeURIComponent(rule.id)}/revisions`, { ...values, reason: reason.value, version: rule.version }, requestId)
+          : await send('/api/rules', values, requestId);
         if (quiet()) return;
         replace(data.rule);
         node.close();

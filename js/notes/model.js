@@ -245,7 +245,9 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
     } else if (kind === 'note') {
       requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels', 'memoryDate', 'garden']);
       if (p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
-      entity = add(kind, { visibility: null, memoryDate: null, garden: false, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
+      // A journal board's pages start private even when an older or offline client leaves visibility out.
+      const visibility = board.noteDefault === 'private' && !('visibility' in p) ? userId : null;
+      entity = add(kind, { visibility, memoryDate: null, garden: false, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
     } else if (kind === 'decoration' && action === 'add') {
       requireKeys(p, ['id', 'assetId', ...geometry, 'rotation', 'z'], ['noteId', 'columnId']);
       checkAttachment(state, p, boardId, userId);
