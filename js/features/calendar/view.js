@@ -1,6 +1,6 @@
 // DOM for the calendar month grid, the selected-day panel and the legend. Data always goes in via textContent.
 import { monthGrid, monthTitle, vnDate, dayLabel, addDays, MEMBERS, SHORT_NAME } from './model.js';
-import { moodColor, SAMPLE, mini } from './colors.js';
+import { moodColor, SAMPLE, mini } from '../jar/colors.js';
 
 export function el(tag, className, text) {
   const node = document.createElement(tag);
