@@ -62,15 +62,15 @@ test('server dispatches owned feature prefixes to their modules', async t => {
     await rm(dataDir, { recursive: true, force: true });
   });
   const base = `http://127.0.0.1:${server.address().port}`;
-  // Only the garden module is still a stub; the boundary checks below use it.
-  for (const path of ['/api/garden', '/api/garden/x']) {
-    const result = await fetch(base + path);
-    assert.equal(result.status, 404, path);
-    assert.equal(result.headers.get('cache-control'), 'no-store');
-    assert.deepEqual(await result.json(), { error: 'Not implemented', code: 'not_implemented' }, path);
-  }
+  // The real garden module answers guests with an empty, uncached list; the boundary checks below use it.
+  const guest = await fetch(`${base}/api/garden`);
+  assert.equal(guest.status, 200);
+  assert.equal(guest.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await guest.json(), { items: [] });
+  const nested = await fetch(`${base}/api/garden/x`);
+  assert.deepEqual([nested.status, (await nested.json()).code], [404, 'not_found'], 'Sub-paths reach the module, which owns its 404');
   const posted = await fetch(`${base}/api/garden`, { method: 'POST', headers: { Origin: origin, 'X-Requested-With': 'Homie', 'Content-Type': 'application/json' }, body: '{}' });
-  assert.equal((await posted.json()).code, 'not_implemented');
+  assert.equal((await posted.json()).code, 'not_found', 'Read-only');
   assert.equal((await fetch(`${base}/api/garden`, { method: 'OPTIONS', headers: { Origin: origin } })).status, 204);
   assert.equal((await fetch(`${base}/api/garden`, { headers: { Origin: 'https://other.example' } })).status, 403, 'Origin allowlist still runs first');
   const other = await fetch(`${base}/api/gardenx`);
