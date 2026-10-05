@@ -1,1 +1,155 @@
-/* Phần A sở hữu file này. */
+/* Hũ (part A). Ported from the approved prototype v5 (docs/superpowers/prototypes/homie-features.html). */
+.jar-page{--j-card:#fffdf9;--j-border:#d9b6c1;--j-rose:#f9dbe5;--j-lilac:#ece2f3;--j-lilac-ink:#6a4a7d;--j-sage:#deead9;--j-sage-ink:#3f6a4b;--j-warn:#fbe1d2;--j-warn-ink:#8a4520;--j-danger:#a3304e;--j-hand:"Patrick Hand","Comic Sans MS",cursive;
+  position:relative;padding:120px 0 72px;container-type:inline-size}
+.jar-defs{position:absolute;width:0;height:0}
+.jar-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 4px}
+.jar-sub{margin:0 0 14px;color:var(--muted)}
+.jar-top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.jar-tabs{display:inline-flex;border:1px solid var(--j-border);border-radius:14px;overflow:hidden;background:var(--j-card)}
+.jar-tab{min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);display:inline-flex;align-items:center;gap:8px}
+.jar-tab[aria-selected=true]{background:var(--accent);color:#fff;font-weight:600}
+.jar-tab .jar-skin{width:16px;height:16px}
+.jar-chips{display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:none}
+.jar-chip{flex:none;min-height:44px;padding:0 14px;border:1px solid var(--j-border);border-radius:999px;background:var(--j-card);color:var(--ink);white-space:nowrap}
+.jar-chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.jar-status{min-height:0;margin-top:8px;color:var(--j-danger);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.jar-status:empty{display:none}
+.jar-btn{min-height:44px;padding:0 14px;border:1px solid var(--j-border);border-radius:12px;background:var(--j-card);color:var(--ink)}
+.jar-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.jar-btn.danger{color:var(--j-danger)}
+.jar-btn.small{padding:0 10px;font-size:14px}
+.jar-icon-btn{width:44px;height:44px;flex:none;display:grid;place-items:center;border:1px solid var(--j-border);border-radius:13px;background:var(--j-card);color:var(--ink);font-size:22px}
+
+/* Shelf: three jars on a plank; on phones only the chosen jar. */
+.jar-shelf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:clamp(10px,3cqw,44px);align-items:end;padding:40px 18px 14px;margin-top:12px;border-radius:24px;background:#fff8f2e0;touch-action:pan-y}
+.jar-stage{position:relative;width:min(100%,270px);justify-self:center;aspect-ratio:320/400;container-type:inline-size;transform-origin:50% 96%}
+.jar-stage svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.jar-front{pointer-events:none}
+.jar-balls{position:absolute;inset:0}
+.jar-empty{position:absolute;left:14%;right:14%;top:60%;transform:translateY(-50%);margin:0;text-align:center;white-space:pre-line;font:clamp(13px,7cqw,19px)/1.3 var(--j-hand);color:var(--muted);pointer-events:none}
+.jar-lid{transform-box:fill-box;transform-origin:0% 100%;transition:transform .24s cubic-bezier(.34,1.56,.64,1)}
+.jar-stage.open .jar-lid{transform:translate(-4px,-10px) rotate(-28deg)}
+.jar-stage.wobble{animation:jar-wobble .55s ease-out}
+@keyframes jar-wobble{25%{rotate:-2.4deg}50%{rotate:1.7deg}75%{rotate:-.8deg}100%{rotate:0deg}}
+.jar-plank{grid-column:1/-1;height:14px;margin:-7px -10px 14px;border-radius:5px;background:linear-gradient(#d8a47c,#c08a62);box-shadow:0 8px 12px -6px #5d3c4c66}
+.jar-act{width:min(100%,270px);justify-self:center;min-height:60px;border-radius:18px;border:1px solid var(--j-border);background:var(--j-card);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-weight:600;font-size:15px;padding:6px 4px;text-align:center;line-height:1.2}
+.jar-act .jar-skin{width:22px;height:22px}
+.jar-act.kiss{background:#fbe0e8;border-color:#efb3c5}
+.jar-act.sorry{background:#dcefe6;border-color:#b4d8c6;color:#2f6650}
+.jar-act.mood{background:#fbf0d6;border-color:#ecd29a;color:#7a5a12}
+.jar-act:active{transform:scale(.96)}
+.jar-act:disabled{opacity:.55;cursor:wait}
+.jar-hint{display:none;text-align:center;font-size:13px;color:var(--muted);margin:10px 0 0;grid-column:1/-1}
+
+/* Candy balls (also used by Lịch through colors.js mini()). */
+.k-kiss{--mark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 21s-7.5-4.6-9.6-9C.9 8.7 3 4.5 7 4.5c2.2 0 3.6 1.2 5 3 1.4-1.8 2.8-3 5-3 4 0 6.1 4.2 4.6 7.5-2.1 4.4-9.6 9-9.6 9z'/%3E%3C/svg%3E")}
+.k-sorry{--mark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 21C3 10 10 3 21 3c0 11-7 18-18 18z'/%3E%3C/svg%3E")}
+.jar-skin{position:relative;display:inline-block;flex:none;border-radius:50%;width:14px;height:14px;
+  background:radial-gradient(circle at 32% 28%,#ffffffee 0 9%,#ffffff00 27%),radial-gradient(circle at 44% 40%,var(--c) 0 52%,color-mix(in oklab,var(--c) 70%,#5d3c4c) 100%);
+  box-shadow:inset -2px -3px 5px #5d3c4c26,0 1px 2px #5d3c4c47}
+.jar-skin.k-kiss::after,.jar-skin.k-sorry::after{content:"";position:absolute;inset:31%;background:#fff;opacity:.62;-webkit-mask:var(--mark) center/contain no-repeat;mask:var(--mark) center/contain no-repeat}
+.jar-skin.tiny{width:11px;height:11px;vertical-align:-1px;margin-right:1px}
+.jar-skin.big{width:64px;height:64px}
+
+.jar-ball{position:absolute;padding:0;border:0;height:auto;aspect-ratio:1;transform:translate(-50%,-50%);transition:transform .2s,opacity .3s}
+.jar-ball:hover{transform:translate(-50%,-50%) scale(1.14);z-index:2}
+.jar-ball:focus-visible{outline-offset:2px;z-index:3}
+.jar-ball.lifted{transform:translate(-50%,-50%) scale(1.4);z-index:3;box-shadow:0 0 0 2px var(--paper),0 0 0 5px var(--accent)}
+.jar-ball.pending{opacity:.62}
+.jar-ball.failed{animation:jar-shake .45s both;opacity:.3}
+.jar-ball.drop{animation:jar-drop .65s both}
+.jar-ball.fadein{animation:jar-fade .3s both}
+.jar-ball.glow{animation:jar-glow .9s ease-out}
+@keyframes jar-drop{
+  0%{transform:translate(calc(-50% + var(--dx)),calc(-50% - var(--fall)));animation-timing-function:cubic-bezier(.5,0,1,.5)}
+  72%{transform:translate(-50%,-50%) scale(1.12,.84);animation-timing-function:ease-out}
+  86%{transform:translate(-50%,calc(-50% - 3px)) scale(.97,1.04)}
+  100%{transform:translate(-50%,-50%)}}
+@keyframes jar-glow{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 75%,transparent),0 1px 2px #5d3c4c47}to{box-shadow:0 0 0 16px color-mix(in srgb,var(--c) 0%,transparent),0 1px 2px #5d3c4c47}}
+@keyframes jar-shake{0%,100%{translate:0}25%{translate:-4px}50%{translate:4px}75%{translate:-2px}}
+@keyframes jar-fade{from{opacity:0}}
+.jar-fx{position:fixed;inset:0;pointer-events:none;z-index:30;overflow:hidden}
+.jar-fly{position:absolute;left:0;top:0}
+.jar-spark{position:absolute;left:0;top:0;width:13px;height:13px;background:var(--c);-webkit-mask:var(--mark) center/contain no-repeat;mask:var(--mark) center/contain no-repeat}
+
+/* List of the chosen jar: the full alternative to the balls, rows at least 52px. */
+.jar-list{margin-top:18px;display:grid;max-width:760px;padding:14px 8px;border-radius:20px;background:#fff8f2eb}
+.jar-list h2{font:600 19px Georgia,"Times New Roman",serif;margin:0 0 4px;padding-inline:10px}
+.jar-day{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:12px 0 2px;padding-inline:10px}
+.jar-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:52px;padding:6px 10px;border:0;border-radius:12px;background:transparent;color:var(--ink);text-align:left;width:100%}
+.jar-row:hover{background:var(--j-rose)}
+.jar-row .jar-skin{width:24px;height:24px}
+.jar-row .t{min-width:0;overflow-wrap:anywhere}
+.jar-row .t small{display:block;color:var(--muted);font-size:13px}
+.jar-row time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+.jar-row.pending{opacity:.6}
+.jar-note{font-size:14px;color:var(--muted);margin:6px 10px}
+.jar-badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #c9b2d8;background:var(--j-lilac);color:var(--j-lilac-ink);justify-self:start}
+.jar-badge.both{background:var(--j-sage);color:var(--j-sage-ink);border-color:#b9d1b3}
+.jar-gone{display:grid;gap:10px;justify-items:start;color:var(--muted)}
+
+/* Sheets: native modal dialog, centred on desktop, bottom sheet on phones. */
+.jar-sheet{padding:0;border:0;border-radius:20px;width:min(580px,calc(100% - 48px));max-height:calc(100dvh - 64px);background:var(--paper);color:var(--ink);box-shadow:0 -10px 30px -12px #3b2a3366;animation:jar-sheet-in .22s ease-out}
+.jar-sheet::backdrop{background:#3b2a3366}
+.jar-sheet-box{display:grid;gap:12px;align-content:start;padding:20px}
+.jar-sheet-head{display:flex;align-items:center;gap:8px}
+.jar-sheet-head h2{flex:1;font:600 20px Georgia,"Times New Roman",serif;margin:0;overflow-wrap:anywhere}
+@keyframes jar-sheet-in{from{opacity:0;translate:0 24px}}
+.jar-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.jar-ball-head{display:flex;gap:14px;align-items:center}
+.jar-ball-head small{color:var(--muted)}
+.jar-hand{font:20px/1.35 var(--j-hand);margin:0;padding:10px 12px;background:#fff;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.jar-dims{display:grid;gap:10px;margin:0}
+.jar-dims div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:center}
+.jar-dims dt{color:var(--muted);font-size:14px}
+.jar-dims dd{margin:0;display:grid;gap:4px}
+.jar-meter{position:relative;height:8px;border-radius:4px}
+.jar-meter i{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--j-card);border:3px solid var(--ink);transform:translate(-50%,-50%)}
+.jar-meter.val{background:linear-gradient(to right,hsl(262 52% 64%),hsl(30 30% 80%),hsl(42 88% 62%))}
+.jar-meter.en{background:linear-gradient(to right,var(--line),var(--accent))}
+.jar-alert{padding:10px 12px;border-radius:12px;background:var(--j-warn);color:var(--j-warn-ink);font-size:14px}
+.jar-pad{position:relative;width:min(100%,240px);aspect-ratio:1;justify-self:center;border-radius:22px;border:1px solid var(--j-border);touch-action:none;cursor:crosshair;
+  background:linear-gradient(to top,#fff8f2d9,#fff8f200 55%),linear-gradient(to right,hsl(262 52% 64%),hsl(30 30% 80%) 50%,hsl(42 88% 62%))}
+.jar-pad .q{position:absolute;font:15px var(--j-hand);color:#5d3c4cb3;pointer-events:none}
+.jar-pad .tl{top:8px;left:12px}.jar-pad .tr{top:8px;right:12px}.jar-pad .bl{bottom:8px;left:12px}.jar-pad .br{bottom:8px;right:12px}
+.jar-pad-ball{position:absolute;transform:translate(-50%,-50%);pointer-events:none;transition:width .12s,height .12s}
+.jar-pad-hint{margin:-6px 0 0;text-align:center;font-size:13px;color:var(--muted)}
+.jar-range{display:grid;font-size:14px}
+.jar-range input{width:100%;min-height:44px;accent-color:var(--accent)}
+.jar-range .ends{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.jar-field{display:grid;gap:4px;font-size:14px}
+.jar-field>span{color:var(--muted);font-size:13px}
+.jar-field input,.jar-field textarea{min-height:44px;width:100%;border:1px solid var(--j-border);border-radius:12px;background:#fff;color:var(--ink);padding:8px 10px;font:inherit}
+.jar-field textarea{min-height:110px;resize:vertical}
+.jar-count{justify-self:end;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.jar-sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:-4px}
+.jar-aud{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:8px}
+.jar-aud legend{font-size:13px;color:var(--muted);padding:0;margin-bottom:6px}
+.jar-aud label{min-height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 14px;border:1px solid var(--j-border);border-radius:999px;font-size:14px;background:#fff}
+.jar-aud label:has(input:checked){background:var(--j-rose);border-color:var(--accent)}
+.jar-aud input{accent-color:var(--accent);width:18px;height:18px}
+
+/* Toast with an action, outside the jars so it never cuts an animation. */
+.jar-toast-host{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;width:max-content;max-width:calc(100% - 32px)}
+.jar-toast{display:flex;gap:6px;align-items:center;padding:6px 6px 6px 16px;border-radius:12px;background:#4b3340;color:#fff;font-size:14px}
+.jar-toast.err{background:#7a2f40}
+.jar-toast button{min-height:44px;border:0;background:transparent;color:#ffc9d9;font-weight:600;padding:0 10px;border-radius:10px;flex:none}
+
+@media(max-width:640px){
+  .jar-page{padding:100px 0 88px}
+  .jar-title{font-size:34px}
+  .jar-tabs{width:100%}
+  .jar-tab{flex:1;justify-content:center;padding:0 6px}
+  .jar-shelf{grid-template-columns:minmax(0,1fr);padding:18px 12px 12px}
+  .jar-stage,.jar-act{width:min(100%,300px)}
+  .jar-stage:not(.is-current),.jar-act:not(.is-current){display:none}
+  .jar-act{flex-direction:row;gap:10px;min-height:56px}
+  .jar-hint{display:block}
+  .jar-sheet{margin:auto 0 0;width:100%;max-width:100%;max-height:90dvh;border-radius:22px 22px 0 0}
+  .jar-sheet-box{padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px))}
+}
+@media(prefers-reduced-motion:reduce){
+  .jar-ball.drop,.jar-ball.failed{animation:jar-fade .2s both}
+  .jar-ball.glow,.jar-stage.wobble,.jar-sheet{animation:none}
+  .jar-ball,.jar-pad-ball,.jar-lid{transition:none}
+}
