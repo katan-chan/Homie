@@ -6,6 +6,7 @@ import { accountIds, createProfiles, validateProfile } from './profiles.js';
 import { createNotesStore } from './notes-store.js';
 import { createNotesApi, notesRoute } from './notes-api.js';
 import { createNoteMedia } from './note-media.js';
+import { features } from './features.js';
 export { hashPassword } from './auth.js';
 
 function failure(status, message) {
@@ -45,17 +46,29 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   const auth = createAuth(options);
   // Supabase when SUPABASE_URL + SUPABASE_SECRET_KEY are set (production); files in dataDir otherwise. Tests may pass options.remote.
   const remote = 'remote' in options ? options.remote : supabaseFromEnv();
-  const profiles = createProfiles(options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', remote);
+  const dataDir = options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data';
+  const profiles = createProfiles(dataDir, remote);
   let notesReady, closing = false;
   const notes = () => {
     if (!notesReady) {
-      notesReady = createNotesStore({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', remote })
-        .then(store => createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir: options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data', store, remote, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }));
+      notesReady = createNotesStore({ dataDir, remote })
+        .then(store => ({ store, api: createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir, store, remote, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }) }));
       // Observe initialization even if a request disconnects; notes failure never affects health/auth/profile.
       // A failed start (for example remote storage unreachable) is retried on the next request instead of cached.
       notesReady.catch(() => { notesReady = null; });
     }
     return notesReady;
+  };
+  const deps = { auth, allowedOrigins: allowed, dataDir, remote, notesStore: () => notes().then(({ store }) => store) };
+  // Each feature module is created on its first request; a failed create is retried like notes.
+  const featureModules = new Map();
+  const featureModule = feature => {
+    if (!featureModules.has(feature)) {
+      const ready = Promise.resolve().then(() => feature.create(deps));
+      featureModules.set(feature, ready);
+      ready.catch(() => featureModules.delete(feature));
+    }
+    return featureModules.get(feature);
   };
   const server = createServer(async (request, response) => {
     response.on('finish', () => { if (closing) server.closeIdleConnections(); });
@@ -75,10 +88,24 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     }
     const send = (status, body) => response.writeHead(status).end(body === undefined ? undefined : JSON.stringify(body));
     const path = request.url?.split('?')[0];
+    const feature = features.find(candidate => candidate.route(path));
+    if (feature) {
+      if (request.method === 'OPTIONS') return send(204);
+      try {
+        if (closing) throw Object.assign(failure(503, 'Backend is closing'), { code: 'store_closed' });
+        await (await featureModule(feature)).handle(request, response);
+      } catch (error) {
+        if (response.headersSent) return;
+        response.setHeader('Connection', 'close');
+        request.resume();
+        send(error.status ?? 503, { error: error.status ? error.message : 'Feature storage is unavailable', code: error.code ?? 'storage_unavailable' });
+      }
+      return;
+    }
     if (notesRoute(path)) {
       try {
         if (closing) throw Object.assign(failure(503, 'Backend is closing'), { code: 'store_closed' });
-        if (!await (await notes()).handle(request, response)) send(404, { error: 'Not found' });
+        if (!await (await notes()).api.handle(request, response)) send(404, { error: 'Not found' });
       } catch (error) {
         // Initialization failure has no API body reader to cancel an unfinished request.
         response.setHeader('Connection', 'close');
@@ -149,7 +176,9 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   const close = server.close.bind(server);
   server.close = callback => {
     closing = true;
-    const cleanup = notesReady ? notesReady.then(api => api.close()).catch(() => {}) : Promise.resolve();
+    // Features may read the notes store, so they close first.
+    const cleanup = Promise.all([...featureModules.values()].map(ready => ready.then(module => module.close?.()).catch(() => {})))
+      .then(() => notesReady?.then(({ api }) => api.close()).catch(() => {}));
     close(error => { cleanup.then(() => callback?.(error)); });
     return server;
   };
