@@ -80,3 +80,27 @@ test('interactive paper dimensions stay usable and reject nonfinite size input',
   assert.equal(clampPaperSize('column', 480), 480);
   for (const value of [NaN, Infinity, '240']) assert.throws(() => clampPaperSize('note', value), { code: 'invalid_geometry' });
 });
+
+test('journal boards and memories: noteDefault, memoryDate and garden only on a "Kỷ niệm" note', () => {
+  let state = fixture();
+  assert.deepEqual([state.boards[0].noteDefault, state.notes[0].memoryDate, state.notes[0].garden], [null, null, false]);
+  assert.throws(() => apply(state, 'board.update', { noteDefault: 'private' }, 'haiyen'), { code: 'forbidden' });
+  assert.throws(() => apply(state, 'board.update', { noteDefault: 'shared' }), { code: 'invalid_note_default' });
+  state = apply(state, 'board.update', { noteDefault: 'private' });
+  assert.equal(state.boards[0].noteDefault, 'private');
+  const journal = randomUUID();
+  state = apply(state, 'board.create', { name: 'Nhật ký', visibility: 'shared', noteDefault: 'private' }, 'haiyen', journal);
+  assert.equal(state.boards.find(b => b.id === journal).noteDefault, 'private');
+  assert.throws(() => apply(state, 'note.update', { id: noteId, garden: true }), { code: 'invalid_garden' });
+  for (const memoryDate of ['2026-02-30', '2026-1-01', '', 20261012]) {
+    assert.throws(() => apply(state, 'note.update', { id: noteId, memoryDate }), { code: 'invalid_memory_date' });
+  }
+  state = apply(state, 'note.update', { id: noteId, labels: ['kỷ niệm', 'Đi biển'], memoryDate: '2026-10-12', garden: true }, 'haiyen');
+  assert.deepEqual([state.notes[0].memoryDate, state.notes[0].garden], ['2026-10-12', true]);
+  assert.throws(() => apply(state, 'note.update', { id: noteId, labels: ['Đi biển'], garden: true }), { code: 'invalid_garden' });
+  state = apply(state, 'note.update', { id: noteId, labels: ['Đi biển'] });
+  assert.equal(state.notes[0].garden, false, 'Dropping the label takes the note out of the garden');
+  assert.equal(state.notes[0].memoryDate, '2026-10-12', 'The date stays for when the label comes back');
+  const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], memoryDate: '2025-01-01', garden: true });
+  assert.equal(created.notes.at(-1).garden, true);
+});

@@ -94,7 +94,7 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       if (closing) throw notesError('store_closed', 'Notes API is closing', 503);
       if (context.replay || context.type === 'text') return;
       prune();
-      if (context.type === 'board.rename' || context.type === 'board.share') return;
+      if (['board.rename', 'board.share', 'board.update'].includes(context.type)) return;
       for (const lease of leases.values()) {
         const target = descriptor(lease.target.kind, lease.target.id, lease.target.boardId);
         if (!owner(lease, session, clientId) && context.targets.some(changed => conflicts(changed, target))) throw notesError('lease_conflict', 'Object is held by another client', 409);

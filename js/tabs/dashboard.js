@@ -5,6 +5,16 @@ import { mountBoardNoteEditor } from '../notes/editor.js';
 import { mountBoardMedia, openLibrary } from '../notes/library.js';
 
 const lastKey = 'homie-notes:last-board';
+// "Nội quy" is a tab among the boards for members, but not a board: it mounts the rules panel instead.
+const RULES = 'rules';
+// Other pages open a note by writing {boardId, noteId} here and going to #dashboard; it is read once.
+const focusKey = 'homie-notes:focus';
+function takeFocus() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(focusKey)); sessionStorage.removeItem(focusKey);
+    return typeof value?.boardId === 'string' && typeof value.noteId === 'string' ? value : null;
+  } catch { return null; }
+}
 const pendingKey = account => `homie-notes:pending-boards:${account}`;
 function stored(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* IndexedDB remains the source of draft durability. */ } }
@@ -14,7 +24,8 @@ export function render(container, { signal }) {
   root.innerHTML = '<div class="notes-heading"><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><button type="button" class="notes-switcher" aria-expanded="false" aria-label="Chọn bảng"><span class="notes-switcher-name"></span><span class="notes-switcher-pill"></span><span class="notes-switcher-caret" aria-hidden="true">▾</span></button><div class="notes-catalog-bar"><div class="notes-tab-strip"><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div></div><div class="notes-catalog-actions"></div></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
   container.replaceChildren(root);
   const tabs = root.querySelector('.notes-tabs'), strip = root.querySelector('.notes-tab-strip'), actions = root.querySelector('.notes-catalog-actions'), status = root.querySelector('.notes-catalog-status'), host = root.querySelector('.notes-board-host');
-  let disposed = false, boards = [], catalogLoaded = false, selectedId = stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false, closeGlobalLibrary = null;
+  let focus = takeFocus();
+  let disposed = false, boards = [], catalogLoaded = false, selectedId = focus?.boardId ?? stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false, closeGlobalLibrary = null;
   const tabButtons = new Map(), switcher = root.querySelector('.notes-switcher'), catalogBar = root.querySelector('.notes-catalog-bar');
   // Phone (≤600px): the catalog bar (tabs and board actions) opens as a bottom sheet from the board switcher.
   function setSwitching(open){if(root.classList.contains('is-switching')===open)return;root.classList.toggle('is-switching',open);switcher.setAttribute('aria-expanded',String(open));if(open)(tabs.querySelector('[aria-selected=true]')||catalogBar.querySelector('button'))?.focus();else if(catalogBar.contains(document.activeElement))switcher.focus();}
@@ -28,39 +39,49 @@ export function render(container, { signal }) {
   function button(label, action) { const control=document.createElement('button');control.type='button';control.className='notes-button';control.textContent=label;control.dataset.action=action;control.dataset.mutation='';return control; }
   function stopCurrent() {generation++;closeGlobalLibrary?.();closeGlobalLibrary=null;if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
   function showError(error) { if(alive())status.textContent=error?.message || 'Chưa thể mở bảng. Hãy kiểm tra kết nối.'; }
-  function available() {return [...boards,...pending.filter(p=>!boards.some(b=>b.id===p.id)).map(p=>({...p,pending:true}))];}
+  function available() {return [...boards,...pending.filter(p=>!boards.some(b=>b.id===p.id)).map(p=>({...p,pending:true})),...(account?[{id:RULES,name:'Nội quy',visibility:'shared'}]:[])];}
   function renderTabs() {
     if(!alive())return;
     const list=available();
     for(const [id,control] of tabButtons)if(!list.some(b=>b.id===id)){control.remove();tabButtons.delete(id);}
     for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.dataset.visibility=board.visibility==='public'||board.visibility==='shared'?board.visibility:board.visibility?'private':'';control.title=board.visibility==='public'?'Ai cũng xem được':board.visibility==='shared'?'Chỉ hai đứa mình':board.visibility?'Chỉ mình tôi':'';control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
+    if(tabButtons.has(RULES))tabs.append(tabButtons.get(RULES));
     const chosen=list.find(b=>b.id===selectedId),pill=root.querySelector('.notes-switcher-pill');
-    root.querySelector('.notes-switcher-name').textContent=chosen?chosen.name:explicitTrash?'Bảng đã xóa':list.length?'Chọn bảng':'Chưa có bảng';
+    root.querySelector('.notes-switcher-name').textContent=chosen?chosen.name:explicitTrash?'Bảng đã xóa':list.some(b=>b.id!==RULES)?'Chọn bảng':'Chưa có bảng';
     pill.textContent=chosen?.visibility==='public'?'công khai':chosen?.visibility&&chosen.visibility!=='shared'?'riêng':'';pill.dataset.visibility=chosen?.visibility==='public'?'public':'';
-    if(!current && !list.length){if(catalogLoaded&&account){if(!status.querySelector('.notes-empty-create'))status.replaceChildren(emptyCreate());}else{status.textContent=catalogLoaded?'Chưa có bảng nào. Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. ':'Đang tìm những trang giấy…';if(catalogLoaded)status.append(loginButton());}}
+    if(!current && !list.some(b=>b.id!==RULES)){if(catalogLoaded&&account){if(!status.querySelector('.notes-empty-create'))status.replaceChildren(emptyCreate());}else{status.textContent=catalogLoaded?'Chưa có bảng nào. Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. ':'Đang tìm những trang giấy…';if(catalogLoaded)status.append(loginButton());}}
   }
   async function selectBoard(id, { trash = false, force = false } = {}) {
     if(!alive() || current?.id===id && !force)return;
     stopCurrent();selectedId=id;explicitTrash=trash;if(!trash)save(lastKey,id);renderTabs();
     if(!id)return;
+    if(id===RULES){mountRules();return;}
     const owner=account, intent=pending.find(board=>board.id===id && (!board.accountId || board.accountId===owner));
     const session={id,controller:new AbortController(),client:null,cleanup:null};current=session;const request=generation;
     host.id='notes-selected-board';host.setAttribute('role','tabpanel');if(tabButtons.has(id)){host.setAttribute('aria-labelledby',`board-tab-${id}`);host.removeAttribute('aria-label');}else{host.removeAttribute('aria-labelledby');host.setAttribute('aria-label','Bảng đã xóa');}status.textContent='Đang mở bảng…';
     try{
       const client=await openBoardClient({boardId:id,accountId:owner,signal:session.controller.signal});
       if(!alive()||current!==session||request!==generation){client.close();return;}
-      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor,mountMedia:mountBoardMedia});status.textContent='';
+      const focusNoteId=focus?.boardId===id?focus.noteId:null;focus=null;
+      session.client=client;session.cleanup=mountBoard(host,{client,signal:session.controller.signal,mountEditor:mountBoardNoteEditor,mountMedia:mountBoardMedia,focusNoteId});status.textContent='';
       if(intent && owner===account){
         const retained=client.getPending().find(entry=>entry.kind==='command' && entry.command.type==='board.create');
         intent.operationId=retained?.operationId || intent.operationId || crypto.randomUUID();intent.accountId=owner;save(pendingKey(owner),pending);
-        await client.command(retained?.command || {operationId:intent.operationId,accountId:owner,type:'board.create',baseRevision:0,payload:{name:intent.name}});
+        await client.command(retained?.command || {operationId:intent.operationId,accountId:owner,type:'board.create',baseRevision:0,payload:{name:intent.name,...(intent.noteDefault?{noteDefault:intent.noteDefault}:{})}});
       }
     }catch(error){if(alive()&&current===session)showError(error);}
+  }
+  // Loaded on demand so the boards keep working even if the rules panel fails to load.
+  function mountRules(){
+    const session={id:RULES,controller:new AbortController(),client:null,cleanup:null};current=session;
+    host.id='notes-selected-board';host.setAttribute('role','tabpanel');host.setAttribute('aria-labelledby',`board-tab-${RULES}`);host.removeAttribute('aria-label');status.textContent='Đang mở nội quy…';
+    import('../notes/rules-panel.js').then(({mountRulesPanel})=>{if(!alive()||current!==session)return;status.textContent='';session.cleanup=mountRulesPanel(host,{signal:session.controller.signal});})
+      .catch(()=>{if(alive()&&current===session)status.textContent='Đang làm';});
   }
   function reconcile() {
     if(!alive())return;
     const list=available();
-    if(!explicitTrash && !list.some(b=>b.id===selectedId)){selectedId=list[0]?.id || null;if(!selectedId)stopCurrent();}
+    if(!explicitTrash && !list.some(b=>b.id===selectedId)){selectedId=list.find(b=>b.id!==RULES)?.id || null;if(!selectedId)stopCurrent();}
     renderTabs();if(selectedId && current?.id!==selectedId)selectBoard(selectedId);
   }
   async function showBoardTrash() {
@@ -78,7 +99,7 @@ export function render(container, { signal }) {
   }
   // Guests get a sign-in entry; the shell owns the login dialog (app.js listens for 'login-request').
   function loginButton(){const control=document.createElement('button');control.type='button';control.className='notes-button notes-login';control.dataset.action='login';control.textContent='Đăng nhập để viết';control.onclick=()=>authEvents.dispatchEvent(new Event('login-request'));return control;}
-  function askNewBoard(){askName(root,{title:'Tên bảng mới',signal,onSubmit:name=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account});save(pendingKey(account),pending);selectBoard(id);}});}
+  function askNewBoard(){askName(root,{title:'Tên bảng mới',option:'Nhật ký: note mới mặc định "Chỉ mình tôi"',signal,onSubmit:(name,journal)=>{const id=crypto.randomUUID();pending.push({id,name,operationId:crypto.randomUUID(),accountId:account,...(journal?{noteDefault:'private'}:{})});save(pendingKey(account),pending);selectBoard(id);}});}
   // No boards yet: the empty frame itself is one large "+" (the small tab "+" hides via CSS while it exists).
   function emptyCreate(){const control=document.createElement('button');control.type='button';control.className='notes-empty-create';control.dataset.action='board-new-empty';control.dataset.mutation='';control.setAttribute('aria-label','Tạo bảng mới');control.innerHTML='<span class="notes-empty-plus" aria-hidden="true">+</span><span class="notes-empty-label">Tạo bảng đầu tiên</span>';control.onclick=askNewBoard;return control;}
   function renderActions(){actions.replaceChildren();strip.replaceChildren(tabs);if(!account){actions.append(loginButton());return;}
