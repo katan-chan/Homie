@@ -1,9 +1,14 @@
 // The garden tab owns lettering and the memory flowers; the shell owns the landscape.
 import { apiRequest, authEvents, getUser } from '../auth.js';
+import { gardenFlower } from '../notes/model.js';
 
 const FOCUS_KEY = 'homie-notes:focus';
 const NAME = { minhle: 'Minh', haiyen: 'Yến' };
-const FLOWER = new URL('../../assets/flowers/memory-cosmos.webp', import.meta.url).href;
+// Per species: height relative to the others (so a round allium does not dwarf a lavender spike) and where on the
+// picture (% from the left/top) the ribbon is tied around its stem.
+const SPECIES = { cosmos: [1, 22, 70], daisy: [0.86, 69, 70], poppy: [0.96, 72, 72], lavender: [1.08, 27, 80], allium: [0.8, 52, 84] };
+// A ribbon bow marks a memory flower; it is a bow, not a flower, so it may be drawn here.
+const RIBBON = '<svg class="memory-ribbon" viewBox="0 0 40 30" aria-hidden="true"><path d="M20 13C12 3 2 5 4 12s10 5 16 3zM20 13c8-10 18-8 16-1s-10 5-16 3z" fill="#e98fab" stroke="#c76687" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l-6 13 4-1 3-10 3 10 4 1-6-13z" fill="#e98fab" stroke="#c76687" stroke-width="1.6" stroke-linejoin="round"/><circle cx="20" cy="14" r="3.2" fill="#c76687"/></svg>';
 // Stem-base spots inside the meadow band, as % of the viewport: clear of the lettering and both Loopy.
 const WIDE = [[30, 71], [41, 70], [51, 71], [61, 70], [71, 71], [81, 69], [35, 83], [46, 84], [56, 83], [66, 84],
   [27, 95], [38, 96], [49, 95], [59, 96], [69, 95]];
@@ -103,13 +108,18 @@ export function render(container, { signal } = {}) {
       flower.type = 'button';
       flower.className = 'memory-flower';
       flower.setAttribute('aria-label', `Hoa kỷ niệm: ${item.title || 'Kỷ niệm'}`);
-      flower.style.cssText = `--x:${wide[0]};--y:${wide[1]};--px:${phone[0]};--py:${phone[1]};--sx:${short[0]};--sy:${short[1]};--size:${0.92 + (h % 5) * 0.04};--delay:${-(h % 7)}s`;
-      if (h & 1) flower.classList.add('is-mirrored');
+      const species = gardenFlower(item.gardenFlower).id, [scale, rx, ry] = SPECIES[species];
+      flower.dataset.flower = species;
+      flower.style.cssText = `--x:${wide[0]};--y:${wide[1]};--px:${phone[0]};--py:${phone[1]};--sx:${short[0]};--sy:${short[1]};--size:${scale * (0.94 + (h % 5) * 0.03)};--rx:${rx}%;--ry:${ry}%;--delay:${-(h % 7)}s`;
+      const stem = document.createElement('span');
+      stem.className = h & 1 ? 'memory-plant is-mirrored' : 'memory-plant';
+      stem.innerHTML = RIBBON;
       const picture = document.createElement('img');
-      picture.src = FLOWER;
+      picture.src = new URL(`../../assets/flowers/memory-${species}.webp`, import.meta.url).href;
       picture.alt = '';
       picture.draggable = false;
-      flower.append(picture);
+      stem.prepend(picture);
+      flower.append(stem);
       flower.addEventListener('click', () => openMemory(item, flower));
       return flower;
     }));

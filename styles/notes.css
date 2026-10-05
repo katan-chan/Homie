@@ -234,3 +234,15 @@
 @keyframes notes-focus{50%{outline-color:#f3c3d3}}
 @media(prefers-reduced-motion:reduce){.paper-note.is-focused{animation:none}}
 .notes-name-form .notes-name-option{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;font:15px system-ui;cursor:pointer}.notes-name-form .notes-name-option input{width:20px;height:20px;margin:0;accent-color:#a46c84}
+/* Planting a memory: pick the flower that grows for it in the garden. */
+.notes-flower-form{display:grid;gap:14px}
+.notes-flower-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;min-width:0;margin:0;padding:0;border:0}
+.notes-flower-options legend{margin:0 0 10px;padding:0;font:21px Georgia,serif}
+.notes-flower-option{position:relative;display:grid;justify-items:center;gap:4px;min-height:44px;padding:8px 6px;border:1px solid #e3cfcf;border-radius:14px;background:#fffdf9;color:#684b59;font:14px system-ui;text-align:center;cursor:pointer}
+.notes-flower-option input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.notes-flower-option img{width:56px;height:64px;object-fit:contain;pointer-events:none}
+.notes-flower-option:has(input:checked){border:2px solid #c76687;background:#fbe7ee;color:#8a3f5c;font-weight:600}
+.notes-flower-option:has(input:focus-visible){outline:3px solid var(--paper-focus,#8b4f68);outline-offset:2px}
+.notes-flower-actions{display:flex;justify-content:flex-end;gap:10px}
+.notes-garden-flower{display:inline-flex;align-items:center;min-height:44px;padding:0 6px;color:#4f6b4b;font-weight:600}
+@media(min-width:601px){.notes-flower-dialog{width:min(540px,calc(100vw - 32px))}}

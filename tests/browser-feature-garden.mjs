@@ -34,12 +34,12 @@ const [home, journal] = [randomUUID(), randomUUID()];
 await command('minhle', home, 'board.create', { name: 'Vườn nhà mình', visibility: 'shared' });
 await command('haiyen', journal, 'board.create', { name: 'Nhật ký của Yến', visibility: 'shared', noteDefault: 'private' });
 const memory = { labels: ['Kỷ niệm'], garden: true };
-const sea = await note('minhle', home, ['Đi biển Vũng Tàu', 'Gió to, cát bay vào cơm.'], { ...memory, memoryDate: '2026-10-12' });
-const meal = await note('haiyen', home, ['Bữa cơm đầu tiên ở nhà mới'], { ...memory, memoryDate: '2026-10-01' });
+const sea = await note('minhle', home, ['Đi biển Vũng Tàu', 'Gió to, cát bay vào cơm.'], { ...memory, memoryDate: '2026-10-12', gardenFlower: 'poppy' });
+const meal = await note('haiyen', home, ['Bữa cơm đầu tiên ở nhà mới'], { ...memory, memoryDate: '2026-10-01', gardenFlower: 'daisy' });
 await note('haiyen', journal, ['Bí mật của Yến'], { ...memory, memoryDate: '2026-09-01', visibility: 'haiyen' });
-await note('minhle', home, ['Chưa trồng'], { labels: ['Kỷ niệm'], memoryDate: '2026-09-20', garden: false });
-const extra = [];
-for (let i = 0; i < 4; i++) extra.push(await note('minhle', home, [`Kỷ niệm số ${i + 1}`], { ...memory, memoryDate: `2026-08-0${i + 1}` }));
+const later = await note('minhle', home, ['Chưa trồng'], { labels: ['Kỷ niệm'], memoryDate: '2026-09-20', garden: false });
+const extra = [], kinds = ['lavender', 'allium', null, 'cosmos'];
+for (let i = 0; i < 4; i++) extra.push(await note('minhle', home, [`Kỷ niệm số ${i + 1}`], { ...memory, memoryDate: `2026-08-0${i + 1}`, gardenFlower: kinds[i] }));
 
 const errors = `window.__errors=[];addEventListener('error',e=>__errors.push(String(e.message)));addEventListener('unhandledrejection',e=>__errors.push(String(e.reason)));`;
 try {
@@ -74,7 +74,11 @@ try {
       ...extra.map((_, i) => `Hoa kỷ niệm: Kỷ niệm số ${i + 1}`)].sort(), 'Only visible planted memories; no private page, no unplanted memory');
     assert.equal(await evaluate("!!document.querySelector('.garden-content ul,.garden-content ol')"), false, 'No memory list');
     assert.deepEqual(await evaluate(layout), clean, '1440 layout');
-    const sway = "getComputedStyle(document.querySelector('.memory-flower img')).animationName";
+    const species = `Object.fromEntries([...${flowers}].map(f=>[f.getAttribute('aria-label').slice(13),f.dataset.flower+(f.querySelector('.memory-ribbon')?'+ribbon':'')+(f.querySelector('img').getAttribute('src').includes('memory-'+f.dataset.flower+'.webp')?'':'!img')]))`;
+    assert.deepEqual(await evaluate(species), { 'Đi biển Vũng Tàu': 'poppy+ribbon', 'Bữa cơm đầu tiên ở nhà mới': 'daisy+ribbon', 'Kỷ niệm số 1': 'lavender+ribbon',
+      'Kỷ niệm số 2': 'allium+ribbon', 'Kỷ niệm số 3': 'cosmos+ribbon', 'Kỷ niệm số 4': 'cosmos+ribbon' }, 'Each memory grows its chosen flower (null: the default) with a ribbon');
+    await wait(`[...document.querySelectorAll('.memory-flower img')].every(i=>i.complete&&i.naturalWidth>0)`); // every species image loads
+    const sway = "getComputedStyle(document.querySelector('.memory-plant')).animationName";
     assert.equal(await evaluate(sway), 'memory-sway');
     await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     assert.equal(await evaluate(sway), 'none', 'Reduced motion: flowers stand still');
@@ -103,6 +107,43 @@ try {
     await wait(`location.hash==='#dashboard'&&document.querySelector('[data-note-id="${meal}"].is-focused')`);
     assert.equal(await evaluate("sessionStorage.getItem('homie-notes:focus')"), null, 'Handoff consumed');
 
+    // Plant from the board: "🌱 Trồng vào vườn" asks for a flower; the garden grows that species with a ribbon.
+    const saved = "document.querySelector('.notes-durability')?.dataset.durability==='saved'";
+    const board = async () => {
+      await evaluate(`sessionStorage.setItem('homie-notes:focus',JSON.stringify({boardId:${JSON.stringify(home)},noteId:${JSON.stringify(later)}}));location.hash='garden'`);
+      await wait("document.querySelector('.garden-title')"); await evaluate("location.hash='dashboard'");
+      await wait(`document.querySelector('[data-note-id="${later}"].is-focused')`);
+      await evaluate(`document.querySelector('[data-note-id="${later}"] .note-handle').click()`);
+      await wait("document.querySelector('[data-action^=note-garden]')");
+    };
+    const openPicker = async () => {
+      await evaluate("document.querySelector('[data-action=note-garden-pick]').click()"); await wait("document.querySelector('dialog.notes-flower-dialog[open]')");
+    };
+    const pick = async (id, name) => {
+      await openPicker();
+      await evaluate(`document.querySelector('dialog[open] input[value=${id}]').click()`);
+      if (name) await shot(name);
+      await evaluate("document.querySelector('dialog[open] form').requestSubmit()");
+      await wait(`document.querySelector('[data-action=note-garden-remove]')&&${saved}`);
+    };
+    const grown = `[...${flowers}].find(f=>f.getAttribute('aria-label')==='Hoa kỷ niệm: Chưa trồng')`;
+    await board(); await openPicker();
+    assert.deepEqual(await evaluate(`(()=>{const d=document.querySelector('dialog[open]');return [d.querySelector('legend').textContent,[...d.querySelectorAll('.notes-flower-option')].map(o=>o.textContent+(o.querySelector('input').checked?'*':'')).join(),
+      [...d.querySelectorAll('.notes-flower-option')].every(o=>{const r=o.getBoundingClientRect();return r.width>=44&&r.height>=44}),document.activeElement.name]})()`),
+      ['Chọn hoa để trồng vào vườn', 'Cánh bướm hồng*,Cúc họa mi,Anh túc cam,Oải hương,Cầu tím', true, 'flower'], 'Picker: radio group of every species, the default chosen and focused');
+    assert.equal(await evaluate("(()=>{const r=document.querySelector('dialog[open]').getBoundingClientRect();return r.width<=540&&Math.abs(r.left+r.width/2-innerWidth/2)<2})()"), true, '1440: picker is a centred modal');
+    await evaluate("document.querySelector('dialog[open] [data-action=flower-cancel]').click()"); await wait("!document.querySelector('dialog[open]')");
+    await pick('lavender', 'picker-1440');
+    assert.equal(await evaluate("document.querySelector('.notes-garden-flower').textContent"), '🌱 Oải hương');
+    assert.equal(await evaluate(`document.querySelector('[data-note-id="${later}"] .note-label.is-garden').textContent`), '🌱 Oải hương');
+    await evaluate("location.hash='garden'"); await wait(`${grown}?.dataset.flower==='lavender'&&${grown}.querySelector('.memory-ribbon')`);
+    // Đổi hoa, then Nhổ khỏi vườn.
+    await board(); await pick('allium');
+    await evaluate("location.hash='garden'"); await wait(`${grown}?.dataset.flower==='allium'`);
+    await board(); await evaluate("document.querySelector('[data-action=note-garden-remove]').click()");
+    await wait(`document.querySelector('[data-action=note-garden-pick]')&&${saved}`);
+    await evaluate("location.hash='garden'"); await wait(`${flowers}.length===6&&!${grown}`);
+
     // Phone.
     await size(390, 844);
     await evaluate("location.hash='garden'"); await wait(`${flowers}.length===6`);
@@ -112,6 +153,12 @@ try {
     assert.equal(await evaluate("(()=>{const r=document.querySelector('dialog[open]').getBoundingClientRect();return Math.abs(r.bottom-innerHeight)<2&&Math.abs(r.width-innerWidth)<2})()"), true, '390: bottom sheet');
     await shot('390-sheet');
     await evaluate("document.querySelector('dialog[open] .memory-close').click()"); await wait("!document.querySelector('dialog[open]')");
+    await board(); await openPicker();
+    assert.equal(await evaluate("(()=>{const r=document.querySelector('dialog[open]').getBoundingClientRect();return Math.abs(r.bottom-innerHeight)<2&&Math.abs(r.width-innerWidth)<2&&document.documentElement.scrollWidth<=innerWidth})()"), true, '390: picker is a bottom sheet');
+    assert.equal(await evaluate("[...document.querySelectorAll('dialog[open] .notes-flower-option,dialog[open] button')].every(o=>{const r=o.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.right<=innerWidth})"), true, '390: picker targets');
+    await evaluate("document.querySelector('dialog[open] input[value=poppy]').click()"); await shot('picker-390');
+    await evaluate("document.querySelector('dialog[open] [data-action=flower-cancel]').click()"); await wait("!document.querySelector('dialog[open]')");
+    await evaluate("location.hash='garden'"); await wait(`${flowers}.length===6`);
     for (const [w, h] of [[320, 740], [768, 1024], [844, 390]]) {
       await size(w, h);
       assert.deepEqual(await evaluate(layout), clean, `${w}x${h} layout`);

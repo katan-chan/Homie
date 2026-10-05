@@ -182,7 +182,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     // Defaults cover snapshots cached on the device before format 6 (journals and memories).
     let state = { boards: [{ id: snapshot.id, name: snapshot.name, authorId: snapshot.authorId, visibility: snapshot.visibility, noteDefault: snapshot.noteDefault ?? null,
       revision: snapshot.revision, metadataRevision: snapshot.metadataRevision, deletedAt: snapshot.deletedAt }],
-      columns: clone(snapshot.columns), notes: snapshot.notes.map(note => ({ memoryDate: null, garden: false, ...clone(note) })), decorations: clone(snapshot.decorations) };
+      columns: clone(snapshot.columns), notes: snapshot.notes.map(note => ({ memoryDate: null, garden: false, gardenFlower: null, ...clone(note) })), decorations: clone(snapshot.decorations) };
     for (const entry of [...awaitingSnapshots.values(), ...queue]) if (entry.kind === 'command' && entry.command.type !== 'command.undo') {
       try { state = applyMetadataCommand(state, accountId, entry.command, { assetExists: () => true }).state; } catch { /* Server resolves stale/deleted metadata; retained queue is still reviewable. */ }
     }

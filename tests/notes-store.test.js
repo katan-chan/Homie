@@ -440,7 +440,7 @@ test('format 5 snapshots migrate to format 6 without journal or memory, and keep
   const f = await fixture(t), moved = await f.send('note.update', { id: f.noteId, x: 40 });
   await f.store.close();
   const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
-  const strip = ({ noteDefault, memoryDate, garden, ...record }) => record;
+  const strip = ({ noteDefault, memoryDate, garden, gardenFlower, ...record }) => record;
   saved.formatVersion = 5;
   saved.boards = saved.boards.map(strip); saved.notes = saved.notes.map(strip);
   for (const change of saved.operations.flatMap(op => op.undo?.changes ?? [])) {
@@ -448,8 +448,24 @@ test('format 5 snapshots migrate to format 6 without journal or memory, and keep
   }
   await writeFile(path, JSON.stringify(saved));
   const store = await f.reopen(), board = store.privateBoard(f.boardId);
-  assert.deepEqual([board.noteDefault, board.notes[0].memoryDate, board.notes[0].garden], [null, null, false]);
+  assert.deepEqual([board.noteDefault, board.notes[0].memoryDate, board.notes[0].garden, board.notes[0].gardenFlower], [null, null, false, null]);
   await f.send('command.undo', { operationId: moved.operationId });
   assert.equal(store.privateBoard(f.boardId).notes[0].x, 10, 'Undo recorded before the migration still works');
   assert.equal(JSON.parse(await readFile(path, 'utf8')).formatVersion, 6);
+});
+
+test('format 6 snapshots written before gardenFlower existed load with gardenFlower null', async t => {
+  const f = await fixture(t), moved = await f.send('note.update', { id: f.noteId, x: 40 });
+  await f.store.close();
+  const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
+  const strip = ({ gardenFlower, ...record }) => record;
+  saved.notes = saved.notes.map(strip);
+  for (const change of saved.operations.flatMap(op => op.undo?.changes ?? [])) if (change.kind === 'note') {
+    change.after = strip(change.after); if (change.before) change.before = strip(change.before);
+  }
+  await writeFile(path, JSON.stringify(saved));
+  const store = await f.reopen();
+  assert.equal(store.privateBoard(f.boardId).notes[0].gardenFlower, null);
+  await f.send('command.undo', { operationId: moved.operationId });
+  assert.equal(store.privateBoard(f.boardId).notes[0].x, 10, 'Undo still works');
 });

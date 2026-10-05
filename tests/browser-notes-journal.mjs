@@ -29,15 +29,18 @@ try {
     assert.deepEqual((await board(boardId, yen)).notes, [], 'The partner sees no page until one is shared');
     // A memory: "+ Kỷ niệm" dates it today, then it can be planted in (and pulled out of) the garden.
     await evaluate(`document.querySelector('[data-note-id="${first}"] .note-handle').click()`); await wait("document.querySelector('[data-action=label-memory]')");
-    await evaluate("document.querySelector('[data-action=label-memory]').click()"); await wait(`document.querySelector('[data-action=note-garden]') && ${saved}`);
+    await evaluate("document.querySelector('[data-action=label-memory]').click()"); await wait(`document.querySelector('[data-action=note-garden-pick]') && ${saved}`);
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
     assert.equal((await board(boardId, minh)).notes.find(n => n.id === first).memoryDate, today);
-    await evaluate("document.querySelector('[data-action=note-garden]').click()"); await wait(`document.querySelector('[data-action=note-garden]')?.getAttribute('aria-pressed')==='true' && ${saved}`);
-    assert.equal(await evaluate("document.querySelector('[data-action=note-garden]').textContent"), 'Nhổ khỏi vườn');
+    // Planting asks which flower grows for this memory.
+    await evaluate("document.querySelector('[data-action=note-garden-pick]').click()"); await wait("document.querySelector('dialog.notes-flower-dialog[open]')");
+    await evaluate("document.querySelector('dialog[open] input[value=poppy]').click();document.querySelector('dialog[open] form').requestSubmit()");
+    await wait(`document.querySelector('[data-action=note-garden-remove]') && ${saved}`);
+    assert.equal(await evaluate("document.querySelector('.notes-garden-flower').textContent"), '🌱 Anh túc cam');
     await evaluate("{const i=document.querySelector('[data-action=note-memory-date]');i.value='2026-10-12';i.dispatchEvent(new Event('change',{bubbles:true}))}");
-    await wait(`[...document.querySelectorAll('[data-note-id="${first}"] .note-label')].map(l=>l.textContent).join()==='Kỷ niệm,12/10/2026,🌱 Trong vườn' && ${saved}`);
-    assert.deepEqual(await board(boardId, minh).then(b => b.notes.find(n => n.id === first)).then(n => [n.labels, n.memoryDate, n.garden]), [['Kỷ niệm'], '2026-10-12', true]);
-    await evaluate("document.querySelector('[data-action=label-remove]').click()"); await wait(`!document.querySelector('[data-action=note-garden]') && ${saved}`);
+    await wait(`[...document.querySelectorAll('[data-note-id="${first}"] .note-label')].map(l=>l.textContent).join()==='Kỷ niệm,12/10/2026,🌱 Anh túc cam' && ${saved}`);
+    assert.deepEqual(await board(boardId, minh).then(b => b.notes.find(n => n.id === first)).then(n => [n.labels, n.memoryDate, n.garden, n.gardenFlower]), [['Kỷ niệm'], '2026-10-12', true, 'poppy']);
+    await evaluate("document.querySelector('[data-action=label-remove]').click()"); await wait(`!document.querySelector('[data-action^=note-garden]') && ${saved}`);
     assert.equal((await board(boardId, minh)).notes.find(n => n.id === first).garden, false, 'Dropping the label pulls the flower');
     // Opening a note from elsewhere: another page writes the handoff and goes to the dashboard.
     await evaluate("document.querySelector('[data-action=inspector-close]')?.click()");

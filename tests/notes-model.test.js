@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState, clampPaperSize } from '../js/notes/model.js';
+import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState, clampPaperSize, GARDEN_FLOWERS, gardenFlower } from '../js/notes/model.js';
 
 const boardId = randomUUID(), columnId = randomUUID(), otherColumnId = randomUUID(), noteId = randomUUID();
 function apply(state, type, payload, accountId = 'minhle', board = boardId) {
@@ -103,6 +103,25 @@ test('journal boards and memories: noteDefault, memoryDate and garden only on a 
   assert.equal(state.notes[0].memoryDate, '2026-10-12', 'The date stays for when the label comes back');
   const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], memoryDate: '2025-01-01', garden: true });
   assert.equal(created.notes.at(-1).garden, true);
+  assert.equal(created.notes.at(-1).gardenFlower, null, 'No flower chosen: the garden shows the default one');
+});
+
+test('gardenFlower: one of the garden species or null, chosen on create or update', () => {
+  let state = apply(fixture(), 'note.update', { id: noteId, labels: ['Kỷ niệm'], memoryDate: '2026-10-12' });
+  assert.equal(state.notes[0].gardenFlower, null);
+  for (const gardenFlower of ['rose', '', 1, 'Cosmos']) {
+    assert.throws(() => apply(state, 'note.update', { id: noteId, garden: true, gardenFlower }), { code: 'invalid_garden_flower' });
+  }
+  state = apply(state, 'note.update', { id: noteId, garden: true, gardenFlower: 'poppy' }, 'haiyen');
+  assert.deepEqual([state.notes[0].garden, state.notes[0].gardenFlower], [true, 'poppy']);
+  state = apply(state, 'note.update', { id: noteId, gardenFlower: 'lavender' });
+  assert.equal(state.notes[0].gardenFlower, 'lavender', 'Đổi hoa keeps it planted');
+  state = apply(state, 'note.update', { id: noteId, garden: false });
+  assert.deepEqual([state.notes[0].garden, state.notes[0].gardenFlower], [false, 'lavender'], 'Unplanting keeps the last choice');
+  const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], garden: true, gardenFlower: 'daisy' });
+  assert.equal(created.notes.at(-1).gardenFlower, 'daisy');
+  assert.equal(gardenFlower(null).id, GARDEN_FLOWERS[0].id);
+  assert.equal(gardenFlower('allium').name, 'Cầu tím');
 });
 
 test('a journal page created without visibility stays private to its author on the server', () => {

@@ -29,7 +29,7 @@ export function create({ auth, notesStore }) {
       const note = board?.notes.find(item => item.id === memory.noteId);
       if (!note) return [];
       return [{ noteId: memory.noteId, boardId: memory.boardId, boardName: board.name, title: memory.title,
-        memoryDate: memory.memoryDate, authorId: note.authorId, body: bodyText(note.content) }];
+        memoryDate: memory.memoryDate, gardenFlower: memory.gardenFlower, authorId: note.authorId, body: bodyText(note.content) }];
     });
     return sendJson(res, 200, { items });
   }

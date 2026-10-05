@@ -1,4 +1,4 @@
-import { clampPaperSize, isMemory, MEMORY_LABEL as MEMORY } from './model.js';
+import { clampPaperSize, gardenFlower, GARDEN_FLOWERS, isMemory, MEMORY_LABEL as MEMORY } from './model.js';
 import { mountBoardPresence } from './editor.js';
 import { authEvents, getUser } from '../auth.js';
 
@@ -29,6 +29,29 @@ function button(label, action, mutation = false) {
   const node = element('button', 'notes-button', label); node.type = 'button'; node.dataset.action = action;
   if (mutation) node.dataset.mutation = '';
   return node;
+}
+const flowerImage = id => new URL(`../../assets/flowers/memory-${id}.webp`, import.meta.url).href;
+/** Flower picker for planting a memory: a radio group of the garden species; onSubmit receives the chosen id. */
+export function pickFlower(container, { current = null, planted = false, signal, onSubmit }) {
+  const dialog = element('dialog', 'notes-dialog notes-flower-dialog'); dialog.setAttribute('aria-labelledby', 'notes-flower-title');
+  const form = element('form', 'notes-flower-form'), group = element('fieldset', 'notes-flower-options');
+  const legend = element('legend', '', planted ? 'Đổi hoa cho kỷ niệm' : 'Chọn hoa để trồng vào vườn'); legend.id = 'notes-flower-title'; group.append(legend);
+  const chosen = gardenFlower(current).id;
+  for (const flower of GARDEN_FLOWERS) {
+    const option = element('label', 'notes-flower-option'), input = document.createElement('input'), image = document.createElement('img');
+    input.type = 'radio'; input.name = 'flower'; input.value = flower.id; input.checked = flower.id === chosen;
+    image.src = flowerImage(flower.id); image.alt = ''; image.width = 56; image.height = 64; image.draggable = false;
+    option.append(input, image, element('span', '', flower.name)); group.append(option);
+  }
+  const submit = button(planted ? 'Đổi hoa' : '🌱 Trồng vào vườn', 'flower-save'); submit.type = 'submit';
+  const cancel = button('Hủy', 'flower-cancel'); cancel.onclick = () => dialog.close();
+  const actions = element('div', 'notes-flower-actions'); actions.append(cancel, submit);
+  form.append(group, actions); dialog.append(form); container.append(dialog);
+  const close = () => { if (dialog.open) dialog.close(); dialog.remove(); signal?.removeEventListener('abort', close); };
+  dialog.addEventListener('close', close, { once: true }); signal?.addEventListener('abort', close, { once: true });
+  form.addEventListener('submit', event => { event.preventDefault(); const id = form.elements.flower.value; close(); onSubmit(id); });
+  dialog.showModal(); form.querySelector('input:checked').focus();
+  return close;
 }
 /** option: label of an extra checkbox; onSubmit then also receives whether it is checked. */
 export function askName(container, { title, value = '', option = '', signal, onSubmit }) {
@@ -129,7 +152,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
     const entity = selected(); inspector.hidden = !state?.writable || !entity;
     if (inspector.hidden) { inspector.replaceChildren(); inspectorKey = ''; return; }
     const columns = state.snapshot.columns.filter(c => !c.deletedAt);
-    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}:${entity.memoryDate}:${entity.garden}`;
+    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}:${entity.memoryDate}:${entity.garden}:${entity.gardenFlower}`;
     if (key === inspectorKey) {
       const select = inspector.querySelector('select'); if (select && document.activeElement !== select) select.value = entity.columnId || '';
       for (const field of ['width', 'height']) { const input = inspector.querySelector(`[name=${field}]`); if (input && document.activeElement !== input) input.value = Math.round(entity[field]); }
@@ -165,8 +188,10 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
       if (isMemory(entity.labels)) {
         const memory = element('div', 'notes-memory-edit'), dateLabel = element('label', '', 'Ngày kỷ niệm'), date = document.createElement('input');
         date.type = 'date'; date.name = 'memoryDate'; date.value = entity.memoryDate || ''; date.dataset.action = 'note-memory-date'; date.dataset.mutation = ''; dateLabel.append(date);
-        const garden = button(entity.garden ? 'Nhổ khỏi vườn' : '🌱 Trồng vào vườn', 'note-garden', true); garden.setAttribute('aria-pressed', String(entity.garden));
-        memory.append(dateLabel, garden); inspector.append(memory);
+        memory.append(dateLabel);
+        if (entity.garden) memory.append(element('span', 'notes-garden-flower', `🌱 ${gardenFlower(entity.gardenFlower).name}`), button('Đổi hoa', 'note-garden-pick', true), button('Nhổ khỏi vườn', 'note-garden-remove', true));
+        else memory.append(button('🌱 Trồng vào vườn', 'note-garden-pick', true));
+        inspector.append(memory);
       }
     } else inspector.append(button('Đổi tên cột', 'column-rename', true));
     inspector.append(button('Bỏ vào thùng rác', 'object-trash', true));
@@ -244,7 +269,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
         const view = effectiveView(state.snapshot?.visibility, entity.visibility);
         const memory = isMemory(entity.labels);
         const badges = [[viewLabel(view), `note-view is-${view === 'public' || view === 'shared' ? view : 'private'}`], ...(entity.labels || []).map(label => [label, isMemory([label]) ? 'note-label is-memory' : 'note-label']),
-          ...(memory && entity.memoryDate ? [[dayLabel(entity.memoryDate), 'note-label is-memory-date']] : []), ...(memory && entity.garden ? [['🌱 Trong vườn', 'note-label is-garden']] : [])];
+          ...(memory && entity.memoryDate ? [[dayLabel(entity.memoryDate), 'note-label is-memory-date']] : []), ...(memory && entity.garden ? [[`🌱 ${gardenFlower(entity.gardenFlower).name}`, 'note-label is-garden']] : [])];
         const badgeKey = JSON.stringify(badges);
         if (record.badgeKey !== badgeKey) { record.badgeKey = badgeKey; record.badges.replaceChildren(...badges.map(([text, className]) => element('span', className, text))); }
         record.node.classList.toggle('is-filtered', !!filter && !entity.labels?.includes(filter));
@@ -337,7 +362,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
       if (action === 'label-remove') await mutate('note.update',{id:entity.id,labels:entity.labels.filter(label=>label!==control.dataset.label)});
       if (action === 'label-memory') await addLabel(entity, MEMORY);
-      if (action === 'note-garden') await mutate('note.update',{id:entity.id,garden:!entity.garden});
+      if (action === 'note-garden-pick') pickFlower(root,{current:entity.gardenFlower,planted:entity.garden,signal:controller.signal,onSubmit:id=>run(()=>mutate('note.update',{id:entity.id,garden:true,gardenFlower:id}))});
+      if (action === 'note-garden-remove') await mutate('note.update',{id:entity.id,garden:false});
       if (action === 'label-add') { const input = inspector.querySelector('[name=label]'); await addLabel(entity, input.value); }
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});
       if (action === 'column-rename') askName(root,{title:'Đổi tên cột',value:entity.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('column.update',{id:entity.id,name}))});
