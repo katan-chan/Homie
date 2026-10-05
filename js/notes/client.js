@@ -179,8 +179,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   }
   function optimistic() {
     if (!snapshot || !privateMode) return snapshot;
-    let state = { boards: [{ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
-      metadataRevision: snapshot.metadataRevision, deletedAt: snapshot.deletedAt }],
+    let state = { boards: [{ id: snapshot.id, name: snapshot.name, authorId: snapshot.authorId, visibility: snapshot.visibility,
+      revision: snapshot.revision, metadataRevision: snapshot.metadataRevision, deletedAt: snapshot.deletedAt }],
       columns: clone(snapshot.columns), notes: clone(snapshot.notes), decorations: clone(snapshot.decorations) };
     for (const entry of [...awaitingSnapshots.values(), ...queue]) if (entry.kind === 'command' && entry.command.type !== 'command.undo') {
       try { state = applyMetadataCommand(state, accountId, entry.command, { assetExists: () => true }).state; } catch { /* Server resolves stale/deleted metadata; retained queue is still reviewable. */ }

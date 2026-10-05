@@ -111,7 +111,7 @@ test('raw HTTP upload authenticates preview/library, CSRF-checks PUT, and hides 
   assert.equal((await fetch(base+asset.fileUrl)).status,404);
   const boardId=randomUUID(),noteId=randomUUID(),columnId=randomUUID(),clientId=randomUUID();
   const cmd=async(type,payload)=>fetch(base+'/api/boards/commands',{method:'POST',headers:{...headers,Cookie:cookie},body:JSON.stringify({clientId,command:{accountId:'minhle',operationId:randomUUID(),boardId,baseRevision:0,type,payload}})});
-  assert.equal((await cmd('board.create',{name:'Media'})).status,200);
+  assert.equal((await cmd('board.create',{name:'Media', visibility: 'public' })).status,200);
   assert.equal((await cmd('column.create',{id:columnId,name:'Column',x:0,y:0,width:300,height:400})).status,200);
   assert.equal((await cmd('note.create',{id:noteId,columnId,x:10,y:10,width:240,height:300,color:'#ffeedd'})).status,200);
   const decorationId=randomUUID();assert.equal((await cmd('decoration.add',{id:decorationId,assetId:asset.id,x:0,y:0,width:40,height:40,rotation:0,z:0})).status,200);

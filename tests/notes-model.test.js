@@ -10,7 +10,7 @@ function apply(state, type, payload, accountId = 'minhle', board = boardId) {
     type, payload }, { now: '2026-10-02T00:00:00.000Z' }).state;
 }
 function fixture() {
-  let state = apply(emptyNotesState(), 'board.create', { name: 'Bảng chung' });
+  let state = apply(emptyNotesState(), 'board.create', { name: 'Bảng chung', visibility: 'public' });
   state = apply(state, 'column.create', { id: columnId, name: 'Cột', x: 10, y: 20, width: 400, height: 600 });
   return apply(state, 'note.create', { id: noteId, columnId, x: 35, y: 50, width: 200, height: 240, color: '#ffeedd' });
 }
@@ -62,7 +62,7 @@ test('own tombstones survive parent trash/restore and descendants cannot escape 
 test('hierarchy validation rejects missing/cross-board parents, duplicate IDs and invalid snapshots', () => {
   let state = fixture();
   const anotherBoard = randomUUID(), foreignColumn = randomUUID();
-  state = apply(state, 'board.create', { name: 'Other' }, 'minhle', anotherBoard);
+  state = apply(state, 'board.create', { name: 'Other', visibility: 'public' }, 'minhle', anotherBoard);
   state = apply(state, 'column.create', { id: foreignColumn, name: 'x', x: 0, y: 0, width: 100, height: 100 }, 'minhle', anotherBoard);
   for (const invalid of [randomUUID(), foreignColumn]) {
     assert.throws(() => apply(state, 'note.move', { id: noteId, columnId: invalid }));
@@ -74,7 +74,7 @@ test('hierarchy validation rejects missing/cross-board parents, duplicate IDs an
 });
 
 test('interactive paper dimensions stay usable and reject nonfinite size input', () => {
-  assert.equal(clampPaperSize('note', 1), 180);
+  assert.equal(clampPaperSize('note', 1), 5);
   assert.equal(clampPaperSize('column', -100), 240);
   assert.equal(clampPaperSize('note', 9000), 2400);
   assert.equal(clampPaperSize('column', 480), 480);

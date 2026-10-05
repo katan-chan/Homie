@@ -4,6 +4,10 @@ const collections = { board: 'boards', column: 'columns', note: 'notes', decorat
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const geometry = ['x', 'y', 'width', 'height'];
 
+// Who may view: boards are 'public' (guests too), 'shared' (both accounts) or one account ID (only that person).
+// A note can only narrow its board: null follows the board, 'shared' or its author's ID hides it further.
+export const BOARD_VISIBILITY = Object.freeze(['public', 'shared', ...NOTE_ACCOUNTS]);
+const MAX_LABELS = 12, MAX_LABEL_LENGTH = 32;
 export function notesError(code, message = code, status = 400) {
   return Object.assign(new Error(message), { code, status });
 }
@@ -35,13 +39,23 @@ function deleted(value) {
 function checkGeometry(record) {
   for (const key of geometry) number(record[key], key === 'width' || key === 'height');
 }
+function visibility(kind, value, authorId) {
+  if (kind === 'board' ? !BOARD_VISIBILITY.includes(value) : value !== null && value !== 'shared' && value !== authorId) throw notesError('invalid_visibility');
+}
+export function normalizeLabels(value) {
+  if (!Array.isArray(value) || value.length > MAX_LABELS) throw notesError('invalid_labels');
+  const labels = value.map(label => typeof label === 'string' ? label.trim().replace(/\s+/g, ' ') : '');
+  if (labels.some(label => !label || label.length > MAX_LABEL_LENGTH)
+    || new Set(labels.map(label => label.toLocaleLowerCase('vi'))).size !== labels.length) throw notesError('invalid_labels');
+  return labels;
+}
 function color(value) {
   if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw notesError('invalid_color');
 }
 // Interactive paper sizes; wire geometry remains validated separately for stored content.
 export function clampPaperSize(kind, value) {
   if (!['note', 'column'].includes(kind) || !Number.isFinite(value)) throw notesError('invalid_geometry');
-  return Math.min(2400, Math.max(kind === 'note' ? 180 : 240, value));
+  return Math.min(2400, Math.max(kind === 'note' ? 5 : 240, value));
 }
 export function emptyNotesState() {
   return { boards: [], columns: [], notes: [], decorations: [] };
@@ -64,24 +78,44 @@ export function isVisible(state, kind, entity) {
     : entity.columnId ? isVisible(state, 'column', findEntity(state, 'column', entity.columnId)) : true;
   return kind !== 'note' || entity.columnId === null || isVisible(state, 'column', findEntity(state, 'column', entity.columnId));
 }
+export function canView(value, viewer) {
+  return value === null || value === 'public' || (value === 'shared' ? viewer !== null : value === viewer);
+}
+/** viewer: an account ID, or null for a guest. Trash state is separate (see isVisible). */
+export function canSee(state, kind, entity, viewer) {
+  if (!entity) return false;
+  const board = kind === 'board' ? entity : findEntity(state, 'board', entity.boardId);
+  if (!board || !canView(board.visibility, viewer)) return false;
+  const note = kind === 'note' ? entity : kind === 'decoration' && entity.noteId ? findEntity(state, 'note', entity.noteId) : null;
+  return !note || canView(note.visibility, viewer);
+}
+// Hidden entities answer like missing ones, so their existence is not revealed.
+function seen(state, kind, entity, viewer) {
+  if (!canSee(state, kind, entity, viewer)) throw notesError('not_found', `${kind} not found`, 404);
+  return entity;
+}
 function active(state, kind, entity) {
   if (!isVisible(state, kind, entity)) throw notesError('deleted', 'Entity or ancestor is in trash', 409);
 }
 function checkEntity(kind, value) {
   const fields = {
-    board: ['id', 'name', 'revision', 'metadataRevision', 'deletedAt'],
+    board: ['id', 'name', 'authorId', 'visibility', 'revision', 'metadataRevision', 'deletedAt'],
     column: ['id', 'boardId', 'name', ...geometry, 'revision', 'deletedAt'],
-    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'revision', 'deletedAt'],
+    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'visibility', 'labels', 'revision', 'deletedAt'],
     // Stickers live on the board in world coordinates; noteId/columnId (at most one) is what they follow when moved or trashed.
     decoration: ['id', 'boardId', 'noteId', 'columnId', 'assetId', ...geometry, 'rotation', 'z', 'revision', 'deletedAt'],
   };
   requireKeys(value, fields[kind]); requireId(value.id); revision(value.revision); deleted(value.deletedAt);
-  if (kind === 'board') { name(value.name); revision(value.metadataRevision); }
+  if (kind === 'board') { name(value.name); requireAccount(value.authorId); visibility(kind, value.visibility); revision(value.metadataRevision); }
   else {
     checkGeometry(value);
     requireId(value.boardId);
     if (kind === 'column') name(value.name);
-    if (kind === 'note') { if (value.columnId !== null) requireId(value.columnId); requireAccount(value.authorId); color(value.color); }
+    if (kind === 'note') {
+      if (value.columnId !== null) requireId(value.columnId);
+      requireAccount(value.authorId); color(value.color); visibility(kind, value.visibility, value.authorId);
+      if (normalizeLabels(value.labels).some((label, i) => label !== value.labels[i])) throw notesError('invalid_labels');
+    }
     if (kind === 'decoration') {
       requireId(value.assetId); number(value.rotation); number(value.z);
       if (value.noteId !== null) requireId(value.noteId);
@@ -114,10 +148,10 @@ export function validateCommand(command, userId) {
   requireId(command.operationId); requireId(command.boardId); revision(command.baseRevision);
   if (typeof command.type !== 'string') throw notesError('invalid_command');
 }
-function checkAttachment(state, p, boardId) {
+function checkAttachment(state, p, boardId, viewer) {
   const noteId = p.noteId ?? null, columnId = p.columnId ?? null;
   if (noteId !== null && columnId !== null) throw notesError('invalid_fields', 'A sticker follows one note or one column');
-  if (noteId !== null) active(state, 'note', mustFind(state, 'note', noteId, boardId));
+  if (noteId !== null) active(state, 'note', seen(state, 'note', mustFind(state, 'note', noteId, boardId), viewer));
   if (columnId !== null) active(state, 'column', mustFind(state, 'column', columnId, boardId));
 }
 function unique(state, id) {
@@ -125,7 +159,7 @@ function unique(state, id) {
   if (Object.values(collections).some(key => state[key].some(entity => entity.id === id))) throw notesError('duplicate_id', 'ID already exists', 409);
 }
 function patch(record, payload, fields) {
-  for (const field of fields) if (Object.hasOwn(payload, field)) record[field] = field === 'name' ? name(payload[field]) : payload[field];
+  for (const field of fields) if (Object.hasOwn(payload, field)) record[field] = field === 'name' ? name(payload[field]) : field === 'labels' ? normalizeLabels(payload[field]) : payload[field];
 }
 function metaRevision(kind, record) {
   return record[kind === 'board' ? 'metadataRevision' : 'revision'];
@@ -133,14 +167,14 @@ function metaRevision(kind, record) {
 function increment(kind, record) {
   record[kind === 'board' ? 'metadataRevision' : 'revision'] += 1;
 }
-export function projectBoard(state, id, { includeDeleted = false } = {}) {
+export function projectBoard(state, id, { includeDeleted = false, viewer = null } = {}) {
   const board = findEntity(state, 'board', id);
-  if (!board || (!includeDeleted && !isVisible(state, 'board', board))) return null;
-  const notes = state.notes.filter(note => note.boardId === id && (includeDeleted || isVisible(state, 'note', note)));
+  if (!board || !canSee(state, 'board', board, viewer) || (!includeDeleted && !isVisible(state, 'board', board))) return null;
+  const shown = (kind, entity) => entity.boardId === id && canSee(state, kind, entity, viewer) && (includeDeleted || isVisible(state, kind, entity));
   return structuredClone({ ...board,
-    columns: state.columns.filter(column => column.boardId === id && (includeDeleted || isVisible(state, 'column', column))),
-    notes,
-    decorations: state.decorations.filter(decoration => decoration.boardId === id && (includeDeleted || isVisible(state, 'decoration', decoration))),
+    columns: state.columns.filter(column => shown('column', column)),
+    notes: state.notes.filter(note => shown('note', note)),
+    decorations: state.decorations.filter(decoration => shown('decoration', decoration)),
   });
 }
 
@@ -150,7 +184,7 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
   const state = structuredClone(current);
   let board = findEntity(state, 'board', boardId), kind, entity;
   if (type !== 'board.create') {
-    board = mustFind(state, 'board', boardId);
+    board = seen(state, 'board', mustFind(state, 'board', boardId), userId);
     if (command.baseRevision > board.revision) throw notesError('invalid_revision');
   } else if (command.baseRevision !== 0) throw notesError('invalid_revision');
   const changes = [];
@@ -168,11 +202,19 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
   kind = entityKind;
   if (kind === 'board') {
     if (action === 'create') {
-      requireKeys(p, ['name']);
-      board = entity = add(kind, { id: boardId, name: name(p.name), revision: 0, metadataRevision: 1, deletedAt: null });
+      requireKeys(p, ['name'], ['visibility']);
+      const shown = p.visibility ?? userId;
+      if (!['public', 'shared', userId].includes(shown)) throw notesError('invalid_visibility');
+      board = entity = add(kind, { id: boardId, name: name(p.name), authorId: userId, visibility: shown, revision: 0, metadataRevision: 1, deletedAt: null });
     } else {
       entity = board;
       if (action === 'rename') { requireKeys(p, ['name']); active(state, kind, entity); touch(kind, entity, () => { entity.name = name(p.name); }); }
+      else if (action === 'share') {
+        requireKeys(p, ['visibility']); active(state, kind, entity);
+        if (entity.authorId !== userId) throw notesError('forbidden', 'Only the board author changes who can view it', 403);
+        if (!['public', 'shared', userId].includes(p.visibility)) throw notesError('invalid_visibility');
+        touch(kind, entity, () => { entity.visibility = p.visibility; });
+      }
       else if (action === 'trash' || action === 'restore') { requireKeys(p, []); touch(kind, entity, () => { entity.deletedAt = action === 'trash' ? now : null; }); }
       else throw notesError('invalid_command');
     }
@@ -182,28 +224,29 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       requireKeys(p, ['id', 'name', ...geometry]);
       entity = add(kind, { ...p, name: name(p.name), boardId, revision: 1, deletedAt: null });
     } else if (kind === 'note') {
-      requireKeys(p, ['id', 'columnId', ...geometry, 'color']);
+      requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels']);
       if (p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
-      entity = add(kind, { ...p, boardId, authorId: userId, revision: 1, deletedAt: null });
+      entity = add(kind, { visibility: null, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
     } else if (kind === 'decoration' && action === 'add') {
       requireKeys(p, ['id', 'assetId', ...geometry, 'rotation', 'z'], ['noteId', 'columnId']);
-      checkAttachment(state, p, boardId);
+      checkAttachment(state, p, boardId, userId);
       if (!assetExists(p.assetId)) throw notesError('asset_not_found', 'Asset is not in library', 404);
       entity = add(kind, { noteId: null, columnId: null, ...p, boardId, revision: 1, deletedAt: null });
     } else throw notesError('invalid_command');
   } else {
-    requireId(p?.id); entity = mustFind(state, kind, p.id, boardId);
+    requireId(p?.id); entity = seen(state, kind, mustFind(state, kind, p.id, boardId), userId);
     if (action === 'trash' || action === 'restore' || (kind === 'decoration' && action === 'remove')) {
       if (kind === 'decoration' && action !== 'remove') throw notesError('invalid_command');
       requireKeys(p, ['id']);
       touch(kind, entity, () => { entity.deletedAt = action === 'restore' ? null : now; });
     } else if (action === 'update' || (kind === 'note' && action === 'move')) {
       const allowed = kind === 'column' ? ['name', ...geometry] : kind === 'note'
-        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
+        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color', 'visibility', 'labels'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
       requireKeys(p, ['id'], allowed);
       if (Object.keys(p).length === 1) throw notesError('invalid_fields');
       active(state, kind, entity);
-      if (kind === 'decoration') checkAttachment(state, { noteId: entity.noteId, columnId: entity.columnId, ...p }, boardId);
+      if (Object.hasOwn(p, 'visibility') && entity.authorId !== userId) throw notesError('forbidden', 'Only the note author changes who can view it', 403);
+      if (kind === 'decoration') checkAttachment(state, { noteId: entity.noteId, columnId: entity.columnId, ...p }, boardId, userId);
       else if (Object.hasOwn(p, 'columnId') && p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
       const dx = (p.x ?? entity.x) - entity.x, dy = (p.y ?? entity.y) - entity.y;
       touch(kind, entity, () => patch(entity, p, allowed));

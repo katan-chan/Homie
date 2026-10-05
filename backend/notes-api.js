@@ -53,11 +53,11 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
     if (body.accountId !== session.id) throw notesError('account_mismatch', 'Account does not match session', 403);
   }
   const owner = (record, session, clientId) => record.session.token === session.token && record.clientId === clientId;
-  function descriptor(kind, id, boardId) {
+  function descriptor(kind, id, boardId, viewer) {
     if (!['column', 'note', 'decoration'].includes(kind)) throw notesError('invalid_fields');
     requireId(id);
     const entity = store.entity(kind, id);
-    if (!entity) throw notesError('not_found', 'Object not found', 404);
+    if (!entity || viewer !== undefined && !store.canSee(kind, id, viewer)) throw notesError('not_found', 'Object not found', 404);
     // A sticker carries what it follows: its note (and that note's column) or its column.
     const note = kind === 'note' ? entity : kind === 'decoration' && entity.noteId ? store.entity('note', entity.noteId) : null;
     const result = { kind, id, boardId: entity.boardId, ...(note ? { columnId: note.columnId } : kind === 'decoration' ? { columnId: entity.columnId } : {}),
@@ -94,7 +94,7 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       if (closing) throw notesError('store_closed', 'Notes API is closing', 503);
       if (context.replay || context.type === 'text') return;
       prune();
-      if (context.type === 'board.rename') return;
+      if (context.type === 'board.rename' || context.type === 'board.share') return;
       for (const lease of leases.values()) {
         const target = descriptor(lease.target.kind, lease.target.id, lease.target.boardId);
         if (!owner(lease, session, clientId) && context.targets.some(changed => conflicts(changed, target))) throw notesError('lease_conflict', 'Object is held by another client', 409);
@@ -133,21 +133,23 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       if (Number(req.headers['content-length'] ?? 0) > limit) finish(notesError('body_too_large', 'Request body too large', 413));
     });
   }
-  function publicPresence(boardId) {
+  function publicPresence(boardId, viewer) {
     return { clients: [...presence.values()].filter(record => record.boardId === boardId && record.expiresAt > Date.now() && auth.isSession(record.session))
-      .map(({ session, boardId: ignored, ...record }) => ({ ...record, accountId: session.id })) };
+      .map(({ session, boardId: ignored, ...record }) => ({ ...record, editors: record.editors.filter(editor => store.canSee('note', editor.noteId, viewer)), accountId: session.id })) };
   }
   function publishPresence(boardId) {
-    for (const stream of streams) if (stream.session && (!boardId || stream.boardId === boardId)) stream.event('presence', publicPresence(stream.boardId), true);
+    for (const stream of streams) if (stream.session && stream.boardId && (!boardId || stream.boardId === boardId)) stream.event('presence', publicPresence(stream.boardId, stream.viewer), true);
   }
   function openStream(req, res, route, session, url) {
     if (streams.size >= 128 || session && [...streams].filter(stream => stream.session?.token === session.token).length >= 16) throw notesError('stream_limit', 'Too many streams', 429);
     const boardId = route.name === 'catalog' ? null : route.id, clientId = url.searchParams.get('clientId');
     if (clientId !== null) requireId(clientId);
-    if (boardId && !(session ? store.privateBoard(boardId) : store.publicBoard(boardId))) throw notesError('not_found', 'Board not found', 404);
+    const viewer = session?.id ?? null;
+    if (boardId && !(session ? store.privateBoard(boardId, viewer) : store.publicBoard(boardId))) throw notesError('not_found', 'Board not found', 404);
     if (req.method === 'HEAD') { res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); return send(res, 200); }
     const queue = []; let blocked = false, queuedBytes = 0, stopped = false;
-    const stream = { boardId, clientId, session: route.name === 'catalog' ? null : session, event, close, expire };
+    // account: whose view this stream shows (the catalog too); session: who receives private board events.
+    const stream = { boardId, clientId, viewer, account: session, session: route.name === 'catalog' ? null : session, event, close, expire };
     function close() {
       if (stopped) return; stopped = true; streams.delete(stream); clearInterval(heartbeat); clearTimeout(expiry);
       res.removeListener('drain', drain); res.removeListener('close', close); queue.length = 0;
@@ -163,7 +165,7 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
     }
     function valid() {
       if (stopped) return false;
-      if (stream.session && !auth.isSession(stream.session)) { expire(); return false; }
+      if (stream.account && !auth.isSession(stream.account)) { expire(); return false; }
       return true;
     }
     function write(frame) {
@@ -187,26 +189,26 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       while (queue.length && !blocked && valid()) { const frame = queue.shift(); queuedBytes -= Buffer.byteLength(frame); blocked = !res.write(frame); }
     }
     const heartbeat = setInterval(() => write(': heartbeat\n\n'), HEARTBEAT_MS); heartbeat.unref();
-    const expiry = stream.session ? setTimeout(expire, Math.max(0, stream.session.expiresAt - Date.now())) : null; expiry?.unref();
+    const expiry = stream.account ? setTimeout(expire, Math.max(0, stream.account.expiresAt - Date.now())) : null; expiry?.unref();
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('X-Accel-Buffering', 'no');
     res.writeHead(200); res.on('drain', drain); res.on('close', close);
     // Register before reading the snapshot. Reconnects always refresh; no unbounded event history is retained.
     streams.add(stream); write('retry: 1000\n\n');
-    if (!boardId) event('boards', { boards: store.list() });
+    if (!boardId) event('boards', { boards: store.list(viewer) });
     else {
-      const board = store.publicBoard(boardId), revision = store.entity('board', boardId).revision;
+      const board = store.publicBoard(boardId, viewer), revision = store.entity('board', boardId).revision;
       event('snapshot', { boardId, board, revision, ...(stream.session ? { collaboration: true } : {}) }, false, revision);
-      if (stream.session) event('presence', publicPresence(boardId), true);
+      if (stream.session) event('presence', publicPresence(boardId, viewer), true);
     }
   }
   const unsubscribe = store.subscribe(event => {
     if (closing) return;
     for (const stream of streams) {
       if (!stream.boardId) {
-        if (event.type === 'refresh' || event.commandType?.startsWith('board.') || event.commandType === 'command.undo') stream.event('boards', { boards: store.list() });
+        if (event.type === 'refresh' || event.commandType?.startsWith('board.') || event.commandType === 'command.undo') stream.event('boards', { boards: store.list(stream.viewer) });
       } else if (stream.boardId === event.boardId) {
-        if (event.type === 'text' && stream.session) stream.event('text-update', event, true, event.revision);
-        else stream.event('projection', { boardId: event.boardId, board: store.publicBoard(event.boardId), revision: event.revision }, false, event.revision);
+        if (event.type === 'text' && stream.session) { if (store.canSee('note', event.noteId, stream.viewer)) stream.event('text-update', event, true, event.revision); }
+        else stream.event('projection', { boardId: event.boardId, board: store.publicBoard(event.boardId, stream.viewer), revision: event.revision }, false, event.revision);
         if (stream.session && event.type !== 'text') stream.event('refresh', { boardId: event.boardId, revision: event.revision,
           ...(event.operationId ? { operationId: event.operationId, commandType: event.commandType } : {}) }, true, event.revision);
       }
@@ -216,14 +218,14 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
     const changed = new Set();
     for (const [key, lease] of leases) if (lease.session.token === token) leases.delete(key);
     for (const [key, record] of presence) if (record.session.token === token) { presence.delete(key); changed.add(record.boardId); }
-    for (const stream of streams) if (stream.session?.token === token) stream.expire();
+    for (const stream of streams) if (stream.account?.token === token) stream.expire();
     for (const boardId of changed) publishPresence(boardId);
   });
   const timer = setInterval(prune, 1000); timer.unref();
 
   function validatePresence(body, boardId, session) {
     requireKeys(body, ['accountId', 'clientId', 'pointer', 'editors']); requireId(body.clientId);
-    const board = store.publicBoard(boardId);
+    const board = store.publicBoard(boardId, session.id);
     if (!board) throw notesError('not_found', 'Active board not found', 404);
     if (body.pointer !== null) {
       requireKeys(body.pointer, ['x', 'y']);
@@ -244,7 +246,7 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       const doc = new Y.Doc();
       try {
         doc.getXmlFragment('body');
-        Y.applyUpdate(doc, Buffer.from(store.privateBoard(boardId).texts[editor.noteId], 'base64'));
+        Y.applyUpdate(doc, Buffer.from(store.privateBoard(boardId, session.id).texts[editor.noteId], 'base64'));
         for (const encoded of [editor.anchor, editor.head]) {
           if (encoded === null) continue;
           const bytes = base64(encoded, 1024, 'invalid_presence'), relative = Y.decodeRelativePosition(bytes);
@@ -326,11 +328,11 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
             finally {bodies.delete(cancel);req.removeListener('aborted',cancel);res.removeListener('close',disconnected);req.resume();}
           }
         }
-      } else if (route.name === 'list') send(res, 200, { boards: store.list() });
-      else if (route.name === 'trash') { sessionRequired(session); send(res, 200, { boards: store.list({ includeDeleted: true }).filter(board => board.deletedAt !== null) }); }
+      } else if (route.name === 'list') send(res, 200, { boards: store.list(session?.id ?? null) });
+      else if (route.name === 'trash') { sessionRequired(session); send(res, 200, { boards: store.list(session.id, { includeDeleted: true }).filter(board => board.deletedAt !== null) }); }
       else if (route.name === 'board' || route.name === 'collaboration') {
         if (route.name === 'collaboration') sessionRequired(session);
-        const board = route.name === 'board' ? store.publicBoard(route.id) : store.privateBoard(route.id);
+        const board = route.name === 'board' ? store.publicBoard(route.id, session?.id ?? null) : store.privateBoard(route.id, session.id);
         if (!board) throw notesError('not_found', 'Board not found', 404);
         if (route.name === 'collaboration') sessionRequired(session);
         send(res, 200, { board });
@@ -349,10 +351,10 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
           send(res, 200, await store.applyText(session.id, route.id, base64(body.update, MAX_TEXT_UPDATE_BYTES), body.operationId, { authorize: authorize(session) }));
         } else if (route.name === 'leases') {
           requireKeys(body, ['accountId', 'clientId', 'action'], ['target', 'leaseToken']); account(body, session); requireId(body.clientId); prune();
-          if (!store.privateBoard(route.id)) throw notesError('not_found', 'Board not found', 404);
+          if (!store.privateBoard(route.id, session.id)) throw notesError('not_found', 'Board not found', 404);
           if (body.action === 'acquire') {
             requireKeys(body, ['accountId', 'clientId', 'action', 'target']); requireKeys(body.target, ['kind', 'id']);
-            const target = descriptor(body.target.kind, body.target.id, route.id);
+            const target = descriptor(body.target.kind, body.target.id, route.id, session.id);
             for (const lease of leases.values()) if (!owner(lease, session, body.clientId) && conflicts(target, descriptor(lease.target.kind, lease.target.id, lease.target.boardId))) throw notesError('lease_conflict', 'Object is held by another client', 409);
             const existing = [...leases.entries()].find(([, lease]) => owner(lease, session, body.clientId) && lease.target.kind === target.kind && lease.target.id === target.id);
             if (!existing && (leases.size >= 256 || [...leases.values()].filter(lease => owner(lease, session, body.clientId)).length >= 64)) throw notesError('lease_limit', 'Too many leases', 429);

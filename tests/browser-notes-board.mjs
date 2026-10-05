@@ -26,6 +26,11 @@ try {
     await evaluate("document.querySelector('.notes-name-form input').value='Những ngày bình yên';document.querySelector('.notes-name-form').requestSubmit()");
     await wait("document.querySelector('.notes-viewport') && document.querySelector('.notes-durability').dataset.durability==='saved'");
     assert.equal(await evaluate("document.querySelectorAll('.paper-note').length"),0,'New boards are empty');
+    // New boards start as "only me"; the author opens this one to guests through the toolbar picker.
+    await wait("document.querySelector('[data-action=board-visibility] option[value=public]')");
+    assert.deepEqual(await evaluate("[document.querySelector('[data-action=board-visibility]').value,document.querySelector('.notes-board-tab[aria-selected=true]').dataset.visibility]"),['minhle','private']);
+    await evaluate("(()=>{const s=document.querySelector('[data-action=board-visibility]');s.value='public';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+    await wait("document.querySelector('.notes-board-tab[aria-selected=true]').dataset.visibility==='public' && document.querySelector('.notes-durability').dataset.durability==='saved'");
     await evaluate("window.boardId=document.querySelector('[data-board-id]').dataset.boardId;document.querySelector('[data-action=note-new]').click()");
     await wait("document.querySelector('.paper-note')");
     assert.equal(await evaluate("document.querySelector('.note-author').textContent"),'Minh Lê');
@@ -60,8 +65,8 @@ try {
     await evaluate("document.querySelector('.note-handle').focus();document.querySelector('.note-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
     await wait(`Math.abs(parseFloat(document.querySelector('.paper-note').style.top)-(${before.y+10}))<.01`);
     assert.equal(await evaluate("document.activeElement.classList.contains('note-handle')"),true);
-    await evaluate("{const width=document.querySelector('[name=width]');width.value='10';width.dispatchEvent(new Event('change',{bubbles:true}));}");
-    await wait("parseFloat(document.querySelector('.paper-note').style.width)===180");
+    await evaluate("{const width=document.querySelector('[name=width]');width.value='1';width.dispatchEvent(new Event('change',{bubbles:true}));}");
+    await wait("parseFloat(document.querySelector('.paper-note').style.width)===5");
     await evaluate("{const width=document.querySelector('[name=width]');width.value='260';width.dispatchEvent(new Event('change',{bubbles:true}));}");
     await wait("parseFloat(document.querySelector('.paper-note').style.width)===260 && document.querySelector('.notes-durability').dataset.durability==='saved'");
     assert.equal(await evaluate("document.querySelector('.notes-board').dispatchEvent(new KeyboardEvent('keydown',{key:'s',ctrlKey:true,bubbles:true,cancelable:true}))"),false,'Save shortcut prevents browser Save Page');
@@ -76,6 +81,9 @@ try {
     // Board switching is local to the dashboard, and renamed/trash catalog entries stay live.
     await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Bảng thứ hai';document.querySelector('.notes-name-form').requestSubmit()");
     await wait("document.querySelectorAll('.notes-board-tab').length===2 && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
+    await wait("document.querySelector('[data-action=board-visibility] option[value=public]')");
+    await evaluate("(()=>{const s=document.querySelector('[data-action=board-visibility]');s.value='public';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+    await wait("document.querySelector('.notes-board-tab[aria-selected=true]').dataset.visibility==='public' && document.querySelector('.notes-durability').dataset.durability==='saved'");
     assert.equal(await evaluate("document.querySelectorAll('.paper-note').length"),0);
     // Arrow keys move only between board tabs; the + is not part of the tab set.
     assert.deepEqual(await evaluate("(()=>{const t=[...document.querySelectorAll('.notes-board-tab')],key=k=>{document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return document.activeElement.dataset.boardTab;};t[0].focus();return[key('ArrowRight')===t[1].dataset.boardTab,key('ArrowRight')===t[0].dataset.boardTab,key('End')===t[1].dataset.boardTab];})()"),[true,true,true]);
@@ -191,6 +199,11 @@ try {
     const pan=await evaluate("(()=>{const v=document.querySelector('#board-test-host .notes-viewport'),r=v.getBoundingClientRect();return{x:r.left+40,y:r.top+40,before:document.querySelector('#board-test-host .notes-world').style.transform}})()");
     await mouse('mousePressed',pan.x,pan.y,'right',2);await mouse('mouseMoved',pan.x+40,pan.y+30,'right',2);await mouse('mouseReleased',pan.x+40,pan.y+30,'right',0);
     assert.notEqual(await evaluate("document.querySelector('#board-test-host .notes-world').style.transform"),pan.before);
+    // Holding the left button on empty board pans the same way, and does not move any paper.
+    const leftPan=await evaluate("(()=>{const v=document.querySelector('#board-test-host .notes-viewport'),r=v.getBoundingClientRect();return{x:r.left+40,y:r.top+40,hit:document.elementFromPoint(r.left+40,r.top+40)?.className,before:document.querySelector('#board-test-host .notes-world').style.transform,paper:[...document.querySelectorAll('#board-test-host .paper-note,#board-test-host .paper-column')].map(n=>n.style.left+n.style.top).join()}})()");
+    await mouse('mousePressed',leftPan.x,leftPan.y,'left',1);await mouse('mouseMoved',leftPan.x+50,leftPan.y+20,'left',1);await mouse('mouseReleased',leftPan.x+50,leftPan.y+20,'left',0);
+    assert.notEqual(await evaluate("document.querySelector('#board-test-host .notes-world').style.transform"),leftPan.before,`left-drag on the background pans (hit ${leftPan.hit})`);
+    assert.equal(await evaluate("[...document.querySelectorAll('#board-test-host .paper-note,#board-test-host .paper-column')].map(n=>n.style.left+n.style.top).join()"),leftPan.paper,'background pan leaves paper in place');
     // Native touch sequence: two background fingers pan and pinch; a text tap does not drag paper.
     await call('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
     const touchBefore=await evaluate("document.querySelector('#board-test-host .notes-world').style.transform");

@@ -13,7 +13,7 @@ async function prepare(evaluate, account, boardId) {
     const {mountBoardNoteEditor}=await import('/js/notes/editor.js');
     window.boardId=${boardId ? JSON.stringify(boardId) : 'crypto.randomUUID()'};
     window.client=await openBoardClient({boardId,accountId:'${account}'});
-    if(!${!!boardId})await client.command({type:'board.create',baseRevision:0,payload:{name:'Kiểm chứng văn bản'}});
+    if(!${!!boardId})await client.command({type:'board.create',baseRevision:0,payload:{name:'Kiểm chứng văn bản',visibility:'public'}});
     for(const href of ['/styles/notes.css','/styles/notes-format.css']){const css=document.createElement('link');css.rel='stylesheet';css.href=href;document.head.append(css);}
     document.body.className='notes-dashboard';window.host=document.createElement('div');document.body.append(host);
     window.stop=mountBoard(host,{client,mountEditor:mountBoardNoteEditor});
@@ -202,6 +202,9 @@ try {
     await wait(evaluate,"document.querySelector('[data-action=board-new]')");
     await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Vòng đời editor';document.querySelector('.notes-name-form').requestSubmit()");
     await wait(evaluate,"document.querySelector('[data-action=note-new]') && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
+    await wait(evaluate,"document.querySelector('[data-action=board-visibility] option[value=public]')");
+    await evaluate("(()=>{const s=document.querySelector('[data-action=board-visibility]');s.value='public';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+    await wait(evaluate,"document.querySelector('.notes-board-tab[aria-selected=true]')?.dataset.visibility==='public' && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
     await evaluate("document.querySelector('[data-action=note-new]').click()");
     await wait(evaluate,"document.querySelector('.tiptap[contenteditable=true]')");
     await evaluate("window.editor=document.querySelector('.tiptap').editor;editor.commands.insertContentAt(1,'Trang công khai');");

@@ -1,14 +1,14 @@
 # Đăng nhập và hai hồ sơ
 
-Đã triển khai local: garden, hai tab hồ sơ và Góc ghi chép (dashboard) đều xem công khai. Chỉ chủ tài khoản được sửa phần chữ trong hồ sơ của mình; minhle và haiyen cùng sửa mọi bảng ghi chú. Không có đăng ký, tài khoản thứ ba, quản trị tài khoản hoặc đăng nhập Google.
+Đã triển khai local: garden, hai tab hồ sơ và Góc ghi chép (dashboard) đều mở công khai; bảng ghi chú chỉ hiện với người được xem (chỉ tác giả, cả hai tài khoản, hoặc mọi người). Chỉ chủ tài khoản được sửa phần chữ trong hồ sơ của mình; minhle và haiyen cùng sửa những bảng/note mình xem được. Không có đăng ký, tài khoản thứ ba, quản trị tài khoản hoặc đăng nhập Google.
 
 ## Danh tính và quyền
 
 | Tên đăng nhập / ID | Tên hiển thị ban đầu | Quyền |
 | --- | --- | --- |
-| minhle | Minh Lê | Sửa tên hiển thị và giới thiệu của minhle; sửa mọi bảng ghi chú và thư viện hình |
-| haiyen | Hải Yến | Sửa tên hiển thị và giới thiệu của haiyen; sửa mọi bảng ghi chú và thư viện hình |
-| Chưa đăng nhập | — | Xem garden, hai hồ sơ và bảng ghi chú công khai (không thùng rác, presence, hình chưa chèn); không chỉnh sửa |
+| minhle | Minh Lê | Sửa tên hiển thị và giới thiệu của minhle; sửa bảng/note mình xem được và thư viện hình |
+| haiyen | Hải Yến | Sửa tên hiển thị và giới thiệu của haiyen; sửa bảng/note mình xem được và thư viện hình |
+| Chưa đăng nhập | — | Xem garden, hai hồ sơ và bảng ghi chú đặt Công khai, trừ note thu hẹp riêng (không thùng rác, presence, hình chưa chèn); không chỉnh sửa |
 
 Tên đăng nhập so khớp chính xác; không đổi qua UI. displayName có thể chỉnh, không thay ID/ownership. Hai hồ sơ chứa nội dung công khai: không nhập dữ liệu cần giữ riêng vào bio.
 
@@ -36,7 +36,7 @@ Request POST/PUT yêu cầu Origin chính xác trong FRONTEND_ORIGINS và X-Requ
 | PUT /api/profiles/:id | Chỉ owner → { displayName, bio }, trả { profile }; thiếu session 401, người khác 403 |
 | GET /api/health | Công khai → { status: "ok" } |
 
-Notes API (`/api/boards`, `/api/notes`, `/api/note-assets`) dùng cùng cookie/session: GET công khai trả projection đã lọc; mọi mutation và route riêng cần session, `accountId` trong body phải trùng session. Khi logout hoặc session hết hạn, server hủy lease/presence và đóng stream riêng bằng event `auth-required`. Danh sách route tại [interfaces.md](interfaces.md#notes-api).
+Notes API (`/api/boards`, `/api/notes`, `/api/note-assets`) dùng cùng cookie/session: GET trả projection đã lọc theo người xem (quyền xem bảng/note); mọi mutation và route riêng cần session, `accountId` trong body phải trùng session. Khi logout hoặc session hết hạn, server hủy lease/presence và đóng stream riêng bằng event `auth-required`. Danh sách route tại [interfaces.md](interfaces.md#notes-api).
 
 GET route hỗ trợ HEAD; route biết trước hỗ trợ OPTIONS. ID hồ sơ ngoài hai ID trả 404. Không nhận role, userId, avatar hoặc field không được chốt. displayName trim, dài 1–80 ký tự; bio trim, tối đa 500. Không dùng cookie frontend/userId trong body để quyết định owner; backend luôn lấy ID từ session.
 

@@ -73,7 +73,7 @@ test('notes snapshot persists remotely, reloads, and reconciles a write whose re
   let store = await createNotesStore({ dataDir, remote });
   const boardId = randomUUID();
   const command = (type, payload) => ({ operationId: randomUUID(), accountId: 'minhle', boardId, baseRevision: store.privateBoard(boardId)?.revision ?? 0, type, payload });
-  await store.applyCommand('minhle', command('board.create', { name: 'Chung' }));
+  await store.applyCommand('minhle', command('board.create', { name: 'Chung', visibility: 'public' }));
   assert.equal(remote.documents.get('notes').boards.length, 1);
   await store.close(); store = await createNotesStore({ dataDir, remote });
   assert.equal(store.privateBoard(boardId).name, 'Chung', 'Reload reads the remote snapshot');

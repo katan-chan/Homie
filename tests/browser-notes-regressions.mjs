@@ -10,7 +10,12 @@ const fixture = await createNotesFixture({ app: true, ffmpegPath: process.env.FF
 const [handler] = fixture.backend.listeners('request'); let failing = false;
 fixture.backend.removeAllListeners('request');
 fixture.backend.on('request', (req, res) => { if (!failing) return handler(req, res); req.resume(); res.writeHead(503, { 'Content-Type': 'application/json' }).end('{"error":"Máy chủ tạm ngừng"}'); });
-const publicBoard = async id => (await (await fetch(`${fixture.origin}/api/boards/${id}`)).json()).board;
+// New boards are private to their author, so the server view is read as minhle.
+let minhCookie;
+const publicBoard = async id => {
+  minhCookie ??= (await fetch(fixture.origin + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'Homie', Origin: fixture.origin }, body: JSON.stringify({ accountId: 'minhle', password: fixturePasswords.minhle }) })).headers.get('set-cookie').split(';')[0];
+  return (await (await fetch(`${fixture.origin}/api/boards/${id}`, { headers: { Cookie: minhCookie } })).json()).board;
+};
 const mp4 = (await mediaBytes('mp4')).toString('base64');
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -124,7 +129,7 @@ try {
       const headers = { Origin: fixture.origin, 'X-Requested-With': 'Homie', 'Content-Type': 'application/json' };
       const cookie = (await fetch(fixture.origin + '/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ accountId: 'haiyen', password: fixturePasswords.haiyen }) })).headers.get('set-cookie').split(';')[0];
       const peerBoard = randomUUID();
-      const created = await fetch(fixture.origin + '/api/boards/commands', { method: 'POST', headers: { ...headers, Cookie: cookie }, body: JSON.stringify({ clientId: randomUUID(), command: { operationId: randomUUID(), accountId: 'haiyen', boardId: peerBoard, baseRevision: 0, type: 'board.create', payload: { name: 'Bảng của Yến' } } }) });
+      const created = await fetch(fixture.origin + '/api/boards/commands', { method: 'POST', headers: { ...headers, Cookie: cookie }, body: JSON.stringify({ clientId: randomUUID(), command: { operationId: randomUUID(), accountId: 'haiyen', boardId: peerBoard, baseRevision: 0, type: 'board.create', payload: { name: 'Bảng của Yến', visibility: 'shared' } } }) });
       check(created.status === 200, `peer board.create status ${created.status}`);
       check(await eventually(`!!document.querySelector('[data-board-tab="${peerBoard}"]')`), 'board catalog stream reconnects after the 503: a peer-created board appears as a tab');
       check(!(await evaluate("document.querySelector('.notes-dashboard').textContent.includes('Chưa kết nối được danh sách bảng')")), 'the catalog error clears once the stream is back');

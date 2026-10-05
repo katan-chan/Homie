@@ -4,6 +4,18 @@ import { mountBoardPresence } from './editor.js';
 // Board owns geometry and camera. Editor/media hooks own their stable note slots.
 const colors = ['#fff0b8', '#f9dbe5', '#deead9', '#dce9f5', '#e8ddf1', '#fffaf0'];
 const authors = { minhle: 'Minh Lê', haiyen: 'Hải Yến' };
+const MEMORY = 'Kỷ niệm';
+// Who may view, as the viewer reads it. Boards: account ID / shared / public; notes: null follows the board.
+function viewLabel(value) { return value === null ? 'Theo bảng' : value === 'public' ? 'Công khai' : value === 'shared' ? 'Hai đứa mình' : 'Chỉ mình tôi'; }
+// What a note shows: the narrower of its board's and its own setting.
+function effectiveView(board, note) {
+  const levels = [board, note].filter(value => value && value !== 'public');
+  return levels.find(value => value !== 'shared') ?? levels[0] ?? 'public';
+}
+function options(select, values, current, inherited) {
+  select.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value ?? ''; option.textContent = value === null && inherited ? `Theo bảng (${viewLabel(inherited)})` : viewLabel(value); return option; }));
+  select.value = current ?? '';
+}
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
@@ -35,7 +47,10 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const root = element('section', 'notes-board'); root.dataset.boardId = client.boardId;
   const toolbar = element('div', 'notes-toolbar'); toolbar.setAttribute('aria-label', 'Công cụ bảng');
   const mutations = element('div', 'notes-tools');
-  mutations.append(button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
+  const boardView = document.createElement('select'); boardView.dataset.action = 'board-visibility'; boardView.dataset.mutation = ''; boardView.setAttribute('aria-label', 'Ai xem được bảng này');
+  const boardViewLabel = element('label', 'notes-view', 'Ai xem'); boardViewLabel.append(boardView);
+  const labelFilter = document.createElement('select'); labelFilter.className = 'notes-label-filter'; labelFilter.setAttribute('aria-label', 'Lọc theo nhãn');
+  mutations.append(boardViewLabel, button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
   // One shared format row per board; editors register into it (see mountBoardNoteEditor).
   const formatRow = element('div', 'notes-format-row'); formatRow.setAttribute('role', 'toolbar'); formatRow.setAttribute('aria-label', 'Định dạng chữ'); formatRow.hidden = true;
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
@@ -46,12 +61,12 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const empty = element('p', 'notes-empty', 'Một mặt giấy trống, dành cho những điều của chúng mình.');
   const cameraTools = element('div', 'notes-camera');
   const zoomLabel = element('output', 'notes-zoom', '100%'); zoomLabel.setAttribute('aria-label', 'Độ thu phóng');
-  cameraTools.append(button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
+  cameraTools.append(labelFilter, button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
-  const hint = element('p', 'notes-hint', 'Chuột phải kéo góc nhìn · Cuộn trên nền để zoom · Hai ngón để di chuyển trên điện thoại');
+  const hint = element('p', 'notes-hint', 'Kéo nền hoặc giữ chuột phải để di chuyển góc nhìn · Cuộn trên nền để zoom · Hai ngón để thu phóng trên điện thoại');
   // Camera sits in the toolbar and hint/inspector float over the board, so the board fills the screen without page scroll.
   toolbar.append(mutations, durability, cameraTools); viewport.append(hint); root.append(toolbar, formatRow, error, viewport, inspector); container.replaceChildren(root);
-  let state, disposed = false, selection = null, drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
+  let state, disposed = false, selection = null, filter = '', filterKey = '', drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
   const cameraKey = `homie-notes:camera:${client.boardId}`;
   const camera = { x: 32, y: 32, scale: 1 }, records = new Map(), pointers = new Map();
   // follow: camera tracks fit() until the user pans/zooms; awaitContent: fit once when the first content arrives.
@@ -80,22 +95,36 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const entity = selected(); inspector.hidden = !state?.writable || !entity;
     if (inspector.hidden) { inspector.replaceChildren(); inspectorKey = ''; return; }
     const columns = state.snapshot.columns.filter(c => !c.deletedAt);
-    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}`;
+    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}`;
     if (key === inspectorKey) {
       const select = inspector.querySelector('select'); if (select && document.activeElement !== select) select.value = entity.columnId || '';
       for (const field of ['width', 'height']) { const input = inspector.querySelector(`[name=${field}]`); if (input && document.activeElement !== input) input.value = Math.round(entity[field]); }
       return;
     }
+    const typing = document.activeElement?.name === 'label' && inspector.contains(document.activeElement);
     inspectorKey = key; inspector.replaceChildren(element('strong', '', selection.kind === 'note' ? 'Tờ ghi chú' : 'Cột giấy'));
     for (const [label, action] of [['←','move-left'],['↑','move-up'],['↓','move-down'],['→','move-right']]) { const control = button(label, action, true); control.setAttribute('aria-label', `Di chuyển ${ { 'move-left':'trái', 'move-up':'lên', 'move-down':'xuống', 'move-right':'phải' }[action]} 10 điểm`); inspector.append(control); }
     for (const [field,labelText] of [['width','Rộng'],['height','Cao']]) {
-      const label = element('label', '', labelText), input = document.createElement('input'); input.type = 'number'; input.name = field; input.min = selection.kind === 'note' ? 180 : 240; input.max = 2400; input.step = 10; input.value = Math.round(entity[field]); input.dataset.action = 'object-size'; input.dataset.mutation = ''; label.append(input); inspector.append(label);
+      const label = element('label', '', labelText), input = document.createElement('input'); input.type = 'number'; input.name = field; input.min = selection.kind === 'note' ? 5 : 240; input.max = 2400; input.step = selection.kind === 'note' ? 1 : 10; input.value = Math.round(entity[field]); input.dataset.action = 'object-size'; input.dataset.mutation = ''; label.append(input); inspector.append(label);
     }
     if (selection.kind === 'note') {
       const label = element('label', '', 'Cột'), select = document.createElement('select'); select.dataset.action = 'object-column'; select.dataset.mutation = '';
       for (const c of [{id:'',name:'Ngoài cột'}, ...columns]) { const option = document.createElement('option'); option.value = c.id; option.textContent = c.name; select.append(option); }
       select.value = entity.columnId || ''; label.append(select); inspector.append(label);
       for (const color of colors) { const control = button('', 'note-color', true); control.style.background = color; control.dataset.color = color; control.setAttribute('aria-label', `Màu giấy ${color}`); inspector.append(control); }
+      // Only the author narrows who sees a note; anyone who sees it can label it.
+      if (entity.authorId === state.accountId) {
+        const view = element('label', '', 'Ai xem'), choose = document.createElement('select'); choose.dataset.action = 'note-visibility'; choose.dataset.mutation = '';
+        options(choose, [null, 'shared', state.accountId], entity.visibility, state.snapshot.visibility); view.append(choose); inspector.append(view);
+      }
+      const labels = element('div', 'notes-labels-edit'); labels.setAttribute('aria-label', 'Nhãn của ghi chú');
+      for (const label of entity.labels || []) { const chip = button(`${label} ×`, 'label-remove', true); chip.classList.add('note-label'); chip.dataset.label = label; chip.setAttribute('aria-label', `Bỏ nhãn ${label}`); labels.append(chip); }
+      const input = document.createElement('input'); input.name = 'label'; input.maxLength = 32; input.placeholder = 'Thêm nhãn…'; input.setAttribute('list', `notes-labels-${client.boardId}`); input.dataset.mutation = '';
+      const known = document.createElement('datalist'); known.id = input.getAttribute('list');
+      for (const label of allLabels()) if (!entity.labels?.includes(label)) { const option = document.createElement('option'); option.value = label; known.append(option); }
+      labels.append(input, known, button('Thêm nhãn', 'label-add', true));
+      if (!entity.labels?.includes(MEMORY)) labels.append(button(`+ ${MEMORY}`, 'label-memory', true));
+      inspector.append(labels); if (typing) input.focus();
     } else inspector.append(button('Đổi tên cột', 'column-rename', true));
     inspector.append(button('Bỏ vào thùng rác', 'object-trash', true));
   }
@@ -106,6 +135,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const handle = element('button', kind === 'note' ? 'note-handle' : 'column-handle'); handle.type = 'button'; handle.dataset.drag = kind; handle.setAttribute('aria-label', kind === 'note' ? 'Di chuyển ghi chú' : 'Di chuyển cột');
     const title = element('span', kind === 'note' ? 'note-author' : 'column-name'); handle.append(title); node.append(handle);
     const record = { kind, entity, node, handle, title, controller: new AbortController() };
+    if (kind === 'note') { record.badges = element('span', 'note-badges'); handle.append(record.badges); }
     if (kind === 'note') {
       const text = element('div', 'note-text'); text.dataset.noteId = entity.id;
       record.text = text; node.append(text);
@@ -113,6 +143,25 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     }
     const resize = button('↘', 'object-resize', true); resize.classList.add('note-resize'); resize.dataset.drag = 'resize'; resize.setAttribute('aria-label', 'Kéo đổi kích thước'); node.append(resize);
     world.append(node); records.set(entity.id, record); return record;
+  }
+  function allLabels() {
+    const seen = new Map([[MEMORY.toLocaleLowerCase('vi'), MEMORY]]);
+    for (const record of records.values()) for (const label of record.entity.labels || []) if (!seen.has(label.toLocaleLowerCase('vi'))) seen.set(label.toLocaleLowerCase('vi'), label);
+    return [...seen.values()];
+  }
+  function renderViews() {
+    const board = state.snapshot, author = board?.authorId === state.accountId;
+    boardViewLabel.hidden = !board || !board.visibility;
+    if (board?.visibility && document.activeElement !== boardView) { options(boardView, author ? [state.accountId, 'shared', 'public'] : ['shared', 'public'], board.visibility); boardView.disabled = !author; boardView.title = author ? '' : `Chỉ ${authors[board.authorId] || 'người tạo bảng'} đổi được`; }
+    const used = allLabels().filter(label => label !== MEMORY || [...records.values()].some(r => r.entity.labels?.includes(MEMORY)));
+    if (filter && !used.includes(filter)) { filter = ''; for (const record of records.values()) record.node.classList.remove('is-filtered'); }
+    const key = JSON.stringify([filter, used]);
+    labelFilter.hidden = !used.length;
+    if (key !== filterKey) {
+      filterKey = key;
+      labelFilter.replaceChildren(...['', ...used].map(label => { const option = document.createElement('option'); option.value = label; option.textContent = label ? `Nhãn: ${label}` : 'Mọi ghi chú'; return option; }));
+      labelFilter.value = filter;
+    }
   }
   function textContent(value) { if (!value) return ''; if (typeof value === 'string') return value; if (value.text) return value.text; return (value.content || []).map(textContent).join(value.type === 'doc' ? '\n' : ''); }
   function render(next) {
@@ -128,6 +177,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     for (const control of mutations.children) control.toggleAttribute('data-mutation', state.writable);
     durability.dataset.durability = state.durability;
     durability.textContent = ({ unknown: 'Đang kiểm tra kết nối…', saving: 'Đang lưu…', local: 'Đã lưu trên thiết bị · Chờ đồng bộ', saved: 'Đã lưu', unsaved: 'Chưa lưu trên thiết bị · Hãy thử Lưu lại' })[state.durability] + (state.connection === 'offline' ? ' · Ngoại tuyến' : '') + (state.pending.total ? ` · ${state.pending.total} mục đang chờ` : '');
+    durability.title = durability.textContent;
     if (!state.writable) durability.textContent = state.connection === 'auth-required' ? 'Phiên đã hết hạn · Đang xem công khai' : state.connection === 'online' ? 'Chế độ xem' : 'Đang mở bảng…';
     error.textContent = state.error?.message || (state.leaseState === 'blocked' ? 'Đối tượng đang được người kia di chuyển.' : state.leaseState === 'lost' && drag?.leased ? 'Đã mất quyền kéo. Vị trí đã trở về bản được lưu.' : '');
     // A stale 'lost' left by a reconnect must not cancel a drag that has not taken its lease yet.
@@ -141,9 +191,17 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       record.title.textContent = kind === 'note' ? authors[entity.authorId] || entity.authorId : entity.name;
       record.handle.disabled = !state.writable; record.node.querySelector('.note-resize').hidden = !state.writable;
       record.node.querySelector('.note-resize').toggleAttribute('data-mutation', state.writable);
+      if (kind === 'note') {
+        const view = effectiveView(state.snapshot?.visibility, entity.visibility);
+        const badges = [[viewLabel(view), `note-view is-${view === 'public' || view === 'shared' ? view : 'private'}`], ...(entity.labels || []).map(label => [label, label === MEMORY ? 'note-label is-memory' : 'note-label'])];
+        const badgeKey = JSON.stringify(badges);
+        if (record.badgeKey !== badgeKey) { record.badgeKey = badgeKey; record.badges.replaceChildren(...badges.map(([text, className]) => element('span', className, text))); }
+        record.node.classList.toggle('is-filtered', !!filter && !entity.labels?.includes(filter));
+      }
       if (kind === 'note') { record.node.style.backgroundColor = entity.color; record.node.dataset.columnId = entity.columnId || ''; if (!mountEditor) { record.text.textContent = textContent(entity.content) || ''; record.text.setAttribute('aria-label', 'Nội dung ghi chú'); } }
     }
     for (const [id, record] of records) if (!ids.has(id)) { if (drag?.id === id) cancelDrag(); destroyRecord(record); records.delete(id); }
+    renderViews();
     if (selection && !records.has(selection.id)) selection = null;
     empty.textContent = state.snapshot?.deletedAt ? 'Bảng đang ở thùng rác. Khôi phục bảng để xem nội dung.' : state.snapshot ? 'Một mặt giấy trống, dành cho những điều của chúng mình.' : 'Đang mở mặt giấy…';
     if (!records.size) viewport.append(empty); else empty.remove();
@@ -197,11 +255,25 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (!entity) return;
       if (action.startsWith('move-')) {const delta={ 'move-left':[-10,0], 'move-right':[10,0], 'move-up':[0,-10], 'move-down':[0,10] }[action]; if(delta)await geometry(selection.kind,entity,current=>({x:current.x+delta[0],y:current.y+delta[1]}));}
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
+      if (action === 'label-remove') await mutate('note.update',{id:entity.id,labels:entity.labels.filter(label=>label!==control.dataset.label)});
+      if (action === 'label-memory') await addLabel(entity, MEMORY);
+      if (action === 'label-add') { const input = inspector.querySelector('[name=label]'); await addLabel(entity, input.value); }
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});
       if (action === 'column-rename') askName(root,{title:'Đổi tên cột',value:entity.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('column.update',{id:entity.id,name}))});
     });
   }, events);
+  async function addLabel(entity, value) {
+    const label = value.trim().replace(/\s+/g, ' '); if (!label) return;
+    // Reuse the spelling already on the board, so "kỷ niệm" and "Kỷ niệm" stay one label.
+    const known = allLabels().find(other => other.toLocaleLowerCase('vi') === label.toLocaleLowerCase('vi')) || label;
+    if (entity.labels.some(other => other.toLocaleLowerCase('vi') === known.toLocaleLowerCase('vi'))) return;
+    await mutate('note.update', { id: entity.id, labels: [...entity.labels, known] });
+  }
+  inspector.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.name === 'label') { event.preventDefault(); const entity = selected(); if (entity && state.writable) run(() => addLabel(entity, event.target.value)); } }, events);
+  boardView.addEventListener('change', () => { if (boardView.value) run(() => mutate('board.share', { visibility: boardView.value })); }, events);
+  labelFilter.addEventListener('change', () => { filter = labelFilter.value; for (const record of records.values()) if (record.kind === 'note') record.node.classList.toggle('is-filtered', !!filter && !record.entity.labels?.includes(filter)); }, events);
   inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target, columnId=input.value || null;
+    if(input.dataset.action==='note-visibility'){run(()=>mutate('note.update',{id:entity.id,visibility:input.value || null}));return;}
     run(()=>input.dataset.action==='object-column' ? geometry('note',entity,current=>({columnId,x:current.x,y:current.y}),true)
       : input.dataset.action==='object-size' && Number.isFinite(input.valueAsNumber) ? geometry(selection.kind,entity,{[input.name]:clampPaperSize(selection.kind,input.valueAsNumber)}) : undefined);
   },events);
@@ -222,13 +294,17 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const previous=drag;drag=null;carryStickers(null);
     if(previous) {for(const record of records.values())place(record.node,record.entity);if(previous.leased)client.releaseLease({kind:previous.kind,id:previous.id}).catch(()=>{});}
   }
+  // Writing in a note also selects it, so its tools (who can view, labels, colour) show without hunting for the handle.
+  world.addEventListener('focusin',event=>{const node=event.target.closest('.paper-note');if(node&&state?.writable&&selection?.id!==node.dataset.noteId)select('note',node.dataset.noteId);},events);
   viewport.addEventListener('contextmenu',event=>event.preventDefault(),events);
   viewport.addEventListener('wheel',event=>{if(event.target.closest('.note-text'))return;event.preventDefault();zoom(camera.scale*Math.exp(-event.deltaY*.0015),event.clientX,event.clientY);},{...events,passive:false});
   viewport.addEventListener('pointerdown',event=>{
     if(event.target.closest('.note-text,input,select,textarea,[contenteditable=true]'))return;
     pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
-    if(event.pointerType==='touch' && pointers.size===2) {cancelDrag();const [a,b]=[...pointers.values()];pinch={distance:Math.hypot(a.x-b.x,a.y-b.y),scale:camera.scale,point:worldPoint((a.x+b.x)/2,(a.y+b.y)/2)};viewport.setPointerCapture(event.pointerId);event.preventDefault();return;}
-    if(event.button===2) {cameraDrag={id:event.pointerId,x:event.clientX,y:event.clientY,startX:camera.x,startY:camera.y};viewport.setPointerCapture(event.pointerId);event.preventDefault();return;}
+    if(event.pointerType==='touch' && pointers.size===2) {cancelDrag();cameraDrag=null;viewport.classList.remove('is-panning');const [a,b]=[...pointers.values()];pinch={distance:Math.hypot(a.x-b.x,a.y-b.y),scale:camera.scale,point:worldPoint((a.x+b.x)/2,(a.y+b.y)/2)};viewport.setPointerCapture(event.pointerId);event.preventDefault();return;}
+    // Right button anywhere, or left button / one finger on empty board (or a column's body), moves the view.
+    const background=event.button===0 && !event.target.closest('.paper-note,.note-decoration,[data-drag],button,a');
+    if(event.button===2 || background) {cameraDrag={id:event.pointerId,x:event.clientX,y:event.clientY,startX:camera.x,startY:camera.y};viewport.classList.add('is-panning');viewport.setPointerCapture(event.pointerId);event.preventDefault();return;}
     const handle=event.target.closest('[data-drag]');if(event.button!==0 || !handle || !state.writable)return;
     const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column',id=node.dataset.noteId||node.dataset.columnId;
     select(kind,id);cancelDrag();const entity=selected();drag={id,kind,pointerId:event.pointerId,entity:{...entity},x:event.clientX,y:event.clientY,dx:0,dy:0,resize:handle.dataset.drag==='resize',ready:state.connection!=='online',leased:false};
@@ -244,7 +320,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     for(const record of records.values())if(record.entity.id===drag.id || !drag.resize && drag.kind==='column' && record.entity.columnId===drag.id){const e=record.entity;place(record.node,drag.resize?{...e,width:clampPaperSize(drag.kind,drag.entity.width+drag.dx),height:clampPaperSize(drag.kind,drag.entity.height+drag.dy)}:{...e,x:e.x+drag.dx,y:e.y+drag.dy});}
     carryStickers(drag);
   },events);
-  function endPointer(event,cancel=false){pointers.delete(event.pointerId);if(pointers.size<2)pinch=null;if(cameraDrag?.id===event.pointerId)cameraDrag=null;
+  function endPointer(event,cancel=false){pointers.delete(event.pointerId);if(pointers.size<2)pinch=null;if(cameraDrag?.id===event.pointerId){cameraDrag=null;viewport.classList.remove('is-panning');}
     if(drag?.pointerId===event.pointerId){const ended=drag;drag=null;carryStickers(null);for(const record of records.values())place(record.node,record.entity);
       run(async()=>{try{if(!cancel && ended.ready && state.writable && (Math.abs(ended.dx)>1||Math.abs(ended.dy)>1)) {const e=ended.entity;
         if(ended.resize)await mutate(`${ended.kind}.update`,{id:e.id,width:clampPaperSize(ended.kind,e.width+ended.dx),height:clampPaperSize(ended.kind,e.height+ended.dy)});

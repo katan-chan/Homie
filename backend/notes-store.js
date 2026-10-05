@@ -3,10 +3,10 @@ import { join, basename } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { emptyNotesState, applyMetadataCommand, applyMetadataUndo, validateNotesState,
-  validateCommand, projectBoard, findEntity, isVisible, mutationTargets, notesError,
+  validateCommand, projectBoard, findEntity, isVisible, canSee, canView, mutationTargets, notesError,
   requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
-export const NOTES_FORMAT_VERSION = 4;
+export const NOTES_FORMAT_VERSION = 5;
 export const MAX_TEXT_UPDATE_BYTES = 256 * 1024;
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_NODES = 10000, MAX_TEXT_DEPTH = 32;
@@ -142,8 +142,19 @@ function validateInverse(undo, target) {
 // Version 2 kept stickers inside notes (note-relative x/y); version 3 put them on the board without an attachment.
 // Version 4 stores world coordinates plus the note or column a sticker follows: v2 keeps its note, v3 attaches by
 // where the sticker's centre lies (topmost note, else column). Undo records hold older shapes, so they are dropped.
+// Version 5 adds who may view: existing boards stay public (their author is whoever ran board.create), notes follow
+// their board and start without labels.
 export function migrateNotesSnapshot(saved) {
-  if (saved?.formatVersion !== 2 && saved?.formatVersion !== 3) return saved;
+  if (![2, 3, 4].includes(saved?.formatVersion)) return saved;
+  const state = saved.formatVersion === 4 ? clone(saved) : migrateStickers(saved);
+  state.boards = state.boards.map(board => ({ ...board,
+    authorId: state.operations.find(op => op.boardId === board.id)?.accountId ?? 'minhle', visibility: 'public' }));
+  state.notes = state.notes.map(note => ({ ...note, visibility: null, labels: [] }));
+  for (const op of state.operations) op.undo = null;
+  state.formatVersion = 5;
+  return state;
+}
+function migrateStickers(saved) {
   const state = clone(saved), inside = (e, x, y) => e.deletedAt === null && x >= e.x && x <= e.x + e.width && y >= e.y && y <= e.y + e.height;
   state.decorations = state.decorations.map(decoration => {
     if (saved.formatVersion === 2) {
@@ -156,8 +167,6 @@ export function migrateNotesSnapshot(saved) {
     const column = note ? null : state.columns.filter(c => c.boardId === decoration.boardId && inside(c, cx, cy)).at(-1);
     return { ...decoration, noteId: note?.id ?? null, columnId: column?.id ?? null, revision: decoration.revision + 1 };
   });
-  for (const op of state.operations) op.undo = null;
-  state.formatVersion = 4;
   return state;
 }
 
@@ -368,18 +377,20 @@ export async function createNotesStore({ dataDir, remote = null }) {
     return clone(result);
   }
   const store = {
-    list({ includeDeleted = false } = {}) {
-      return clone(state.boards.filter(board => includeDeleted || board.deletedAt === null));
+    /** viewer: account ID or null (guest); everything below shows only what that viewer may see. */
+    list(viewer = null, { includeDeleted = false } = {}) {
+      return clone(state.boards.filter(board => canView(board.visibility, viewer) && (includeDeleted || board.deletedAt === null)));
     },
-    publicBoard(id) {
-      const projection = projectBoard(state, id);
+    canSee(kind, id, viewer = null) { return canSee(state, kind, findEntity(state, kind, id), viewer); },
+    publicBoard(id, viewer = null) {
+      const projection = projectBoard(state, id, { viewer });
       if (projection) for (const note of projection.notes) note.content = checkedText(state.texts[note.id]).content;
       if (projection) projection.media = state.assets.filter(asset => projection.decorations.some(decoration => decoration.assetId === asset.id && isVisible(state, 'decoration', decoration)))
         .map(({ id, mimeType, animated, width, height, name }) => ({ id, mimeType, animated, width, height, name }));
       return projection;
     },
-    privateBoard(id) {
-      const projection = projectBoard(state, id, { includeDeleted: true });
+    privateBoard(id, viewer) {
+      const projection = projectBoard(state, id, { includeDeleted: true, viewer });
       if (projection) projection.texts = Object.fromEntries(projection.notes.map(note => [note.id, state.texts[note.id]]));
       if (projection) projection.media = state.assets.filter(asset => projection.decorations.some(decoration => decoration.assetId === asset.id && isVisible(state, 'decoration', decoration)))
         .map(({ id, mimeType, animated, width, height, name }) => ({ id, mimeType, animated, width, height, name }));
@@ -406,6 +417,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
           const original = state.operations.find(operation => operation.id === request.payload.operationId);
           if (!original || !original.undo || original.boardId !== request.boardId) throw notesError('not_found', 'Undo operation not found', 404);
           if (original.accountId !== userId) throw notesError('forbidden', 'Undo belongs to another account', 403);
+          if (!canSee(state, 'board', findEntity(state, 'board', request.boardId), userId)) throw notesError('not_found', 'Undo operation not found', 404);
           if (request.baseRevision > findEntity(state, 'board', request.boardId).revision) throw notesError('invalid_revision');
           inverseTarget = original.undo;
           mutation = applyMetadataUndo(metadata(state), rebaseUndo(state, original), request.boardId);
@@ -439,7 +451,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
         const retry = await checkRetry(userId, operationId, hash, authorize, { type: 'text', noteId, boardId: findEntity(state, 'note', noteId)?.boardId });
         if (retry) return retry;
         const note = findEntity(state, 'note', noteId);
-        if (!note) throw notesError('not_found', 'Note not found', 404);
+        if (!canSee(state, 'note', note, userId)) throw notesError('not_found', 'Note not found', 404);
         if (authorize) await authorize({ userId, boardId: note.boardId, noteId, operationId, type: 'text', replay: false, targets: [] });
         const text = checkedText(state.texts[noteId], bytes), candidate = clone(state);
         candidate.texts[noteId] = text.encoded;
@@ -491,7 +503,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
     },
     library() { return clone(state.assets.filter(asset => !asset.removed)); },
     asset(id) { return clone(state.assets.find(asset => asset.id === id) ?? null); },
-    isAssetPublic(id) { return state.decorations.some(decoration => decoration.assetId === id && isVisible(state, 'decoration', decoration)); },
+    isAssetPublic(id) { return state.decorations.some(decoration => decoration.assetId === id && isVisible(state, 'decoration', decoration) && canSee(state, 'decoration', decoration, null)); },
     async close() { closing = true; await writes; listeners.clear(); },
   };
   return store;

@@ -15,7 +15,7 @@ async function fixture(t) {
   const command = (type, payload, accountId = 'minhle') => ({ operationId: randomUUID(), accountId,
     boardId, baseRevision: store.privateBoard(boardId)?.revision ?? 0, type, payload });
   const send = (type, payload, accountId = 'minhle', options) => store.applyCommand(accountId, command(type, payload, accountId), options);
-  await send('board.create', { name: 'Chung' });
+  await send('board.create', { name: 'Chung', visibility: 'public' });
   await send('note.create', { id: noteId, columnId: null, x: 10, y: 20, width: 240, height: 280, color: '#ffeedd' });
   return { get store() { return store; }, dataDir, boardId, noteId, send, command,
     async reopen() { await store.close(); store = await createNotesStore({ dataDir }); return store; } };
@@ -324,7 +324,7 @@ for (const reuseOldRedo of [false, true]) test(`restarted inverse history preser
   const f = await fixture(t), assetId = randomUUID();
   await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
   const cases = [
-    ['board', randomUUID(), 'board.create', { name: 'New' }],
+    ['board', randomUUID(), 'board.create', { name: 'New', visibility: 'public' }],
     ['column', randomUUID(), 'column.create', { name: 'New', x: 0, y: 0, width: 400, height: 500 }],
     ['note', randomUUID(), 'note.create', { columnId: null, x: 0, y: 0, width: 200, height: 250, color: '#ffffff' }],
     ['decoration', randomUUID(), 'decoration.add', { assetId, x: 0, y: 0, width: 30, height: 40, rotation: 0, z: 1 }],
@@ -409,6 +409,8 @@ for (const version of [2, 3]) test(`format ${version} stickers migrate to format
   // Rewrite the saved snapshot into the older shape. The note sits at (10,20) and is 240x280.
   const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
   saved.formatVersion = version;
+  saved.boards = saved.boards.map(({ authorId, visibility, ...board }) => board);
+  saved.notes = saved.notes.map(({ visibility, labels, ...note }) => note);
   saved.decorations = saved.decorations.map(({ boardId, noteId, columnId, ...d }) => version === 2
     ? { ...d, noteId: f.noteId, x: 5, y: 6 }
     : { ...d, boardId, x: d.id === onNote ? 15 : 900, y: d.id === onNote ? 26 : 900 });
@@ -419,5 +421,17 @@ for (const version of [2, 3]) test(`format ${version} stickers migrate to format
   assert.equal(pick(outside).noteId, version === 2 ? f.noteId : null, 'v3 attaches only stickers whose centre lies on a note');
   await f.send('note.update', { id: f.noteId, x: 30 });
   assert.equal(pick(onNote).x, 35, 'The migrated sticker follows its note');
-  assert.equal(JSON.parse(await readFile(path, 'utf8')).formatVersion, 4);
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).formatVersion, 5);
+});
+
+test('format 4 boards migrate to public boards authored by their creator; notes follow the board without labels', async t => {
+  const f = await fixture(t);
+  await f.store.close();
+  const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
+  saved.formatVersion = 4;
+  saved.boards = saved.boards.map(({ authorId, visibility, ...board }) => board);
+  saved.notes = saved.notes.map(({ visibility, labels, ...note }) => note);
+  await writeFile(path, JSON.stringify(saved));
+  const store = await f.reopen(), board = store.publicBoard(f.boardId);
+  assert.deepEqual([board.authorId, board.visibility, board.notes[0].visibility, board.notes[0].labels], ['minhle', 'public', null, []]);
 });

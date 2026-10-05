@@ -10,7 +10,7 @@ try {
       const auth=await import('/js/auth.js');await auth.login('minhle',${JSON.stringify(fixturePasswords.minhle)});
       const {openBoardClient}=await import('/js/notes/client.js');const {mountBoardPresence}=await import('/js/notes/editor.js');
       window.client=await openBoardClient({boardId:crypto.randomUUID(),accountId:'minhle'});
-      await client.command({type:'board.create',baseRevision:0,payload:{name:'Kiểm chứng ownership presence'}});
+      await client.command({type:'board.create',baseRevision:0,payload:{name:'Kiểm chứng ownership presence',visibility:'public'}});
       window.calls=[];window.holdNext=true;window.resume=null;const publish=client.publishPresence;
       client.publishPresence=async value=>{const held=holdNext;holdNext=false;calls.push(structuredClone(value));const result=await publish(value);if(held)await new Promise(resolve=>resume=resolve);return result;};
       window.mount=()=>{const viewport=document.createElement('div');const world=document.createElement('div');world.className='notes-world';viewport.append(world);document.body.append(viewport);const stop=mountBoardPresence(viewport,{client,worldPoint:(x,y)=>({x,y})});return {viewport,stop:()=>{stop();viewport.remove();}};};

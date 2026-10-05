@@ -17,7 +17,7 @@ async function fixture(t) {
   const store = await createNotesStore({ dataDir: dir });
   const boardId = randomUUID(), noteId = randomUUID();
   const envelope = (type, payload, accountId = 'minhle') => ({ operationId: randomUUID(), accountId, boardId, baseRevision: 0, type, payload });
-  await store.applyCommand('minhle', envelope('board.create', { name: 'Chung' }));
+  await store.applyCommand('minhle', envelope('board.create', { name: 'Chung', visibility: 'public' }));
   await store.applyCommand('minhle', envelope('note.create', { id: noteId, columnId: null, x: 0, y: 0, width: 240, height: 200, color: '#fff0ee' }));
   let current = 'minhle', generation = 0, connected = true, loseAck = false, quota = false, held = false, presenceInvalid = false;
   const events = new Set(), streams = new Set(), records = new Map(), notes = new Map(), sent = [], order = [];
@@ -33,7 +33,7 @@ async function fixture(t) {
       order.push(path); if (!connected) throw new TypeError('offline');
       if (method !== 'GET') { sent.push({ path, body: structuredClone(body) }); if (!current) throw Object.assign(Error('unauthorized'), { status: 401, code: 'unauthorized' }); assert.equal(body.accountId || body.command.accountId, current); }
       if (path.endsWith('/collaboration')) return { board: store.privateBoard(boardId) };
-      if (path === '/api/boards' || path === '/api/boards/trash') return { boards: store.list({ includeDeleted: path.endsWith('trash') }) };
+      if (path === '/api/boards' || path === '/api/boards/trash') return { boards: store.list('minhle', { includeDeleted: path.endsWith('trash') }) };
       if (path.endsWith('/leases')) { if (held) throw Object.assign(Error('peer held'), { code: 'lease_conflict', status: 409 }); return { leaseToken: 'a'.repeat(64), expiresAt: Date.now() + 10000, released: true }; }
       if (path.endsWith('/presence')) { if (presenceInvalid) { presenceInvalid = false; throw Object.assign(Error('invalid'), { code: 'invalid_presence', status: 400 }); } return { expiresAt: Date.now() + 15000 }; }
       if (path === '/api/boards/commands') { const result = await store.applyCommand(current, body.command); if (loseAck) { loseAck = false; throw new TypeError('ACK lost'); } return result; }
@@ -370,7 +370,7 @@ for (const mode of ['reopen', 'reconnect', 'same-account login', 'different-acco
     t.after(() => client?.close());
     client = await open();
     const operationId = randomUUID();
-    await client.command({ operationId, type: 'board.create', baseRevision: 0, payload: { name: 'Retained creation' } });
+    await client.command({ operationId, type: 'board.create', baseRevision: 0, payload: { name: 'Retained creation',visibility:'public'} });
     assert.equal(client.getState().pending.commands, 1);
     connected = true;
     if (mode === 'reopen') { await client.close(); client = await open(); }

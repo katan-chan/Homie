@@ -25,7 +25,7 @@ export function render(container, { signal }) {
     if(!alive())return;
     const list=available();
     for(const [id,control] of tabButtons)if(!list.some(b=>b.id===id)){control.remove();tabButtons.delete(id);}
-    for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
+    for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.dataset.visibility=board.visibility==='public'||board.visibility==='shared'?board.visibility:board.visibility?'private':'';control.title=board.visibility==='public'?'Ai cũng xem được':board.visibility==='shared'?'Chỉ hai đứa mình':board.visibility?'Chỉ mình tôi':'';control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
     if(!current && !list.length){if(catalogLoaded&&account){if(!status.querySelector('.notes-empty-create'))status.replaceChildren(emptyCreate());}else{status.textContent=catalogLoaded?'Chưa có bảng nào. Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. ':'Đang tìm những trang giấy…';if(catalogLoaded)status.append(loginButton());}}
   }
   async function selectBoard(id, { trash = false, force = false } = {}) {
@@ -79,11 +79,13 @@ export function render(container, { signal }) {
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabButtons.values()];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});
   let catalogOffline=false;
-  const unsubscribe=subscribeBoards({signal},result=>{if(!alive())return;if(result.boards===null){renderTabs();status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';catalogOffline=true;return;}
+  // The catalog is per viewer (private boards), so it reconnects whenever the account changes.
+  const onCatalog=result=>{if(!alive())return;if(result.boards===null){renderTabs();status.textContent='Chưa kết nối được danh sách bảng. Các bản nháp trên thiết bị vẫn được giữ.';catalogOffline=true;return;}
     if(catalogOffline){catalogOffline=false;status.textContent='';}
     boards=result.boards;catalogLoaded=true;pending=pending.filter(p=>!boards.some(b=>b.id===p.id));if(account)save(pendingKey(account),pending);reconcile();
-  });
-  function authChanged(){const next=getUser()?.id||null;if(next===account)return;stopCurrent();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();account=next;pending=account?stored(pendingKey(account),[]):[];explicitTrash=false;renderActions();reconcile();}
+  };
+  let unsubscribe=subscribeBoards({signal},onCatalog);
+  function authChanged(){const next=getUser()?.id||null;if(next===account)return;stopCurrent();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();account=next;pending=account?stored(pendingKey(account),[]):[];explicitTrash=false;unsubscribe();boards=[];catalogLoaded=false;unsubscribe=subscribeBoards({signal},onCatalog);renderActions();reconcile();}
   authEvents.addEventListener('change',authChanged,{signal});renderActions();renderTabs();
   function cleanup(){if(disposed)return;disposed=true;stopCurrent();unsubscribe();authEvents.removeEventListener('change',authChanged);signal.removeEventListener('abort',cleanup);root.remove();}
   signal.addEventListener('abort',cleanup,{once:true});return cleanup;

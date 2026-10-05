@@ -9,7 +9,7 @@ try {await withBrowser(async(evaluate,{call})=>{
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   // Headless pages may lack window focus; emulate it so focusin activates the shared format row.
   await call('Emulation.setFocusEmulationEnabled',{enabled:true});
-  const wait=expression=>evaluate(`(async()=>{let end=Date.now()+10000;while(!(${expression})){if(Date.now()>end)throw Error('Timed out: '+${JSON.stringify(expression)}+' / '+document.querySelector('.note-library .notes-media-status')?.textContent+' / '+document.querySelector('.notes-durability')?.textContent+' / '+JSON.stringify(document.querySelector('.paper-note')?.getBoundingClientRect())+' / '+document.querySelector('.note-decoration')?.innerHTML);await new Promise(r=>setTimeout(r,30));}return true;})()`);
+  const wait=expression=>evaluate(`(async()=>{let end=Date.now()+10000;while(!(${expression})){if(Date.now()>end)throw Error('Timed out: '+${JSON.stringify(expression)}+' / '+document.querySelector('.note-library .notes-media-status')?.textContent+' / '+document.querySelector('.notes-durability')?.textContent+' / '+JSON.stringify(document.querySelector('.paper-note')?.getBoundingClientRect())+' / '+document.querySelector('.note-decoration')?.innerHTML+' / '+document.querySelector('.notes-error')?.textContent+' / '+[...document.querySelectorAll('.notes-board-tab')].map(t=>t.textContent+':'+t.dataset.visibility+':'+t.getAttribute('aria-selected')).join());await new Promise(r=>setTimeout(r,30));}return true;})()`);
   await evaluate("location.hash='dashboard'");await wait("document.querySelector('.notes-dashboard')");
   assert.equal(await evaluate("document.querySelectorAll('.note-library,.note-media-add,.notes-format-row button').length"),0);
   await evaluate(`(async()=>{await (await import('/js/auth.js')).login('minhle',${JSON.stringify(fixturePasswords.minhle)});})()`);
@@ -24,6 +24,10 @@ try {await withBrowser(async(evaluate,{call})=>{
   assert.equal(await evaluate(`(async()=>{const {createNotesStorage}=await import('/js/notes/client.js'),s=createNotesStorage(),file=new Blob([new Uint8Array(10*1024*1024)]);try{for(let i=0;i<5;i++)await s.update('cap-test-'+i,()=>({queue:[{kind:'upload',file}]}));try{await s.update('cap-test-extra',()=>({queue:[{kind:'upload',file:new Blob(['x'])}]}));return 'missing-cap';}catch(e){return e.code;}}finally{for(let i=0;i<5;i++)await s.update('cap-test-'+i,()=>({queue:[]}));}})()`),'upload_quota');
   await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Media fixture';document.querySelector('.notes-name-form').requestSubmit()");
   await wait("document.querySelector('.notes-viewport') && document.querySelector('.notes-durability').dataset.durability==='saved'");
+  // Guests check the published stickers later, so this board is opened to everyone.
+  await wait("document.querySelector('[data-action=board-visibility] option[value=public]')");
+    await evaluate("(()=>{const s=document.querySelector('[data-action=board-visibility]');s.value='public';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await wait("document.querySelector('.notes-board-tab[aria-selected=true]')?.dataset.visibility==='public' && document.querySelector('.notes-durability').dataset.durability==='saved'");
   await evaluate("document.querySelector('[data-action=note-new]').click()");await wait("document.querySelector('.tiptap[contenteditable=true]')");
   assert.equal(await evaluate("document.querySelectorAll('.note-media-add').length"),0,'no per-note image button');
   assert.equal(await evaluate("document.querySelectorAll('.notes-format-row').length"),1,'one format row per board');

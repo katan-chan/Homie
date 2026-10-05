@@ -48,7 +48,7 @@ async function fixture(t, options = {}) {
   const command = (type, payload, accountId = 'minhle') => ({ operationId: randomUUID(), accountId, boardId, baseRevision: 0, type, payload });
   const send = (cmd, cookie, tokens = [], client = clientId) => post('/api/boards/commands', { command: cmd, clientId: client, leaseTokens: tokens }, cookie);
   const seed = async cookie => {
-    assert.equal((await send(command('board.create', { name: 'Chung' }), cookie)).status, 200);
+    assert.equal((await send(command('board.create', { name: 'Chung', visibility: 'public' }), cookie)).status, 200);
     assert.equal((await send(command('note.create', { id: noteId, columnId: null, x: 10, y: 20, width: 240, height: 280, color: '#ffeedd' }), cookie)).status, 200);
   };
   const lease = async (cookie, accountId = 'minhle', target = { kind: 'note', id: noteId }, client = clientId) => {
@@ -342,7 +342,7 @@ async function directFixture(t) {
   const post = (path, body, value) => request(path, { method: 'POST', headers: { ...headers, Cookie: value }, body: JSON.stringify(body) });
   const boardId = randomUUID(), noteId = randomUUID(), clientId = randomUUID();
   const command = (type, payload, accountId = 'minhle') => ({ type, payload, boardId, accountId, baseRevision: 0, operationId: randomUUID() });
-  await store.applyCommand('minhle', command('board.create', { name: 'Queue' }));
+  await store.applyCommand('minhle', command('board.create', { name: 'Queue', visibility: 'public' }));
   await store.applyCommand('minhle', command('note.create', { id: noteId, columnId: null, x: 0, y: 0, width: 200, height: 200, color: '#ffffff' }));
   const blockQueue = async () => {
     let release, started; const gate = new Promise(resolve => { release = resolve; }), entered = new Promise(resolve => { started = resolve; });
@@ -502,4 +502,49 @@ test('oversized public snapshot requests a bounded projection refresh and keeps 
       if (!cookie) assert.ok(!content.includes('collaboration'));
     } finally { controller.abort(); }
   }
+});
+
+test('who can view: private boards and notes stay hidden from the partner and guests across reads, streams and writes', async t => {
+  const f = await fixture(t), minh = await f.login(), yen = await f.login('haiyen');
+  const json = async (path, cookie) => { const response = await f.request(path, { headers: cookie ? { Cookie: cookie } : {} }); return { status: response.status, body: await response.json() }; };
+  const ids = async (cookie, path = '/api/boards') => (await json(path, cookie)).body.boards.map(board => board.id);
+  // A new board defaults to "only me".
+  assert.equal((await f.send(f.command('board.create', { name: 'Riêng' }), minh)).status, 200);
+  assert.deepEqual([await ids(minh), await ids(yen), await ids()], [[f.boardId], [], []]);
+  assert.equal((await json(`/api/boards/${f.boardId}/collaboration`, yen)).status, 404);
+  assert.equal((await json(`/api/boards/${f.boardId}`)).status, 404);
+  assert.equal((await f.send(f.command('note.create', { id: f.noteId, columnId: null, x: 0, y: 0, width: 240, height: 280, color: '#ffeedd' }, 'haiyen'), yen)).status, 404);
+  assert.equal((await f.send(f.command('board.share', { visibility: 'shared' }, 'haiyen'), yen)).status, 404);
+  const yenCatalog = await f.stream('/api/boards/events', yen); assert.deepEqual((await yenCatalog.next('boards')).boards, []);
+  // Shared: both accounts, no guests. Only the author may change it, and never to the partner's private view.
+  assert.equal((await f.send(f.command('board.share', { visibility: 'haiyen' }), minh)).status, 400);
+  assert.equal((await f.send(f.command('board.share', { visibility: 'shared' }), minh)).status, 200);
+  assert.equal((await yenCatalog.next('boards', data => data.boards.length === 1)).boards[0].visibility, 'shared');
+  assert.deepEqual([await ids(yen), await ids()], [[f.boardId], []]);
+  assert.equal((await f.send(f.command('board.share', { visibility: 'public' }, 'haiyen'), yen)).status, 403);
+  // A private note inside a shared board: hidden from the partner's projection, texts, text events and commands.
+  assert.equal((await f.send(f.command('note.create', { id: f.noteId, columnId: null, x: 0, y: 0, width: 240, height: 280, color: '#ffeedd', visibility: 'minhle', labels: [' Kỷ  niệm '] }), minh)).status, 200);
+  const mine = (await json(`/api/boards/${f.boardId}/collaboration`, minh)).body.board.notes[0];
+  assert.deepEqual([mine.visibility, mine.labels], ['minhle', ['Kỷ niệm']]);
+  const theirs = (await json(`/api/boards/${f.boardId}/collaboration`, yen)).body.board;
+  assert.deepEqual([theirs.notes, Object.keys(theirs.texts)], [[], []]);
+  const yenBoard = await f.stream(`/api/boards/${f.boardId}/events?clientId=${randomUUID()}`, yen); await yenBoard.next('snapshot');
+  const doc = document('bí mật'), text = { accountId: 'minhle', operationId: randomUUID(), update: update(doc) }; doc.destroy();
+  assert.equal((await f.post(`/api/notes/${f.noteId}/text`, text, minh)).status, 200);
+  assert.equal((await f.post(`/api/notes/${f.noteId}/text`, { ...text, accountId: 'haiyen', operationId: randomUUID() }, yen)).status, 404);
+  for (const [type, payload] of [['note.update', { id: f.noteId, color: '#000000' }], ['note.trash', { id: f.noteId }]]) assert.equal((await f.send(f.command(type, payload, 'haiyen'), yen)).status, 404);
+  assert.equal((await f.lease(yen, 'haiyen', { kind: 'note', id: f.noteId }, randomUUID())).response.status, 404);
+  // Labels are editable by anyone who sees the note; visibility only by its author, and only to themselves.
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, visibility: 'haiyen' }), minh)).status, 400);
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, labels: ['a', 'A'] }), minh)).status, 400);
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, visibility: null }), minh)).status, 200);
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, labels: ['Kỷ niệm', 'Du lịch'] }, 'haiyen'), yen)).status, 200);
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, visibility: 'shared' }, 'haiyen'), yen)).status, 403);
+  assert.deepEqual((await json(`/api/boards/${f.boardId}/collaboration`, yen)).body.board.notes[0].labels, ['Kỷ niệm', 'Du lịch']);
+  for (const event of yenBoard.events) assert.ok(!JSON.stringify(event.data).includes(Buffer.from('bí mật').toString('base64')) && event.name !== 'text-update');
+  // Public boards show guests every note that is not narrowed further.
+  assert.equal((await f.send(f.command('board.share', { visibility: 'public' }), minh)).status, 200);
+  assert.equal((await json(`/api/boards/${f.boardId}`)).body.board.notes.length, 1);
+  assert.equal((await f.send(f.command('note.update', { id: f.noteId, visibility: 'shared' }), minh)).status, 200);
+  assert.deepEqual([(await json(`/api/boards/${f.boardId}`)).body.board.notes, (await json(`/api/boards/${f.boardId}`, yen)).body.board.notes.length], [[], 1]);
 });

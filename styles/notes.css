@@ -124,3 +124,21 @@
 @media(prefers-reduced-motion:reduce){.notes-empty-create,.notes-empty-plus{transition:none}.notes-empty-create:hover .notes-empty-plus{transform:none}}
 .note-decoration-resize { position:absolute; right:-8px; bottom:-8px; width:14px; height:14px; box-sizing:border-box; border:2px solid #9b4b77; border-radius:50%; background:#fffaf4; cursor:nwse-resize; touch-action:none; }
 .note-decoration-resize::before { content:''; position:absolute; left:-4px; top:-4px; right:-16px; bottom:-16px; }
+/* Who may view and labels */
+.notes-board-tab[data-visibility=private]:after,.notes-board-tab[data-visibility=public]:after{content:'riêng';margin-left:8px;padding:1px 7px;border-radius:999px;background:#ead0d8;color:#7a4f60;font-size:11px;vertical-align:middle}.notes-board-tab[data-visibility=public]:after{content:'công khai';background:#dcebd9;color:#4f6b4b}
+.notes-view{display:flex;align-items:center;gap:6px;font-size:13px}.notes-view[hidden],.notes-label-filter[hidden]{display:none}
+.note-badges{pointer-events:none;display:flex;flex-wrap:wrap;gap:4px;margin-left:10px;min-width:0}
+.note-label,.note-view{display:inline-block;padding:2px 8px;border-radius:999px;background:#fff6e8;border:1px solid #d8b8a8;color:#7a5560;font-size:12px;line-height:1.4;white-space:nowrap}
+.note-view{background:#efe4f2;border-color:#c8b0d0}.note-view.is-public{background:#e3efdf;border-color:#b5cdae;color:#4f6b4b}.note-view.is-shared{background:#e2ebf5;border-color:#b3c5dc;color:#4b5f7a}.note-label.is-memory{background:#f9d9e2;border-color:#d79aae;color:#8a3f5c}
+.notes-labels-edit{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.notes-labels-edit .note-label{min-height:32px;cursor:pointer}.notes-inspector .notes-labels-edit input{width:140px}
+.paper-note.is-filtered{opacity:.18;pointer-events:none}
+/* The save status has a fixed basis, so its changing text never re-wraps the toolbar (the board would jump). */
+@media(min-width:601px){.notes-toolbar .notes-durability{flex:1 1 150px;min-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}}
+/* The author line scales with the note (28px at the default 360x320 note, by the smaller of width/height). */
+.paper-note{container-type:size}
+.paper-note .note-author{font-size:clamp(4px,min(7.8cqi,8.75cqb),96px)}
+.paper-note .note-handle:before{font-size:clamp(4px,min(6.1cqi,6.9cqb),76px)}
+.paper-note .note-badges .note-label,.paper-note .note-badges .note-view{font-size:clamp(4px,min(3.3cqi,3.75cqb),40px)}
+.notes-inspector select[data-action=note-visibility]{max-width:none}
+.notes-viewport{cursor:grab}.notes-viewport.is-panning,.notes-viewport.is-panning *{cursor:grabbing}
+.notes-viewport .paper-note{cursor:auto}

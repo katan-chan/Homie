@@ -13,7 +13,7 @@ try {
       const m = await import('/js/notes/client.js');
       window.open = () => m.openBoardClient({ boardId: '${boardId}', accountId: 'minhle' });
       window.client = await open();
-      const created = await client.command({type:'board.create',baseRevision:0,payload:{name:'Thử offline'}});
+      const created = await client.command({type:'board.create',baseRevision:0,payload:{name:'Thử offline',visibility:'public'}});
       if (created.pending) throw Error('A connected new-board command must receive its persisted ACK');
       await client.command({type:'note.create',payload:{id:'${noteId}',columnId:null,x:0,y:0,width:240,height:200,color:'#ffeeee'}});
       await new Promise((resolve,reject) => {const timer=setTimeout(()=>reject(Error('online timeout')),5000);const stop=client.subscribe(s=>{if(s.connection==='online'){clearTimeout(timer);queueMicrotask(()=>stop());resolve();}});});
