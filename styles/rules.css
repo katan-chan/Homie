@@ -1,1 +1,57 @@
-/* Phần E sở hữu file này. */
+/* Phần E sở hữu file này. Nội quy: tab đặc biệt trong Góc ghi chép. */
+.rules-panel,.rules-dialog{--rules-ink:#5d3c4c;--rules-muted:#866b77;--rules-line:#ecd5dc;--rules-border:#d9b6c1;--rules-accent:#985a74;--rules-danger:#a3304e;color:var(--rules-ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.rules-panel *,.rules-dialog *{box-sizing:border-box}
+.rules-panel{display:grid;gap:12px;padding:12px;min-width:0;max-width:100%}
+.rules-tools{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.rules-hint,.rule-note{margin:0;font-size:13px;color:var(--rules-muted)}
+.rules-hint{flex:1 1 260px}
+.rules-status:empty{display:none}
+.rules-status{margin:0;font-size:14px;overflow-wrap:anywhere}
+.rules-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:12px;align-items:start}
+.rule-card{display:grid;gap:8px;align-content:start;min-width:0;padding:14px;border:1px solid #ecdcae;border-radius:16px;background:#fff8e6}
+.rule-card h3,.rules-history h3{margin:0;font:600 17px Georgia,"Times New Roman",serif;overflow-wrap:anywhere}
+.rule-card h3:focus{outline:none}.rule-card h3:focus-visible{outline:3px solid var(--rules-accent);outline-offset:2px}
+.rule-rev{display:grid;gap:6px;justify-items:start;min-width:0;padding:10px;border:1px dashed var(--rules-line);border-radius:12px;background:#fffdf9}
+.rule-rev.is-active{border-style:solid;border-color:#a9c9b1}
+.rule-rev.is-pending{border-color:#eebd9e}
+.rule-text{margin:0;font:21px/1.35 "Patrick Hand","Comic Sans MS",cursive;color:#4f3b44;white-space:pre-wrap;overflow-wrap:anywhere;justify-self:stretch}
+.rule-new-title{margin:0;font-weight:600;overflow-wrap:anywhere}
+.rule-note{white-space:pre-wrap;overflow-wrap:anywhere}
+.rule-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--rules-muted)}
+.rule-actions{display:flex;flex-wrap:wrap;gap:8px}
+.rules-badge{display:inline-block;justify-self:start;margin:0;padding:2px 9px;border:1px solid;border-radius:999px;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.rules-badge.is-both{background:#deead9;color:#3f6a4b;border-color:#a9c9b1}
+.rules-badge.is-shared{background:#dce9f5;color:#33597d;border-color:#a9c1db}
+.rules-badge.is-warn{background:#fbe1d2;color:#8a4520;border-color:#eebd9e}
+.rules-badge.is-plain{background:#fff;color:var(--rules-muted);border-color:var(--rules-line)}
+.rule-archive-note{border-radius:12px}
+.rules-button,.rules-icon-button{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--rules-border);border-radius:12px;background:#fffdf9;color:var(--rules-ink);font:inherit;font-size:14px;cursor:pointer}
+.rule-card .rules-button{padding:0 10px;font-size:13px}
+.rules-button.is-primary{background:var(--rules-accent);border-color:var(--rules-accent);color:#fff;font-weight:600}
+.rules-button.is-danger{color:var(--rules-danger)}
+.rules-button:disabled{opacity:.6;cursor:wait}
+:is(.rules-panel,.rules-dialog) :is(button,input,textarea):focus-visible{outline:3px solid var(--rules-accent);outline-offset:2px}
+.rules-empty{display:grid;gap:10px;justify-items:center;margin:0;padding:28px 18px;border:1.5px dashed var(--rules-border);border-radius:16px;text-align:center;color:var(--rules-muted)}
+.rules-empty p{margin:0}
+/* Desktop: centered modal. Phone: bottom sheet. */
+.rules-dialog{width:min(580px,calc(100vw - 48px));max-height:calc(100dvh - 64px);padding:18px;border:1px solid var(--rules-border);border-radius:20px;background:#fff8f2;box-shadow:0 18px 80px #52334330;overflow-y:auto;overscroll-behavior:contain}
+.rules-dialog[open]{display:grid;gap:12px;align-content:start}
+.rules-dialog::backdrop{background:#3b2a3366}
+.rules-dialog p{margin:0}
+.rules-dialog-head{display:flex;align-items:center;gap:8px}
+.rules-dialog-head h2{flex:1;margin:0;font:600 20px Georgia,"Times New Roman",serif;overflow-wrap:anywhere}
+.rules-icon-button{padding:0;font-size:20px}
+.rules-form{display:grid;gap:12px}
+.rules-field{display:grid;gap:4px;font-size:13px;font-weight:600}
+.rules-field input,.rules-field textarea{width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--rules-border);border-radius:12px;background:#fffdf9;color:var(--rules-ink);font:inherit;font-weight:400}
+.rules-field textarea{resize:vertical;font:19px/1.35 "Patrick Hand","Comic Sans MS",cursive}
+.rules-count{justify-self:end;font-weight:400;color:var(--rules-muted)}
+.rules-dialog-actions{justify-content:flex-end}
+.rules-error,.rules-conflict{display:grid;gap:6px;padding:10px 12px;border:1px solid #eebd9e;border-radius:12px;background:#fbe1d2;color:#8a4520;overflow-wrap:anywhere}
+.rules-error[hidden],.rules-conflict[hidden]{display:none}
+.rules-history{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+@media (max-width:640px){
+  .rules-panel{padding:10px 8px}
+  .rules-dialog{width:100%;max-width:100%;max-height:90dvh;margin:auto 0 0;border-radius:22px 22px 0 0;padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){.rules-panel *,.rules-dialog *{transition:none!important;animation:none!important}}

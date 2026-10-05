@@ -62,17 +62,18 @@ test('server dispatches owned feature prefixes to their modules', async t => {
     await rm(dataDir, { recursive: true, force: true });
   });
   const base = `http://127.0.0.1:${server.address().port}`;
-  for (const path of ['/api/jar', '/api/calendar?from=2026-10-01', '/api/cycles/x', '/api/ideas/pick', '/api/rules', '/api/garden']) {
+  // Only the garden module is still a stub; the boundary checks below use it.
+  for (const path of ['/api/garden', '/api/garden/x']) {
     const result = await fetch(base + path);
     assert.equal(result.status, 404, path);
     assert.equal(result.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await result.json(), { error: 'Not implemented', code: 'not_implemented' }, path);
   }
-  const posted = await fetch(`${base}/api/jar`, { method: 'POST', headers: { Origin: origin, 'X-Requested-With': 'Homie', 'Content-Type': 'application/json' }, body: '{}' });
+  const posted = await fetch(`${base}/api/garden`, { method: 'POST', headers: { Origin: origin, 'X-Requested-With': 'Homie', 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal((await posted.json()).code, 'not_implemented');
-  assert.equal((await fetch(`${base}/api/jar`, { method: 'OPTIONS', headers: { Origin: origin } })).status, 204);
-  assert.equal((await fetch(`${base}/api/jar`, { headers: { Origin: 'https://other.example' } })).status, 403, 'Origin allowlist still runs first');
-  const other = await fetch(`${base}/api/jarx`);
+  assert.equal((await fetch(`${base}/api/garden`, { method: 'OPTIONS', headers: { Origin: origin } })).status, 204);
+  assert.equal((await fetch(`${base}/api/garden`, { headers: { Origin: 'https://other.example' } })).status, 403, 'Origin allowlist still runs first');
+  const other = await fetch(`${base}/api/gardenx`);
   assert.deepEqual([other.status, await other.json()], [404, { error: 'Not found' }], 'Prefix match stops at a path boundary');
   assert.equal((await fetch(`${base}/api/health`)).status, 200);
 });
