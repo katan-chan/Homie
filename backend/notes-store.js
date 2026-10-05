@@ -6,7 +6,7 @@ import { emptyNotesState, applyMetadataCommand, applyMetadataUndo, validateNotes
   validateCommand, projectBoard, findEntity, isVisible, canSee, canView, mutationTargets, notesError,
   requireAccount, requireId, requireKeys } from '../js/notes/model.js';
 
-export const NOTES_FORMAT_VERSION = 5;
+export const NOTES_FORMAT_VERSION = 6;
 export const MAX_TEXT_UPDATE_BYTES = 256 * 1024;
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_NODES = 10000, MAX_TEXT_DEPTH = 32;
@@ -144,14 +144,25 @@ function validateInverse(undo, target) {
 // where the sticker's centre lies (topmost note, else column). Undo records hold older shapes, so they are dropped.
 // Version 5 adds who may view: existing boards stay public (their author is whoever ran board.create), notes follow
 // their board and start without labels.
+// Version 6 adds journals and memories: boards get noteDefault null, notes memoryDate null and garden false. Undo
+// records gain the same defaults, so history survives this step.
 export function migrateNotesSnapshot(saved) {
-  if (![2, 3, 4].includes(saved?.formatVersion)) return saved;
-  const state = saved.formatVersion === 4 ? clone(saved) : migrateStickers(saved);
-  state.boards = state.boards.map(board => ({ ...board,
-    authorId: state.operations.find(op => op.boardId === board.id)?.accountId ?? 'minhle', visibility: 'public' }));
-  state.notes = state.notes.map(note => ({ ...note, visibility: null, labels: [] }));
-  for (const op of state.operations) op.undo = null;
-  state.formatVersion = 5;
+  if (![2, 3, 4, 5].includes(saved?.formatVersion)) return saved;
+  const state = saved.formatVersion >= 4 ? clone(saved) : migrateStickers(saved);
+  if (state.formatVersion < 5) {
+    state.boards = state.boards.map(board => ({ ...board,
+      authorId: state.operations.find(op => op.boardId === board.id)?.accountId ?? 'minhle', visibility: 'public' }));
+    state.notes = state.notes.map(note => ({ ...note, visibility: null, labels: [] }));
+    for (const op of state.operations) op.undo = null;
+  }
+  const v6 = (kind, record) => !record ? record : kind === 'board' ? { noteDefault: null, ...record }
+    : kind === 'note' ? { memoryDate: null, garden: false, ...record } : record;
+  state.boards = state.boards.map(board => v6('board', board));
+  state.notes = state.notes.map(note => v6('note', note));
+  for (const change of state.operations.flatMap(op => op.undo?.changes ?? [])) {
+    change.before = v6(change.kind, change.before); change.after = v6(change.kind, change.after);
+  }
+  state.formatVersion = 6;
   return state;
 }
 function migrateStickers(saved) {

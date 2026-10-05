@@ -8,6 +8,11 @@ const geometry = ['x', 'y', 'width', 'height'];
 // A note can only narrow its board: null follows the board, 'shared' or its author's ID hides it further.
 export const BOARD_VISIBILITY = Object.freeze(['public', 'shared', ...NOTE_ACCOUNTS]);
 const MAX_LABELS = 12, MAX_LABEL_LENGTH = 32;
+// A memory is a note labelled "Kỷ niệm" (any case); only memories may be planted in the garden.
+export const MEMORY_LABEL = 'Kỷ niệm';
+export function isMemory(labels) {
+  return (labels ?? []).some(label => label.normalize('NFC').toLocaleLowerCase('vi') === MEMORY_LABEL.toLocaleLowerCase('vi'));
+}
 export function notesError(code, message = code, status = 400) {
   return Object.assign(new Error(message), { code, status });
 }
@@ -48,6 +53,10 @@ export function normalizeLabels(value) {
   if (labels.some(label => !label || label.length > MAX_LABEL_LENGTH)
     || new Set(labels.map(label => label.toLocaleLowerCase('vi'))).size !== labels.length) throw notesError('invalid_labels');
   return labels;
+}
+function memoryDate(value) {
+  if (value !== null && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
+    || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) throw notesError('invalid_memory_date');
 }
 function color(value) {
   if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw notesError('invalid_color');
@@ -99,14 +108,18 @@ function active(state, kind, entity) {
 }
 function checkEntity(kind, value) {
   const fields = {
-    board: ['id', 'name', 'authorId', 'visibility', 'revision', 'metadataRevision', 'deletedAt'],
+    board: ['id', 'name', 'authorId', 'visibility', 'noteDefault', 'revision', 'metadataRevision', 'deletedAt'],
     column: ['id', 'boardId', 'name', ...geometry, 'revision', 'deletedAt'],
-    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'visibility', 'labels', 'revision', 'deletedAt'],
+    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden', 'revision', 'deletedAt'],
     // Stickers live on the board in world coordinates; noteId/columnId (at most one) is what they follow when moved or trashed.
     decoration: ['id', 'boardId', 'noteId', 'columnId', 'assetId', ...geometry, 'rotation', 'z', 'revision', 'deletedAt'],
   };
   requireKeys(value, fields[kind]); requireId(value.id); revision(value.revision); deleted(value.deletedAt);
-  if (kind === 'board') { name(value.name); requireAccount(value.authorId); visibility(kind, value.visibility); revision(value.metadataRevision); }
+  if (kind === 'board') {
+    name(value.name); requireAccount(value.authorId); visibility(kind, value.visibility); revision(value.metadataRevision);
+    // A journal board: new notes start as "only me".
+    if (value.noteDefault !== null && value.noteDefault !== 'private') throw notesError('invalid_note_default');
+  }
   else {
     checkGeometry(value);
     requireId(value.boardId);
@@ -115,6 +128,8 @@ function checkEntity(kind, value) {
       if (value.columnId !== null) requireId(value.columnId);
       requireAccount(value.authorId); color(value.color); visibility(kind, value.visibility, value.authorId);
       if (normalizeLabels(value.labels).some((label, i) => label !== value.labels[i])) throw notesError('invalid_labels');
+      memoryDate(value.memoryDate);
+      if (typeof value.garden !== 'boolean' || (value.garden && !isMemory(value.labels))) throw notesError('invalid_garden');
     }
     if (kind === 'decoration') {
       requireId(value.assetId); number(value.rotation); number(value.z);
@@ -202,10 +217,10 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
   kind = entityKind;
   if (kind === 'board') {
     if (action === 'create') {
-      requireKeys(p, ['name'], ['visibility']);
+      requireKeys(p, ['name'], ['visibility', 'noteDefault']);
       const shown = p.visibility ?? userId;
       if (!['public', 'shared', userId].includes(shown)) throw notesError('invalid_visibility');
-      board = entity = add(kind, { id: boardId, name: name(p.name), authorId: userId, visibility: shown, revision: 0, metadataRevision: 1, deletedAt: null });
+      board = entity = add(kind, { id: boardId, name: name(p.name), authorId: userId, visibility: shown, noteDefault: p.noteDefault ?? null, revision: 0, metadataRevision: 1, deletedAt: null });
     } else {
       entity = board;
       if (action === 'rename') { requireKeys(p, ['name']); active(state, kind, entity); touch(kind, entity, () => { entity.name = name(p.name); }); }
@@ -214,6 +229,10 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
         if (entity.authorId !== userId) throw notesError('forbidden', 'Only the board author changes who can view it', 403);
         if (!['public', 'shared', userId].includes(p.visibility)) throw notesError('invalid_visibility');
         touch(kind, entity, () => { entity.visibility = p.visibility; });
+      } else if (action === 'update') {
+        requireKeys(p, ['noteDefault']); active(state, kind, entity);
+        if (entity.authorId !== userId) throw notesError('forbidden', 'Only the board author changes its note default', 403);
+        touch(kind, entity, () => { entity.noteDefault = p.noteDefault; });
       }
       else if (action === 'trash' || action === 'restore') { requireKeys(p, []); touch(kind, entity, () => { entity.deletedAt = action === 'trash' ? now : null; }); }
       else throw notesError('invalid_command');
@@ -224,9 +243,9 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       requireKeys(p, ['id', 'name', ...geometry]);
       entity = add(kind, { ...p, name: name(p.name), boardId, revision: 1, deletedAt: null });
     } else if (kind === 'note') {
-      requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels']);
+      requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels', 'memoryDate', 'garden']);
       if (p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
-      entity = add(kind, { visibility: null, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
+      entity = add(kind, { visibility: null, memoryDate: null, garden: false, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
     } else if (kind === 'decoration' && action === 'add') {
       requireKeys(p, ['id', 'assetId', ...geometry, 'rotation', 'z'], ['noteId', 'columnId']);
       checkAttachment(state, p, boardId, userId);
@@ -241,7 +260,7 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       touch(kind, entity, () => { entity.deletedAt = action === 'restore' ? null : now; });
     } else if (action === 'update' || (kind === 'note' && action === 'move')) {
       const allowed = kind === 'column' ? ['name', ...geometry] : kind === 'note'
-        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color', 'visibility', 'labels'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
+        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
       requireKeys(p, ['id'], allowed);
       if (Object.keys(p).length === 1) throw notesError('invalid_fields');
       active(state, kind, entity);
@@ -249,7 +268,11 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       if (kind === 'decoration') checkAttachment(state, { noteId: entity.noteId, columnId: entity.columnId, ...p }, boardId, userId);
       else if (Object.hasOwn(p, 'columnId') && p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
       const dx = (p.x ?? entity.x) - entity.x, dy = (p.y ?? entity.y) - entity.y;
-      touch(kind, entity, () => patch(entity, p, allowed));
+      touch(kind, entity, () => {
+        patch(entity, p, allowed);
+        // Dropping the "Kỷ niệm" label also takes the note out of the garden, unless garden is set explicitly (then it is checked).
+        if (kind === 'note' && Object.hasOwn(p, 'labels') && !Object.hasOwn(p, 'garden') && !isMemory(entity.labels)) entity.garden = false;
+      });
       // World positions include independently trashed children so restore stays coherent; stickers follow their note or column.
       const shift = (childKind, child) => touch(childKind, child, () => { child.x += dx; child.y += dy; });
       if (kind === 'note' && (dx || dy)) for (const sticker of state.decorations.filter(d => d.noteId === entity.id)) shift('decoration', sticker);

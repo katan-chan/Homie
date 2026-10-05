@@ -1,11 +1,13 @@
-import { clampPaperSize } from './model.js';
+import { clampPaperSize, isMemory, MEMORY_LABEL as MEMORY } from './model.js';
 import { mountBoardPresence } from './editor.js';
 import { authEvents, getUser } from '../auth.js';
 
 // Board owns geometry and camera. Editor/media hooks own their stable note slots.
 const colors = ['#fff0b8', '#f9dbe5', '#deead9', '#dce9f5', '#e8ddf1', '#fffaf0'];
 const authors = { minhle: 'Minh Lê', haiyen: 'Hải Yến' };
-const MEMORY = 'Kỷ niệm';
+// Memory dates are calendar days in Vietnam, whatever the device's zone.
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+const dayLabel = date => { const [y, m, d] = date.split('-'); return `${+d}/${+m}/${y}`; };
 // Who may view, as the viewer reads it. Boards: account ID / shared / public; notes: null follows the board.
 function viewLabel(value) { return value === null ? 'Theo bảng' : value === 'public' ? 'Công khai' : value === 'shared' ? 'Hai đứa mình' : 'Chỉ mình tôi'; }
 // What a note shows: the narrower of its board's and its own setting.
@@ -28,21 +30,25 @@ function button(label, action, mutation = false) {
   if (mutation) node.dataset.mutation = '';
   return node;
 }
-export function askName(container, { title, value = '', signal, onSubmit }) {
+/** option: label of an extra checkbox; onSubmit then also receives whether it is checked. */
+export function askName(container, { title, value = '', option = '', signal, onSubmit }) {
   const dialog = element('dialog', 'notes-dialog');
   const form = element('form', 'notes-name-form');
   const label = element('label', '', title); const input = document.createElement('input');
   input.required = true; input.maxLength = 120; input.value = value; label.append(input);
   const submit = button('Lưu', 'name-save'); submit.type = 'submit';
   const cancel = button('Hủy', 'name-cancel'); cancel.onclick = () => dialog.close();
-  form.append(label, submit, cancel); dialog.append(form); container.append(dialog);
+  const check = document.createElement('input'); check.type = 'checkbox'; check.name = 'option';
+  const checkLabel = element('label', 'notes-name-option'); checkLabel.append(check, option);
+  form.append(label, ...(option ? [checkLabel] : []), submit, cancel); dialog.append(form); container.append(dialog);
   const close = () => { if (dialog.open) dialog.close(); dialog.remove(); signal?.removeEventListener('abort', close); };
   dialog.addEventListener('close', close, { once: true }); signal?.addEventListener('abort', close, { once: true });
-  form.addEventListener('submit', event => { event.preventDefault(); const name = input.value.trim(); if (!name) return; close(); onSubmit(name); });
+  form.addEventListener('submit', event => { event.preventDefault(); const name = input.value.trim(); if (!name) return; close(); onSubmit(name, check.checked); });
   dialog.showModal(); input.focus(); input.select();
   return close;
 }
-export function mountBoard(container, { client, signal, mountEditor, mountMedia }) {
+/** focusNoteId: a note to scroll to and highlight once it appears (the "open note from elsewhere" handoff). */
+export function mountBoard(container, { client, signal, mountEditor, mountMedia, focusNoteId = null }) {
   if (signal?.aborted) return () => {};
   const controller = new AbortController(), events = { signal: controller.signal };
   const root = element('section', 'notes-board'); root.dataset.boardId = client.boardId;
@@ -50,8 +56,11 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   const mutations = element('div', 'notes-tools');
   const boardView = document.createElement('select'); boardView.dataset.action = 'board-visibility'; boardView.dataset.mutation = ''; boardView.setAttribute('aria-label', 'Ai xem được bảng này');
   const boardViewLabel = element('label', 'notes-view', 'Ai xem'); boardViewLabel.append(boardView);
+  // Journal boards: the author decides that new notes start as "only me"; sharing a page is then per note.
+  const journal = document.createElement('input'); journal.type = 'checkbox'; journal.dataset.action = 'board-note-default'; journal.dataset.mutation = '';
+  const journalLabel = element('label', 'notes-view notes-journal'); journalLabel.append(journal, 'Note mới: Chỉ mình tôi');
   const labelFilter = document.createElement('select'); labelFilter.className = 'notes-label-filter'; labelFilter.setAttribute('aria-label', 'Lọc theo nhãn');
-  mutations.append(boardViewLabel, button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
+  mutations.append(boardViewLabel, journalLabel, button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
   // One shared format row per board; editors register into it (see mountBoardNoteEditor).
   const formatRow = element('div', 'notes-format-row'); formatRow.setAttribute('role', 'toolbar'); formatRow.setAttribute('aria-label', 'Định dạng chữ'); formatRow.hidden = true;
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
@@ -120,7 +129,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const entity = selected(); inspector.hidden = !state?.writable || !entity;
     if (inspector.hidden) { inspector.replaceChildren(); inspectorKey = ''; return; }
     const columns = state.snapshot.columns.filter(c => !c.deletedAt);
-    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}`;
+    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}:${entity.memoryDate}:${entity.garden}`;
     if (key === inspectorKey) {
       const select = inspector.querySelector('select'); if (select && document.activeElement !== select) select.value = entity.columnId || '';
       for (const field of ['width', 'height']) { const input = inspector.querySelector(`[name=${field}]`); if (input && document.activeElement !== input) input.value = Math.round(entity[field]); }
@@ -151,8 +160,14 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       const known = document.createElement('datalist'); known.id = input.getAttribute('list');
       for (const label of allLabels()) if (!entity.labels?.includes(label)) { const option = document.createElement('option'); option.value = label; known.append(option); }
       labels.append(input, known, button('Thêm nhãn', 'label-add', true));
-      if (!entity.labels?.includes(MEMORY)) labels.append(button(`+ ${MEMORY}`, 'label-memory', true));
+      if (!isMemory(entity.labels)) labels.append(button(`+ ${MEMORY}`, 'label-memory', true));
       inspector.append(labels); if (typing) input.focus();
+      if (isMemory(entity.labels)) {
+        const memory = element('div', 'notes-memory-edit'), dateLabel = element('label', '', 'Ngày kỷ niệm'), date = document.createElement('input');
+        date.type = 'date'; date.name = 'memoryDate'; date.value = entity.memoryDate || ''; date.dataset.action = 'note-memory-date'; date.dataset.mutation = ''; dateLabel.append(date);
+        const garden = button(entity.garden ? 'Nhổ khỏi vườn' : '🌱 Trồng vào vườn', 'note-garden', true); garden.setAttribute('aria-pressed', String(entity.garden));
+        memory.append(dateLabel, garden); inspector.append(memory);
+      }
     } else inspector.append(button('Đổi tên cột', 'column-rename', true));
     inspector.append(button('Bỏ vào thùng rác', 'object-trash', true));
   }
@@ -183,6 +198,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     boardViewLabel.hidden = !board || !board.visibility;
     if (board?.visibility && document.activeElement !== boardView) { options(boardView, author ? [state.accountId, 'shared', 'public'] : ['shared', 'public'], board.visibility); boardView.disabled = !author; boardView.title = author ? '' : `Chỉ ${authors[board.authorId] || 'người tạo bảng'} đổi được`; }
     const used = allLabels().filter(label => label !== MEMORY || [...records.values()].some(r => r.entity.labels?.includes(MEMORY)));
+    journalLabel.hidden = !board || (!author && board.noteDefault !== 'private');
+    journal.checked = board?.noteDefault === 'private'; journal.disabled = !author; journalLabel.title = author ? '' : `Chỉ ${authors[board?.authorId] || 'người tạo bảng'} đổi được`;
     if (filter && !used.includes(filter)) { filter = ''; for (const record of records.values()) record.node.classList.remove('is-filtered'); }
     const key = JSON.stringify([filter, used]);
     labelFilter.hidden = !used.length;
@@ -225,7 +242,9 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       record.node.querySelector('.note-resize').toggleAttribute('data-mutation', state.writable);
       if (kind === 'note') {
         const view = effectiveView(state.snapshot?.visibility, entity.visibility);
-        const badges = [[viewLabel(view), `note-view is-${view === 'public' || view === 'shared' ? view : 'private'}`], ...(entity.labels || []).map(label => [label, label === MEMORY ? 'note-label is-memory' : 'note-label'])];
+        const memory = isMemory(entity.labels);
+        const badges = [[viewLabel(view), `note-view is-${view === 'public' || view === 'shared' ? view : 'private'}`], ...(entity.labels || []).map(label => [label, isMemory([label]) ? 'note-label is-memory' : 'note-label']),
+          ...(memory && entity.memoryDate ? [[dayLabel(entity.memoryDate), 'note-label is-memory-date']] : []), ...(memory && entity.garden ? [['🌱 Trong vườn', 'note-label is-garden']] : [])];
         const badgeKey = JSON.stringify(badges);
         if (record.badgeKey !== badgeKey) { record.badgeKey = badgeKey; record.badges.replaceChildren(...badges.map(([text, className]) => element('span', className, text))); }
         record.node.classList.toggle('is-filtered', !!filter && !entity.labels?.includes(filter));
@@ -244,10 +263,19 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     outside.style.order = columns.length * 1e5; outside.hidden = !loose;
     renderViews();
     if (selection && !records.has(selection.id)) selection = null;
-    empty.textContent = state.snapshot?.deletedAt ? 'Bảng đang ở thùng rác. Khôi phục bảng để xem nội dung.' : state.snapshot ? 'Một mặt giấy trống, dành cho những điều của chúng mình.' : 'Đang mở mặt giấy…';
+    const otherJournal = state.snapshot?.noteDefault === 'private' && state.snapshot.authorId !== state.accountId;
+    empty.textContent = state.snapshot?.deletedAt ? 'Bảng đang ở thùng rác. Khôi phục bảng để xem nội dung.' : otherJournal ? `${authors[state.snapshot.authorId] || 'Người viết'} chưa chia sẻ trang nào.` : state.snapshot ? 'Một mặt giấy trống, dành cho những điều của chúng mình.' : 'Đang mở mặt giấy…';
     if (!records.size) viewport.append(empty); else empty.remove();
     if (follow && awaitContent && records.size) fit();
+    if (focusNoteId && records.has(focusNoteId)) { reveal(records.get(focusNoteId)); focusNoteId = null; }
     updateInspector();
+  }
+  // Centre the note (list: scroll to it) and highlight it for a moment.
+  function reveal(record) {
+    const w = viewport.clientWidth, h = viewport.clientHeight, e = record.entity;
+    if (listing()) record.node.scrollIntoView({ block: 'center' });
+    else if (w && h) { awaitContent = false; camera.scale = clamp(Math.min(1, (w - 48) / e.width, (h - 48) / e.height), .2, 1); camera.x = w / 2 - (e.x + e.width / 2) * camera.scale; camera.y = h / 2 - (e.y + e.height / 2) * camera.scale; applyCamera(true); }
+    record.node.classList.add('is-focused'); setTimeout(() => { if (alive()) record.node.classList.remove('is-focused'); }, 4000);
   }
   async function mutate(type, payload) { if (!state.writable || !alive()) return; return client.command({type,payload}); }
   function geometry(kind, entity, patch, move = false) {
@@ -285,7 +313,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const handle = event.target.closest('[data-drag]'); if (handle && handle.dataset.drag !== 'resize' && state.writable) { const node = handle.closest('.paper-note,.paper-column'); select(handle.dataset.drag, node.dataset.noteId || node.dataset.columnId); }
     const control = event.target.closest('[data-action]'); if (!control) return;
     const action = control.dataset.action, entity = selected();
-    if (!['zoom-in', 'zoom-out', 'undo', 'redo', 'more', 'board-visibility'].includes(action)) setMore(false);
+    if (!['zoom-in', 'zoom-out', 'undo', 'redo', 'more', 'board-visibility', 'board-note-default'].includes(action)) setMore(false);
     run(async () => {
       if (action === 'view-toggle') { setMode(!listMode); if (!listMode) applyCamera(); return; }
       if (action === 'note-locate') { const record = records.get(control.closest('.paper-note').dataset.noteId); setMode(false); focusOn(record.entity); if (state.writable) select('note', record.entity.id); return; }
@@ -299,7 +327,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (action === 'save') await client.flush();
       if (action === 'undo') await client.undo();
       if (action === 'redo') await client.redo();
-      if (action === 'note-new') {const point=creationPoint(),id=crypto.randomUUID();await mutate('note.create',{id,columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0]});if(listing())records.get(id)?.node.scrollIntoView({block:'nearest'});}
+      if (action === 'note-new') {const point=creationPoint(),id=crypto.randomUUID();await mutate('note.create',{id,columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0],...(state.snapshot?.noteDefault==='private'?{visibility:state.accountId}:{})});if(listing())records.get(id)?.node.scrollIntoView({block:'nearest'});}
       if (action === 'column-new') askName(root,{title:'Tên cột mới',signal:controller.signal,onSubmit:name=>run(()=>{const p=creationPoint();return mutate('column.create',{id:crypto.randomUUID(),name,x:p.x-160,y:p.y-110,width:360,height:480});})});
       if (action === 'board-rename') askName(root,{title:'Đổi tên bảng',value:state.snapshot?.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('board.rename',{name}))});
       if (action === 'board-trash') await mutate('board.trash',{});
@@ -309,6 +337,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
       if (action === 'label-remove') await mutate('note.update',{id:entity.id,labels:entity.labels.filter(label=>label!==control.dataset.label)});
       if (action === 'label-memory') await addLabel(entity, MEMORY);
+      if (action === 'note-garden') await mutate('note.update',{id:entity.id,garden:!entity.garden});
       if (action === 'label-add') { const input = inspector.querySelector('[name=label]'); await addLabel(entity, input.value); }
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});
       if (action === 'column-rename') askName(root,{title:'Đổi tên cột',value:entity.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('column.update',{id:entity.id,name}))});
@@ -319,13 +348,16 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     // Reuse the spelling already on the board, so "kỷ niệm" and "Kỷ niệm" stay one label.
     const known = allLabels().find(other => other.toLocaleLowerCase('vi') === label.toLocaleLowerCase('vi')) || label;
     if (entity.labels.some(other => other.toLocaleLowerCase('vi') === known.toLocaleLowerCase('vi'))) return;
-    await mutate('note.update', { id: entity.id, labels: [...entity.labels, known] });
+    // A new memory is dated today unless it kept a date from before.
+    await mutate('note.update', { id: entity.id, labels: [...entity.labels, known], ...(isMemory([known]) && !entity.memoryDate ? { memoryDate: today() } : {}) });
   }
   inspector.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.name === 'label') { event.preventDefault(); const entity = selected(); if (entity && state.writable) run(() => addLabel(entity, event.target.value)); } }, events);
   boardView.addEventListener('change', () => { if (boardView.value) run(() => mutate('board.share', { visibility: boardView.value })); }, events);
+  journal.addEventListener('change', () => run(() => mutate('board.update', { noteDefault: journal.checked ? 'private' : null })), events);
   for (const select of [labelFilter, dockFilter]) select.addEventListener('change', () => { filter = select.value; filterKey = ''; renderViews(); for (const record of records.values()) if (record.kind === 'note') record.node.classList.toggle('is-filtered', !!filter && !record.entity.labels?.includes(filter)); }, events);
   inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target, columnId=input.value || null;
     if(input.dataset.action==='note-visibility'){run(()=>mutate('note.update',{id:entity.id,visibility:input.value || null}));return;}
+    if(input.dataset.action==='note-memory-date'){if(input.value&&input.validity.valid)run(()=>mutate('note.update',{id:entity.id,memoryDate:input.value}));return;}
     run(()=>input.dataset.action==='object-column' ? geometry('note',entity,current=>({columnId,x:current.x,y:current.y}),true)
       : input.dataset.action==='object-size' && Number.isFinite(input.valueAsNumber) ? geometry(selection.kind,entity,{[input.name]:clampPaperSize(selection.kind,input.valueAsNumber)}) : undefined);
   },events);
