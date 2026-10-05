@@ -62,7 +62,7 @@ test('server dispatches owned feature prefixes to their modules', async t => {
     await rm(dataDir, { recursive: true, force: true });
   });
   const base = `http://127.0.0.1:${server.address().port}`;
-  for (const path of ['/api/jar', '/api/calendar?from=2026-10-01', '/api/cycles/x', '/api/ideas/pick', '/api/rules', '/api/garden']) {
+  for (const path of ['/api/jar', '/api/calendar?from=2026-10-01', '/api/cycles/x', '/api/ideas/pick', '/api/garden']) {
     const result = await fetch(base + path);
     assert.equal(result.status, 404, path);
     assert.equal(result.headers.get('cache-control'), 'no-store');

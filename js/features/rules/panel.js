@@ -36,7 +36,7 @@ export function mountRulesPanel(container, { signal } = {}) {
       el('p', { className: 'rules-hint', textContent: 'Một bản chỉ có hiệu lực khi cả hai cùng đồng ý. Bản cũ vẫn áp dụng tới khi bản mới được cả hai đồng ý.' })]),
     status, list,
   ]);
-  container.append(root);
+  container.replaceChildren(root);
 
   const announce = text => { status.textContent = text; };
   const find = id => rules.find(rule => rule.id === id);
