@@ -25,7 +25,7 @@ js/tabs.js xuất mảng tabs. Thứ tự mảng là thứ tự menu; load khôn
 
 resolveTab(tabs, hash) trong js/routing.js là hàm thuần: chọn ID được bật; fallback garden được bật, rồi mục bật đầu tiên; trả null nếu tất cả tắt. Không sửa hash, DOM hoặc lịch sử bên trong resolver. App chuẩn hóa hash bằng history.replaceState.
 
-Các ID hiện có theo thứ tự menu: garden, dashboard, jar (Hũ), calendar (Lịch), seminar (Gợi ý chủ đề seminar), activity (Hoạt động chung), minhle, haiyen. Bốn tab jar/calendar/seminar/activity đặt requiresAuth: true; hiện là stub hiện "Đang làm" cho tới khi phần sở hữu làm thật (xem Feature APIs). Dashboard công khai, tự ẩn thao tác ghi khi chưa đăng nhập. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
+Các ID hiện có theo thứ tự menu: garden, dashboard, jar (Hũ), calendar (Lịch), seminar (Gợi ý chủ đề seminar), activity (Hoạt động chung), minhle, haiyen. Bốn tab jar/calendar/seminar/activity đặt requiresAuth: true; module là js/tabs/<id>.js, phần thân nằm trong js/features/jar, js/features/calendar và js/features/roulette (seminar và activity dùng chung `mountRoulette(container, { kind, signal })`). "Nội quy" không phải mục registry: là tab giả ID `rules` trong dải tab bảng của dashboard, chỉ hiện khi đã đăng nhập, luôn đứng cuối (xem Feature APIs). Dashboard công khai, tự ẩn thao tác ghi khi chưa đăng nhập. Thêm/tắt tab chỉ đổi registry cùng module tương ứng. Bỏ tab không đồng nghĩa xóa dữ liệu hoặc asset dùng chung. requiresAuth bảo vệ trải nghiệm UI, API riêng vẫn phải kiểm tra session ở server.
 
 ## Tab render và cleanup
 
@@ -70,6 +70,7 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
 | js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
 | js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
+| js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar và /api/ideas/sessions) |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
 | scripts/build.js | Tạo dist/ và thay cấu hình API public |
@@ -118,9 +119,9 @@ Route trong backend/notes-api.js (`notesRoute`). Mọi lỗi trả JSON `{ error
 | GET/HEAD /api/note-assets/:id/file\|poster | Khách: chỉ asset đang được chèn vào note còn hoạt động; session: mọi asset | Stream file, `X-Content-Type-Options: nosniff` |
 | GET/HEAD /api/note-assets/previews/:id/file\|poster | Session đã tạo preview | Bản chuyển đổi chờ xác nhận, hết hạn sau 5 phút |
 
-Command `type`: `board.create|rename|share|trash|restore`, `column.create|update|trash|restore`, `note.create|update|move|trash|restore`, `decoration.add|update|remove`, `command.undo`. Decoration (sticker) nằm trên bảng theo tọa độ bảng: `{ id, boardId, noteId|null, columnId|null, assetId, x, y, width, height, rotation, z }`; `noteId`/`columnId` (tối đa một) là thứ sticker đi theo: kéo note/cột thì sticker gắn vào dời theo, bỏ note/cột vào thùng rác thì sticker ẩn theo; `null` cả hai là sticker tự do. `decoration.add|update` nhận `noteId`/`columnId` tùy chọn; client gắn theo note trên cùng chứa tâm sticker khi thả, rồi tới cột. Lease note/cột tranh chấp với sticker gắn vào nó. Ai xem: board có `authorId` và `visibility` (`public`, `shared` hoặc account ID); `board.create` nhận `visibility` tùy chọn (mặc định account tạo), `board.share { visibility }` chỉ cho tác giả và chỉ `public|shared|<chính mình>`. Note có `visibility` (`null` theo bảng, `shared` hoặc account tác giả; chỉ tác giả đổi) và `labels` (≤12 chuỗi 1–32 ký tự sau khi trim/gộp khoảng trắng, không trùng không phân biệt hoa/thường), qua `note.create|update`. Người xem thấy note khi cả bảng lẫn note cho phép (`canSee` trong js/notes/model.js); sticker theo note thì theo note. Mọi đọc, SSE (`projection`, `text-update`, presence editors), text, lease và command lọc theo session; entity bị ẩn trả 404 `not_found`. Snapshot notes ở `formatVersion` 5 (bản 4 thêm: board Công khai với tác giả là người chạy `board.create` đầu tiên, note theo bảng, chưa nhãn); bản 2 (sticker theo note, tọa độ trong note) giữ note và đổi sang tọa độ bảng, bản 3 gắn theo vị trí tâm; lịch sử undo cũ bị bỏ. Server lấy tác giả từ session, từ chối field lạ; đổi geometry cần lease của chính client. Lặp lại cùng operationId và nội dung trả kết quả gốc; khác nội dung trả 409 `operation_conflict`.
+Command `type`: `board.create|rename|share|update|trash|restore`, `column.create|update|trash|restore`, `note.create|update|move|trash|restore`, `decoration.add|update|remove`, `command.undo`. Decoration (sticker) nằm trên bảng theo tọa độ bảng: `{ id, boardId, noteId|null, columnId|null, assetId, x, y, width, height, rotation, z }`; `noteId`/`columnId` (tối đa một) là thứ sticker đi theo: kéo note/cột thì sticker gắn vào dời theo, bỏ note/cột vào thùng rác thì sticker ẩn theo; `null` cả hai là sticker tự do. `decoration.add|update` nhận `noteId`/`columnId` tùy chọn; client gắn theo note trên cùng chứa tâm sticker khi thả, rồi tới cột. Lease note/cột tranh chấp với sticker gắn vào nó. Ai xem: board có `authorId` và `visibility` (`public`, `shared` hoặc account ID); `board.create` nhận `visibility` tùy chọn (mặc định account tạo), `board.share { visibility }` chỉ cho tác giả và chỉ `public|shared|<chính mình>`. Bảng nhật ký: board có `noteDefault` (`null` hoặc `"private"`, khác 400 `invalid_note_default`); `board.create` nhận `noteDefault` tùy chọn, `board.update { noteDefault }` chỉ cho tác giả (khác 403 `forbidden`). Server không tự áp `noteDefault`: board.js thêm `visibility: <account đang ghi>` vào `note.create` khi bảng là nhật ký. Note có `visibility` (`null` theo bảng, `shared` hoặc account tác giả; chỉ tác giả đổi) và `labels` (≤12 chuỗi 1–32 ký tự sau khi trim/gộp khoảng trắng, không trùng không phân biệt hoa/thường), qua `note.create|update`. Note còn có `memoryDate` (`null` hoặc ngày `YYYY-MM-DD` có thật, sai 400 `invalid_memory_date`) và `garden` (boolean, mặc định `false`), cùng qua `note.create|update`; ai xem được note thì sửa được, như nhãn. Note là kỷ niệm khi có nhãn "Kỷ niệm" (`MEMORY_LABEL`, `isMemory(labels)` trong js/notes/model.js, so không phân biệt hoa/thường); `garden: true` chỉ hợp lệ khi note là kỷ niệm, khác 400 `invalid_garden`. `note.update` bỏ nhãn Kỷ niệm mà không gửi `garden` thì server tự đặt `garden: false`; gửi kèm `garden: true` thì 400. UI gắn nhãn Kỷ niệm cho note chưa có ngày thì gửi kèm `memoryDate` hôm nay. Người xem thấy note khi cả bảng lẫn note cho phép (`canSee` trong js/notes/model.js); sticker theo note thì theo note. Mọi đọc, SSE (`projection`, `text-update`, presence editors), text, lease và command lọc theo session; entity bị ẩn trả 404 `not_found`. Snapshot notes ở `formatVersion` 6. Từ bản 5: board thêm `noteDefault: null`, note thêm `memoryDate: null`, `garden: false`, bản ghi undo cũng được bổ sung nên lịch sử undo giữ nguyên. Từ bản 4 trở xuống còn qua bước bản 5: board Công khai với tác giả là người chạy `board.create` đầu tiên, note theo bảng, chưa nhãn, lịch sử undo cũ bị bỏ; bản 2 (sticker theo note, tọa độ trong note) giữ note và đổi sang tọa độ bảng, bản 3 gắn theo vị trí tâm. Server lấy tác giả từ session, từ chối field lạ; đổi geometry cần lease của chính client. Lặp lại cùng operationId và nội dung trả kết quả gốc; khác nội dung trả 409 `operation_conflict`.
 
-Mã trạng thái chính: 400 dữ liệu sai; 401 `unauthorized`; 403 `forbidden`/`account_mismatch`; 404 `not_found`; 408 `media_timeout`; 409 `lease_conflict`, `lease_required`, `deleted`, `undo_conflict`, `wrong_board`, `preview_required`, `presence_conflict`; 413 `body_too_large`/`media_too_large`; 415 sai Content-Type; 429 `stream_limit`, `lease_limit`, `presence_limit`, `media_busy`; 503 `storage_unavailable`, `durability_uncertain` (đã có thể ghi, thử lại cùng operationId), `store_closed`, `media_unavailable` (thiếu FFmpeg/ffprobe). SSE gửi `retry: 1000`, heartbeat 3 giây và header `X-Accel-Buffering: no`; mỗi session tối đa 16 stream, toàn server 128.
+Mã trạng thái chính: 400 dữ liệu sai (ví dụ `invalid_fields`, `invalid_labels`, `invalid_note_default`, `invalid_memory_date`, `invalid_garden`); 401 `unauthorized`; 403 `forbidden`/`account_mismatch`; 404 `not_found`; 408 `media_timeout`; 409 `lease_conflict`, `lease_required`, `deleted`, `undo_conflict`, `wrong_board`, `preview_required`, `presence_conflict`; 413 `body_too_large`/`media_too_large`; 415 sai Content-Type; 429 `stream_limit`, `lease_limit`, `presence_limit`, `media_busy`; 503 `storage_unavailable`, `durability_uncertain` (đã có thể ghi, thử lại cùng operationId), `store_closed`, `media_unavailable` (thiếu FFmpeg/ffprobe). SSE gửi `retry: 1000`, heartbeat 3 giây và header `X-Accel-Buffering: no`; mỗi session tối đa 16 stream, toàn server 128.
 
 ## Feature APIs
 
@@ -136,30 +137,101 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/rules | backend/rules-api.js | E Nội quy |
 | /api/garden | backend/garden-api.js | G Hoa kỷ niệm |
 
-Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Stub hiện trả 404 `{ error: "Not implemented", code: "not_implemented" }` cho mọi path thuộc prefix.
+Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). `/api/garden` vẫn là stub: trả 404 `{ error: "Not implemented", code: "not_implemented" }` cho mọi path thuộc prefix.
 
 Hợp đồng chung cho mọi feature API:
 
 - Lỗi là JSON `{ error, code }`; response luôn có `Cache-Control: no-store`.
 - Đọc cần session thành viên (401 `unauthorized`), trừ khi phần đó ghi rõ là công khai (`/api/garden` trả danh sách rỗng cho khách).
-- Ghi (POST/PUT) cần Origin allowlist và `X-Requested-With: Homie` (403 `forbidden`), rồi session (401). Account lấy từ session, không bao giờ từ body.
-- Lệnh tạo nhận `requestId` (UUID): gửi lại cùng requestId trả kết quả gốc, không tạo bản ghi trùng. Lệnh sửa nhận `version`; lệch thì 409 `version_conflict`.
+- Ghi (POST/PUT) cần Origin allowlist và `X-Requested-With: Homie` (403 `forbidden`), rồi session (401). Account lấy từ session, không bao giờ từ body. Body ghi là JSON object (`Content-Type: application/json`, ≤32 KiB), kể cả lệnh không cần field nào (gửi `{}`).
+- Lệnh tạo nhận `requestId` (UUID): gửi lại cùng requestId trả kết quả gốc, không tạo bản ghi trùng. Lệnh sửa nhận `version`; lệch thì 409 `version_conflict`. Ngoại lệ ghi ở từng phần bên dưới.
 - Nội dung riêng tư không lộ ra: thứ người xem không được thấy trả 404 như không tồn tại, không có số đếm ẩn, không log nội dung.
-- Thời điểm lưu ISO UTC; ngày địa phương tính theo `Asia/Ho_Chi_Minh`.
+- Thời điểm lưu ISO UTC; ngày địa phương tính theo `Asia/Ho_Chi_Minh`. Ngày `YYYY-MM-DD` phải là ngày có thật (`isDate`).
+- Method không hỗ trợ tại `/api/jar` và method ngoài GET/POST/PUT ở mọi path `/api/ideas` trả 405 `method_not_allowed` (không kèm Allow); mọi path hoặc method không khớp khác, kể cả ở calendar, cycles và rules, trả 404 `not_found`. HEAD chỉ nhận ở `/api/calendar`, `/api/cycles` và `/api/rules`; HEAD vào `/api/jar` và `/api/ideas` trả 405.
+
+### Hũ: /api/jar
+
+Document `jar`: `{ records, requests }`. Record `{ id, kind: "kiss"|"sorry"|"mood", ownerId, occurredAt, visibility: "shared"|"private", version, archivedAt? }`; mood thêm `valence` (−1…1), `energy` (0…1), `label` (trim, ≤80 ký tự) và `note` (≤1000). Response luôn thêm `localDate` và `time` (`HH:MM`) theo giờ Việt Nam.
+
+| Request | Kết quả |
+| --- | --- |
+| GET /api/jar[?from=&to=][&kind=] | `{ items }` viên còn trong bình mà người xem được thấy, tăng dần theo `occurredAt` rồi `id`. Không có from/to là "Mọi lúc"; có thì cần cả hai (`parseRange`, lọc theo `localDate`). `kind` lạ 400 `invalid_kind` |
+| POST /api/jar | `{ requestId, kind, valence?, energy?, label?, note?, visibility? }` → 201 `{ record }`. requestId (chữ thường) chính là `id`: gửi lại trả 200 bản đã lưu, trùng nhưng khác chủ hoặc kind 409 `request_conflict`. Nụ hôn/xin lỗi luôn `shared`, field mood bị bỏ qua; mood cần `valence` và `energy`, `visibility` mặc định `private` |
+| PUT /api/jar/:id | Chỉ chủ một viên cảm xúc: `{ version, valence?, energy?, label?, note?, visibility? }` → `{ record }`. Thiếu version 400 `invalid_version`; viên không phải mood 400 `not_editable`; viên đã lấy ra 404 |
+| POST /api/jar/:id/archive, /restore | Chủ viên lấy ra khỏi bình (`archivedAt`) hoặc thả lại → `{ record }`. Idempotent; `version` tùy chọn (có thì phải khớp) để Hoàn tác không xung đột |
+
+Nụ hôn và lời xin lỗi luôn chung. Cảm xúc `private` chỉ chủ thấy: GET không bao giờ trả cảm xúc riêng của người kia, kể cả khi Lịch đọc /api/jar. Viên của người kia, chung hay riêng, trả 404 với PUT/archive/restore như không tồn tại. Viên đã lấy ra không còn trong GET. Mã khác: 400 `invalid_body`, `invalid_request_id`, `invalid_mood`, `invalid_visibility`, `invalid_range`; 409 `version_conflict`.
+
+### Lịch: /api/calendar và /api/cycles
+
+Document `calendar`: `{ events, cycles, requests }`. Dịp `{ id, authorId, title (trim, 1–120), date, kind: "occasion"|"anniversary"|"milestone", createdAt, updatedAt, version, archivedAt? }`. Kỳ `{ id, start, end: date|null, note (trim, ≤1000), createdAt, updatedAt, version, archivedAt? }`.
+
+| Request | Quyền | Kết quả |
+| --- | --- | --- |
+| GET/HEAD /api/calendar?from=&to= | Thành viên | `{ events, memories }`. from/to bắt buộc (≤400 ngày). `events`: dịp chưa lưu trữ trong khoảng, theo `date` rồi `createdAt`. `memories`: `listMemories(notes, viewer, { from, to })`, nên chỉ có kỷ niệm có `memoryDate` trong khoảng và note người xem được thấy |
+| POST /api/calendar/events | Thành viên | `{ requestId, title, date, kind }` → 201 `{ event }`; id do server tạo; requestId lặp (theo account) trả bản gốc, vẫn 201 |
+| PUT /api/calendar/events/:id | Tác giả | `{ version, title?, date?, kind? }` → `{ event }` |
+| POST /api/calendar/events/:id/archive | Tác giả | `{ version }` → `{ event }` có `archivedAt` |
+| GET/HEAD /api/cycles?from=&to= | haiyen | `{ cycles }` chưa lưu trữ giao với khoảng (`end: null` là đang diễn ra, giao mọi khoảng từ `start`), mới nhất trước |
+| POST /api/cycles | haiyen | `{ requestId, start, end?, note? }` → 201 `{ cycle }` |
+| PUT /api/cycles/:id | haiyen | `{ version, start?, end?, note? }` → `{ cycle }`; `end` là `null` hoặc `""` thì kỳ đang diễn ra |
+| POST /api/cycles/:id/end | haiyen | `{ version, date? }` → `{ cycle }`; `date` mặc định hôm nay theo giờ Việt Nam |
+| POST /api/cycles/:id/archive | haiyen | `{ version }` → `{ cycle }` |
+
+Dịp cả hai cùng thấy; chỉ tác giả sửa hoặc lưu trữ (403 `not_author`); dịp không có hoặc đã lưu trữ 404. Mọi lệnh sửa cần `version` khớp; thiếu hay lệch đều 409 `version_conflict`. `end`/ngày kết thúc trước `start` 400 `invalid_range`. Field sai, kể cả requestId không phải UUID, 400 `invalid_body`. Kỳ chỉ thuộc Hải Yến (`CYCLE_OWNER`): /api/cycles kiểm tra danh tính trước path (khách 401; ghi thiếu Origin/header 403), rồi mọi method và path với minhle đều 404 `not_found`, nên không lộ kỳ nào tồn tại. Client chỉ gọi /api/cycles khi người dùng là haiyen.
+
+### Seminar và Hoạt động chung: /api/ideas
+
+Document `ideas`: `{ ideas, sessions, rounds: { seminar, activity }, requests }`. Idea `{ id, kind: "seminar"|"activity", authorId, title (trim, 1–120), desc (≤2000), category, minutes (1–1440 hoặc null), x, y, color, createdAt, updatedAt, version, archivedAt? }`. Seminar luôn có category `Học - Seminar`; activity chọn một trong `Trò chuyện`, `Sáng tạo`, `Khám phá`, `Chơi`, `Tự làm`, `Tụi mình`, `Nhảm nhí`. Mỗi kind có một lượt chung `{ pick: { id, ideaId, byId, at } | null, skipped, relax }`. Session (lần đã làm) `{ id, kind, ideaId, byId, date, text (≤1000), ratings: { <account>: 1–5 }, at }`, response thêm `title` và `archived` của idea.
+
+View trả về bởi GET và các lệnh lượt: `{ ideas, pick, eligibleCount, exhausted: { recent, skipped }, relax }`. `ideas` là mọi idea chưa lưu trữ của kind (mọi category) kèm `recent` (có session trong 14 ngày gần nhất tính cả hôm nay, hoặc ngày sau hôm nay). Có thể bốc: chưa lưu trữ, chưa bỏ qua trong lượt, không `recent` trừ khi `relax`; `category` tùy chọn thu hẹp `eligibleCount`/`exhausted` và lượt bốc.
+
+| Request | Kết quả |
+| --- | --- |
+| GET /api/ideas?kind=[&category=] | View; thiếu/sai kind 400 `invalid_kind` |
+| GET /api/ideas/sessions[?kind=][&from=&to=][&cursor=][&limit=] | `{ items, nextCursor }` mới nhất trước (`date`, `at`, `id`); limit 1–100, mặc định 10; `cursor` là id cuối trang trước (lạ 400 `invalid_cursor`) |
+| POST /api/ideas | `{ requestId, kind, title, desc?, category?, minutes? }` → 201 `{ idea }`; server đặt x/y vào ô trống đầu tiên của lưới 3 cột và màu giấy |
+| PUT /api/ideas/:id | Tác giả: `{ version, title, desc?, category?, minutes? }` → `{ idea }`; thay toàn bộ field, thiếu `desc`/`minutes` là xoá |
+| POST /api/ideas/:id/archive | Tác giả: `{ version }` → `{ idea }`; ra khỏi kho và lượt (pick đang là nó thì bỏ pick), lịch sử giữ |
+| PUT /api/ideas/:id/position | Ai cũng được: `{ x, y }` → `{ idea }`; kẹp 0–4000, làm tròn, không đổi version |
+| POST /api/ideas/pick | `{ requestId, kind, category? }` → View. Đã có pick chung thì giữ nguyên; không thì bốc đều ngẫu nhiên, hết 409 `nothing_to_pick`. requestId lặp không bốc lại |
+| POST /api/ideas/skip | `{ kind, pickId, category? }` → View; `pickId` khác pick hiện tại 409 `pick_changed` |
+| POST /api/ideas/reset-skips, /relax | `{ kind, category? }` → View; xoá danh sách bỏ qua / cho bốc cả mục vừa làm tới hết lượt |
+| POST /api/ideas/done | `{ requestId, kind, pickId, date, text?, rating? }` → 201 `{ session }`; `date` không sau hôm nay (400 `invalid_date`); mở lượt mới (hết skip và relax) |
+| PUT /api/ideas/sessions/:id/rating | `{ rating }` (1–5) → `{ session }`; chỉ ghi điểm của chính người gọi |
+
+Hai thành viên thấy mọi idea và session; chỉ tác giả sửa hoặc lưu trữ idea (403 `not_author`); idea không có hoặc đã lưu trữ 404. Di chuyển, skip, reset-skips, relax và chấm điểm không nhận version. Mã khác: 400 `invalid_body`, `invalid_request_id`, `invalid_title`, `invalid_desc`, `invalid_category`, `invalid_minutes`, `invalid_rating`, `invalid_version`, `invalid_position`, `invalid_text`, `invalid_limit`, `invalid_range`; 409 `version_conflict`.
+
+### Nội quy: /api/rules
+
+Document `rules`: `{ rules, requests }`. Rule `{ id, revisions: [{ n, title (1–120), text (1–3000), reason (≤500, rỗng ở bản đầu), byId, at }], activeN, proposedN, agreements: { <n>: [account] }, archiveRequestBy, archivedAt, version }`. Một bản chỉ có hiệu lực (`activeN`) khi cả hai đồng ý; bản cũ áp dụng tới lúc đó. Tối đa 200 rule và 200 bản mỗi rule (409 `too_many_rules`, `too_many_revisions`).
+
+| Request | Kết quả |
+| --- | --- |
+| GET/HEAD /api/rules | `{ rules }` mọi rule, kể cả đã lưu trữ (UI lọc `archivedAt`) |
+| POST /api/rules | `{ requestId, title, text }` → 201 `{ rule }`; bản 1 là đề xuất, người đề xuất tính đã đồng ý |
+| POST /api/rules/:id/revisions | `{ requestId, version, title, text, reason? }` → `{ rule }`; thay đề xuất đang chờ, rút đề nghị lưu trữ đang mở |
+| POST /api/rules/:id/agree | `{ requestId, version, n }`; `n` phải là `proposedN` (409 `stale_revision`); đủ hai người thì `activeN = n`, `proposedN = null` |
+| POST /api/rules/:id/archive-request | `{ requestId, version }`; đã có đề nghị 409 `archive_pending` |
+| POST /api/rules/:id/archive-confirm | `{ requestId, version }`; người còn lại xác nhận thì đặt `archivedAt`; chính người đề nghị 403 `needs_partner`; chưa có đề nghị 409 `archive_not_requested` |
+| POST /api/rules/:id/archive-cancel | `{ requestId, version }`; ai cũng rút hoặc từ chối được; chưa có đề nghị 409 `archive_not_requested` |
+
+Hai thành viên thấy mọi rule. Mọi POST cần requestId (400 `invalid_request_id`); lặp requestId (theo account) không chạy lại mà trả trạng thái hiện tại của rule đã ghi. Lệnh trên rule cần `version` nguyên (400 `invalid_version`) và khớp (409 `version_conflict`); rule đã lưu trữ 409 `archived`; mỗi lệnh thành công tăng version. `:id` không phải UUID, action lạ, method hoặc path khác 404. Chữ sai 400 `invalid_title`, `invalid_text`, `invalid_reason` với message tiếng Việt.
 
 Helper dùng chung (giữ signature; cần đổi thì báo F0/phiên chính):
 
 - `backend/http.js`: `httpError(status, code, message = code)`; `sendJson(res, status, body)`; `readJson(req, { limit = 32768 } = {}) -> Promise<any>` (415 `unsupported_media_type`, 413 `body_too_large`, 400 `invalid_body`); `requireMember(req, auth) -> 'minhle' | 'haiyen'` (401); `requireWrite(req, { auth, allowedOrigins }) -> account id` (403 rồi 401); `handleErrors(res, fn)` chạy `fn` và chuyển lỗi có `status` thành `{ error, code }`, lỗi khác thành 500 `internal_error` không kèm message.
-- `backend/doc-store.js`: `createDocStore({ key, dataDir, remote, empty, validate }) -> { read(), update(mutator), close() }`. Một JSON document mỗi domain: `remote.getDocument/putDocument(key)` (`public.documents`) hoặc `<dataDir>/<key>.json` (ghi file tạm rồi rename). `empty()` tạo document đầu tiên; `validate(saved)` trả document (có thể migrate) hoặc throw, khi đó store trả 503 `storage_unavailable` và không ghi đè dữ liệu cũ. `read()` trả bản sao. `update(mutator)` chạy tuần tự, `mutator(draft)` sửa bản nháp và trả kết quả; mutator throw thì document giữ nguyên; ghi lỗi thì 503 và lần sau đọc lại storage (phòng trường hợp ghi đã tới nhưng mất response). Sau `close()` thì 503 `store_closed`. `rememberRequest(doc, requestId, value)` / `recalled(doc, requestId)` lưu kết quả lệnh tạo trong `doc.requests` (500 requestId gần nhất); `validate` phải giữ field này.
+- `backend/doc-store.js`: `createDocStore({ key, dataDir, remote, empty, validate }) -> { read(), update(mutator), close() }`. Một JSON document mỗi domain: `remote.getDocument/putDocument(key)` (`public.documents`) hoặc `<dataDir>/<key>.json` (ghi file tạm rồi rename). `empty()` tạo document đầu tiên; `validate(saved)` trả document (có thể migrate) hoặc throw, khi đó store trả 503 `storage_unavailable` và không ghi đè dữ liệu cũ. `read()` trả bản sao. `update(mutator)` chạy tuần tự, `mutator(draft)` sửa bản nháp và trả kết quả; mutator throw thì document giữ nguyên; ghi lỗi thì 503 và lần sau đọc lại storage (phòng trường hợp ghi đã tới nhưng mất response). Sau `close()` thì 503 `store_closed`. `rememberRequest(doc, requestId, value)` / `recalled(doc, requestId)` lưu kết quả lệnh tạo trong `doc.requests` (500 requestId gần nhất); `validate` phải giữ field này. Calendar, ideas và rules dùng khoá `<account>:<requestId>`; jar không dùng `requests` mà lấy requestId làm id.
 - `backend/dates.js`: `ZONE`, `localDate(iso) -> 'YYYY-MM-DD'`, `localTime(iso) -> 'HH:MM'`, `isDate(value)`, `addDays(date, n)`, `parseRange(from, to, { maxDays = 400 } = {}) -> { from, to }` (khoảng gồm cả hai đầu; sai định dạng, ngược hoặc dài quá thì 400 `invalid_range`).
-- `backend/notes-memories.js` (phần D làm thật): `listMemories(store, viewerId, { from, to, gardenOnly } = {}) -> [{ noteId, boardId, title, memoryDate, garden }]`, đồng bộ, chỉ gồm note `viewerId` (account hoặc null cho khách) được xem, bỏ note trong thùng rác. Stub trả `[]`.
+- `backend/notes-memories.js`: `listMemories(store, viewerId, { from, to, gardenOnly = false } = {}) -> [{ noteId, boardId, title, memoryDate, garden }]`, đồng bộ. Kỷ niệm là note có nhãn Kỷ niệm (`isMemory`). Chỉ gồm note `viewerId` (account hoặc null cho khách) được xem qua `store.list` và `store.publicBoard`, nên bỏ note trong thùng rác hoặc thuộc cột/bảng trong thùng rác. `title` là dòng chữ không rỗng đầu tiên (≤120 ký tự). Có from hoặc to thì lọc theo `memoryDate` và bỏ kỷ niệm chưa có ngày; `gardenOnly` chỉ giữ `garden: true`. Sắp theo `memoryDate` (chưa có ngày đứng cuối) rồi `noteId`. Mỗi lần gọi giải mã text mọi note được xem.
 
 Frontend dùng chung:
 
-- `js/notes/rules-panel.js` (phần E): `mountRulesPanel(container, { signal }) -> cleanup`; dashboard mount nó thay mặt bảng khi chọn tab "Nội quy".
-- Mở một note từ tab khác: ghi `sessionStorage['homie-notes:focus'] = JSON.stringify({ boardId, noteId })` rồi đặt `location.hash = 'dashboard'`. Dashboard đọc giá trị một lần rồi xoá (phần D).
+- `js/notes/rules-panel.js` re-export `mountRulesPanel(container, { signal } = {}) -> cleanup` từ `js/features/rules/panel.js`. Dashboard import nó lúc cần và mount thay mặt bảng khi chọn tab giả `rules` ("Nội quy"); bảng vẫn chạy nếu module lỗi.
+- `js/features/jar/colors.js` (màu viên dùng chung Hũ và Lịch): `hash(id) -> number`; `moodColor(valence) -> string` CSS `hsl()` từ tím oải hương (−1) qua cát tới vàng mật ong (1); `ballColor({ id, kind, valence? })` (nụ hôn hồng, xin lỗi bạc hà, sắc độ cố định theo id; cảm xúc theo `moodColor`); `SAMPLE = { kiss, sorry, mood }`; `mini(kind, color, cls = '') -> <i>` viên kẹo trang trí `aria-hidden`, class `jar-skin k-<kind>`, màu qua biến `--c`, style trong `styles/jar.css`.
+- Mở một note từ tab khác: ghi `sessionStorage['homie-notes:focus'] = JSON.stringify({ boardId, noteId })` rồi đặt `location.hash = 'dashboard'` (Lịch làm vậy khi mở kỷ niệm). Dashboard đọc giá trị một lần khi render rồi xoá, bỏ qua nếu không phải hai chuỗi; chọn bảng đó thay bảng xem gần nhất và truyền `focusNoteId` cho `mountBoard`, bảng căn note vào giữa (chế độ danh sách thì cuộn tới) và highlight `is-focused` 4 giây khi note xuất hiện.
 - CSS có phạm vi theo phần: `styles/jar.css`, `styles/calendar.css`, `styles/roulette.css`, `styles/rules.css`, `styles/garden-flowers.css`, đã link trong `index.html`.
-- Browser test của từng phần đặt tên `tests/browser-feature-<phần>.mjs`; `npm run test:features` chạy lần lượt và bỏ qua khi chưa có file nào.
+- Browser test của từng phần đặt tên `tests/browser-feature-<phần>.mjs` (hiện có jar, calendar, roulette, rules); `npm run test:features` chạy lần lượt và bỏ qua khi chưa có file nào.
 
 ## Thay đổi interface
 
