@@ -36,3 +36,16 @@
 .note-asset-picker button{min-width:44px;min-height:44px}
 @media(max-width:600px){.notes-format-row{margin:8px 10px 0;gap:5px}.notes-format-button{padding:6px 9px}}
 @media(prefers-reduced-motion:reduce){.notes-format-button{transition:none}}
+/* Phone: the format row is one strip in the dock's place while writing (or with a sticker selected); colours open above it. */
+.notes-format-done{display:none}
+@media(max-width:600px){
+.notes-format-row{display:none;order:3}
+.notes-board.is-writing .notes-format-row,.notes-format-row.has-sticker{display:flex;flex-wrap:nowrap;margin:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));overflow-x:auto;border:0;border-top:1px solid #b9879744;border-radius:0;scrollbar-width:none}
+.notes-format-row::-webkit-scrollbar{display:none}
+.notes-format-row>*,.notes-sticker-tools>*{flex:none}
+.notes-sticker-tools{flex-wrap:nowrap}
+.notes-format-hint{display:none}
+.notes-format-done{display:inline-flex;position:sticky;right:0;background:#985a74;border-color:#985a74;color:#fff;font-weight:600;box-shadow:-10px 0 10px #fffaf4}
+.notes-format-done:hover:not(:disabled){background:#86506a}
+.notes-color-panel{position:fixed;left:0;right:0;bottom:calc(61px + env(safe-area-inset-bottom,0px));z-index:30;max-height:60dvh;overflow-y:auto;margin:0;padding:14px;border:0;border-radius:22px 22px 0 0;background:#fff8f2;box-shadow:0 -10px 30px -12px #3b2a3366}
+}

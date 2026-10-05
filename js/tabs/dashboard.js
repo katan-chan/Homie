@@ -11,11 +11,19 @@ function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value
 export function render(container, { signal }) {
   if (signal.aborted) return () => {};
   const root = document.createElement('section'); root.className = 'notes-dashboard';
-  root.innerHTML = '<div class="notes-heading"><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><div class="notes-catalog-bar"><div class="notes-tab-strip"><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div></div><div class="notes-catalog-actions"></div></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
+  root.innerHTML = '<div class="notes-heading"><p class="notes-eyebrow">NHỮNG ĐIỀU MUỐN GIỮ</p><h1>Góc ghi chép</h1></div><button type="button" class="notes-switcher" aria-expanded="false" aria-label="Chọn bảng"><span class="notes-switcher-name"></span><span class="notes-switcher-pill"></span><span class="notes-switcher-caret" aria-hidden="true">▾</span></button><div class="notes-catalog-bar"><div class="notes-tab-strip"><div class="notes-tabs" role="tablist" aria-label="Các bảng ghi chú"></div></div><div class="notes-catalog-actions"></div></div><p class="notes-catalog-status" role="status"></p><div class="notes-board-host"></div>';
   container.replaceChildren(root);
   const tabs = root.querySelector('.notes-tabs'), strip = root.querySelector('.notes-tab-strip'), actions = root.querySelector('.notes-catalog-actions'), status = root.querySelector('.notes-catalog-status'), host = root.querySelector('.notes-board-host');
   let disposed = false, boards = [], catalogLoaded = false, selectedId = stored(lastKey, null), account = getUser()?.id || null, pending = account ? stored(pendingKey(account), []) : [], current = null, generation = 0, explicitTrash = false, closeGlobalLibrary = null;
-  const tabButtons = new Map();
+  const tabButtons = new Map(), switcher = root.querySelector('.notes-switcher'), catalogBar = root.querySelector('.notes-catalog-bar');
+  // Phone (≤600px): the catalog bar (tabs and board actions) opens as a bottom sheet from the board switcher.
+  function setSwitching(open){if(root.classList.contains('is-switching')===open)return;root.classList.toggle('is-switching',open);switcher.setAttribute('aria-expanded',String(open));if(open)(tabs.querySelector('[aria-selected=true]')||catalogBar.querySelector('button'))?.focus();else if(catalogBar.contains(document.activeElement))switcher.focus();}
+  switcher.addEventListener('click',()=>setSwitching(!root.classList.contains('is-switching')),{signal});
+  catalogBar.addEventListener('click',event=>{if(event.target.closest('button'))setSwitching(false);},{signal});
+  root.addEventListener('click',event=>{if(event.target===root)setSwitching(false);},{signal});
+  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&root.classList.contains('is-switching')){event.preventDefault();setSwitching(false);}},{signal});
+  // Phone keyboards shrink the visual viewport, not the layout one; the phone dashboard follows it so the dock stays above the keyboard.
+  const visual=window.visualViewport,followScreen=()=>root.style.setProperty("--notes-vh",`${visual.height}px`);if(visual){followScreen();visual.addEventListener('resize',followScreen,{signal});addEventListener('resize',followScreen,{signal});}
   function alive() { return !disposed && !signal.aborted; }
   function button(label, action) { const control=document.createElement('button');control.type='button';control.className='notes-button';control.textContent=label;control.dataset.action=action;control.dataset.mutation='';return control; }
   function stopCurrent() {generation++;closeGlobalLibrary?.();closeGlobalLibrary=null;if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
@@ -26,6 +34,9 @@ export function render(container, { signal }) {
     const list=available();
     for(const [id,control] of tabButtons)if(!list.some(b=>b.id===id)){control.remove();tabButtons.delete(id);}
     for(const board of list){let control=tabButtons.get(board.id);if(!control){control=document.createElement('button');control.type='button';control.className='notes-board-tab';control.setAttribute('role','tab');control.dataset.boardTab=board.id;control.id=`board-tab-${board.id}`;control.setAttribute('aria-controls','notes-selected-board');control.onclick=()=>selectBoard(board.id);tabs.append(control);tabButtons.set(board.id,control);}control.textContent=board.name+(board.pending?' · Trên thiết bị':'');control.dataset.visibility=board.visibility==='public'||board.visibility==='shared'?board.visibility:board.visibility?'private':'';control.title=board.visibility==='public'?'Ai cũng xem được':board.visibility==='shared'?'Chỉ hai đứa mình':board.visibility?'Chỉ mình tôi':'';control.setAttribute('aria-selected',String(board.id===selectedId));control.tabIndex=board.id===selectedId?0:-1;}
+    const chosen=list.find(b=>b.id===selectedId),pill=root.querySelector('.notes-switcher-pill');
+    root.querySelector('.notes-switcher-name').textContent=chosen?chosen.name:explicitTrash?'Bảng đã xóa':list.length?'Chọn bảng':'Chưa có bảng';
+    pill.textContent=chosen?.visibility==='public'?'công khai':chosen?.visibility&&chosen.visibility!=='shared'?'riêng':'';pill.dataset.visibility=chosen?.visibility==='public'?'public':'';
     if(!current && !list.length){if(catalogLoaded&&account){if(!status.querySelector('.notes-empty-create'))status.replaceChildren(emptyCreate());}else{status.textContent=catalogLoaded?'Chưa có bảng nào. Đăng nhập để tạo bảng đầu tiên, hoặc ghé lại xem sau nhé. ':'Đang tìm những trang giấy…';if(catalogLoaded)status.append(loginButton());}}
   }
   async function selectBoard(id, { trash = false, force = false } = {}) {

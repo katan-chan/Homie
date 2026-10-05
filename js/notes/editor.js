@@ -61,6 +61,9 @@ function formatControls(row) {
   on(sizeInput,'change',()=>{const editor=current();if(!editor)return;const value=Number(sizeInput.value);if(sizeInput.value!==''&&Number.isFinite(value))setFontSize(editor,value);sizeInput.value=String(fontSizeOf(editor));});
   on(sizeInput,'keydown',event=>{if(event.key==='Enter'){event.preventDefault();sizeInput.dispatchEvent(new Event('change'));current()?.commands.focus();}});
   const imageButton = control('Chèn hình','Chèn hình vào ghi chú','image');
+  // Phone only (styles/notes-format.css): ends writing so the keyboard closes and the board dock returns.
+  const doneButton = make('button','notes-format-button notes-format-done','Xong'); doneButton.type = 'button'; doneButton.title = 'Xong, đóng bàn phím'; controls.push({node:doneButton,command:'done'});
+  on(doneButton,'click',()=>{closePanel(false);current()?.commands.blur();document.activeElement?.blur();});
   const panel = make('div','notes-color-panel'); panel.id = `notes-color-panel-${++panelSerial}`; panel.hidden = true; panel.setAttribute('role','group'); panel.setAttribute('aria-label','Chọn màu chữ');
   colorButton.setAttribute('aria-expanded','false'); colorButton.setAttribute('aria-controls',panel.id);
   const presets = make('div','notes-color-presets');
@@ -139,7 +142,7 @@ function formatControls(row) {
     activate(entry) {active = entry; refresh();},
     refresh(entry) {if (entry === active) refresh();},
   };
-  row.replaceChildren(hint,...buttons,sizeGroup,colorButton,imageButton,panel); render(); formatRows.set(row,tools);
+  row.replaceChildren(hint,...buttons,sizeGroup,colorButton,imageButton,doneButton,panel); render(); formatRows.set(row,tools);
   return tools;
 }
 const presenceSessions = new WeakMap();

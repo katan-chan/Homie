@@ -1,5 +1,6 @@
 import { clampPaperSize } from './model.js';
 import { mountBoardPresence } from './editor.js';
+import { authEvents, getUser } from '../auth.js';
 
 // Board owns geometry and camera. Editor/media hooks own their stable note slots.
 const colors = ['#fff0b8', '#f9dbe5', '#deead9', '#dce9f5', '#e8ddf1', '#fffaf0'];
@@ -64,15 +65,38 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   cameraTools.append(labelFilter, button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
   const hint = element('p', 'notes-hint', 'Kéo nền hoặc giữ chuột phải để di chuyển góc nhìn · Cuộn trên nền để zoom · Hai ngón để thu phóng trên điện thoại');
+  // Phone (≤600px, styles/notes.css): a bottom dock replaces the toolbar, the toolbar becomes the ⋯ sheet, and notes can be read as a list.
+  const phone = matchMedia('(max-width:600px)'), viewKey = `homie-notes:view:${client.boardId}`;
+  const dock = element('nav', 'notes-dock'); dock.setAttribute('aria-label', 'Công cụ bảng');
+  const dockNote = button('+ Note', 'note-new', true), dockColumn = button('+ Cột', 'column-new', true), viewToggle = button('', 'view-toggle'), more = button('⋯', 'more'), login = button('Đăng nhập để viết', 'login');
+  const dockFilter = document.createElement('select'); dockFilter.setAttribute('aria-label', 'Lọc theo nhãn');
+  const dockFilterLabel = element('label', 'notes-dock-filter', 'Lọc'); dockFilterLabel.append(dockFilter);
+  more.setAttribute('aria-label', 'Thêm công cụ'); more.setAttribute('aria-expanded', 'false'); toolbar.tabIndex = -1;
+  dock.append(dockNote, dockColumn, dockFilterLabel, viewToggle, more, login);
+  const outside = element('h3', 'notes-list-outside', 'Ngoài cột'); world.append(outside);
   // Camera sits in the toolbar and hint/inspector float over the board, so the board fills the screen without page scroll.
-  toolbar.append(mutations, durability, cameraTools); viewport.append(hint); root.append(toolbar, formatRow, error, viewport, inspector); container.replaceChildren(root);
-  let state, disposed = false, selection = null, filter = '', filterKey = '', drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
+  toolbar.append(mutations, durability, cameraTools); viewport.append(hint); root.append(toolbar, formatRow, error, viewport, inspector, dock); container.replaceChildren(root);
+  let state, disposed = false, selection = null, inspectorOpen = false, listMode = true, filter = '', filterKey = '', drag = null, cameraDrag = null, pinch = null, inspectorKey = '', geometryWork = Promise.resolve();
   const cameraKey = `homie-notes:camera:${client.boardId}`;
   const camera = { x: 32, y: 32, scale: 1 }, records = new Map(), pointers = new Map();
   // follow: camera tracks fit() until the user pans/zooms; awaitContent: fit once when the first content arrives.
   let follow = true, awaitContent = true;
   try { const saved = JSON.parse(localStorage.getItem(cameraKey)); if (saved && !saved.fit && ['x', 'y', 'scale'].every(key => Number.isFinite(saved[key]))) { Object.assign(camera, { x: saved.x, y: saved.y, scale: clamp(saved.scale, .2, 3) }); follow = awaitContent = false; } } catch { /* Camera preference does not affect note durability. */ }
+  try { listMode = localStorage.getItem(viewKey) !== 'board'; } catch { /* List is the phone default. */ }
   function alive() { return !disposed && !controller.signal.aborted; }
+  const listing = () => listMode && phone.matches;
+  function setMode(list, remember = true) {
+    listMode = list; root.classList.toggle('is-list', list); viewport.scrollTop = 0;
+    viewToggle.textContent = list ? 'Mặt bảng' : 'Danh sách'; viewToggle.setAttribute('aria-label', list ? 'Xem mặt bảng' : 'Xem danh sách');
+    if (remember) try { localStorage.setItem(viewKey, list ? 'list' : 'board'); } catch { /* The mode still applies for this visit. */ }
+  }
+  function setMore(open) {
+    if (root.classList.contains('is-more') === open) return;
+    root.classList.toggle('is-more', open); more.setAttribute('aria-expanded', String(open));
+    if (open) toolbar.focus(); else if (toolbar.contains(document.activeElement)) more.focus();
+  }
+  // Phone: writing in a small note first brings it to the screen width.
+  function focusOn(entity) { const width = viewport.clientWidth; camera.scale = clamp((width - 24) / entity.width, .2, 3); camera.x = 12 - entity.x * camera.scale; camera.y = 12 - entity.y * camera.scale; applyCamera(true); }
   function report(cause) { if (alive()) error.textContent = cause?.code === 'lease_conflict' ? 'Người kia đang di chuyển đối tượng này. Hãy thử lại sau.' : cause?.message || 'Chưa thể lưu. Bản nháp vẫn được giữ trên thiết bị.'; }
   async function run(action) { try { return await action(); } catch (cause) { report(cause); } }
   function applyCamera(manual = false) { if (manual) follow = false; world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`; zoomLabel.value = `${Math.round(camera.scale * 100)}%`; try { localStorage.setItem(cameraKey, JSON.stringify({ ...camera, fit: follow })); } catch { /* The current view still works without local storage. */ } }
@@ -90,7 +114,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   function visible(kind, entity) { return !state.snapshot?.deletedAt && !entity.deletedAt && (kind !== 'note' || !entity.columnId || state.snapshot.columns.some(c => c.id === entity.columnId && !c.deletedAt)); }
   function selected() { return selection && records.get(selection.id)?.entity; }
   function place(node, entity) { Object.assign(node.style, { left: `${entity.x}px`, top: `${entity.y}px`, width: `${entity.width}px`, height: `${entity.height}px` }); }
-  function select(kind, id) { selection = { kind, id }; for (const [key, record] of records) record.node.classList.toggle('is-selected', key === id); updateInspector(); }
+  function deselect() { selection = null; for (const record of records.values()) record.node.classList.remove('is-selected'); updateInspector(); }
+  function select(kind, id) { if (selection?.id !== id) inspectorOpen = false; selection = { kind, id }; for (const [key, record] of records) record.node.classList.toggle('is-selected', key === id); updateInspector(); }
   function updateInspector() {
     const entity = selected(); inspector.hidden = !state?.writable || !entity;
     if (inspector.hidden) { inspector.replaceChildren(); inspectorKey = ''; return; }
@@ -102,7 +127,10 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       return;
     }
     const typing = document.activeElement?.name === 'label' && inspector.contains(document.activeElement);
-    inspectorKey = key; inspector.replaceChildren(element('strong', '', selection.kind === 'note' ? 'Tờ ghi chú' : 'Cột giấy'));
+    // Phone: the inspector is a bottom sheet; ⌃ shows the rest of the tools and ✕ ends the selection.
+    const expand = button(inspectorOpen ? '⌄' : '⌃', 'inspector-expand'), close = button('✕', 'inspector-close');
+    expand.setAttribute('aria-label', 'Thêm tùy chọn'); expand.setAttribute('aria-expanded', String(inspectorOpen)); close.setAttribute('aria-label', 'Bỏ chọn');
+    inspectorKey = key; inspector.classList.toggle('is-open', inspectorOpen); inspector.replaceChildren(element('strong', '', selection.kind === 'note' ? 'Tờ ghi chú' : 'Cột giấy'), expand, close);
     for (const [label, action] of [['←','move-left'],['↑','move-up'],['↓','move-down'],['→','move-right']]) { const control = button(label, action, true); control.setAttribute('aria-label', `Di chuyển ${ { 'move-left':'trái', 'move-up':'lên', 'move-down':'xuống', 'move-right':'phải' }[action]} 10 điểm`); inspector.append(control); }
     for (const [field,labelText] of [['width','Rộng'],['height','Cao']]) {
       const label = element('label', '', labelText), input = document.createElement('input'); input.type = 'number'; input.name = field; input.min = selection.kind === 'note' ? 5 : 240; input.max = 2400; input.step = selection.kind === 'note' ? 1 : 10; input.value = Math.round(entity[field]); input.dataset.action = 'object-size'; input.dataset.mutation = ''; label.append(input); inspector.append(label);
@@ -139,6 +167,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if (kind === 'note') {
       const text = element('div', 'note-text'); text.dataset.noteId = entity.id;
       record.text = text; node.append(text);
+      const locate = button('Xem trên bảng →', 'note-locate'); locate.classList.add('note-locate'); node.append(locate);
       record.editorCleanup = mountEditor?.(text, { client, note: entity, signal: record.controller.signal, formatRow });
     }
     const resize = button('↘', 'object-resize', true); resize.classList.add('note-resize'); resize.dataset.drag = 'resize'; resize.setAttribute('aria-label', 'Kéo đổi kích thước'); node.append(resize);
@@ -159,8 +188,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     labelFilter.hidden = !used.length;
     if (key !== filterKey) {
       filterKey = key;
-      labelFilter.replaceChildren(...['', ...used].map(label => { const option = document.createElement('option'); option.value = label; option.textContent = label ? `Nhãn: ${label}` : 'Mọi ghi chú'; return option; }));
-      labelFilter.value = filter;
+      for (const select of [labelFilter, dockFilter]) { select.replaceChildren(...['', ...used].map(label => { const option = document.createElement('option'); option.value = label; option.textContent = label ? `Nhãn: ${label}` : 'Mọi ghi chú'; return option; })); select.value = filter; }
+      dockFilterLabel.firstChild.textContent = filter || 'Lọc'; dockFilterLabel.classList.toggle('is-active', !!filter);
     }
   }
   function textContent(value) { if (!value) return ''; if (typeof value === 'string') return value; if (value.text) return value.text; return (value.content || []).map(textContent).join(value.type === 'doc' ? '\n' : ''); }
@@ -173,9 +202,12 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if (modeChanged) { cancelDrag(); for (const record of records.values()) destroyRecord(record); records.clear(); selection = null; }
     if(state.writable){if(mutations.parentNode!==toolbar)toolbar.prepend(mutations);}else {mutations.remove();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();}
     formatRow.hidden = !state.writable;
+    for (const control of [dockNote, dockColumn]) control.toggleAttribute('data-mutation', state.writable);
+    dockNote.hidden = dockColumn.hidden = more.hidden = !state.writable; login.hidden = state.writable || !!getUser();
+    if (!state.writable) setMore(false);
     // Hidden mutation DOM is removed on auth downgrade, including editor/media slots.
     for (const control of mutations.children) control.toggleAttribute('data-mutation', state.writable);
-    durability.dataset.durability = state.durability;
+    durability.dataset.durability = state.durability; durability.dataset.connection = state.connection;
     durability.textContent = ({ unknown: 'Đang kiểm tra kết nối…', saving: 'Đang lưu…', local: 'Đã lưu trên thiết bị · Chờ đồng bộ', saved: 'Đã lưu', unsaved: 'Chưa lưu trên thiết bị · Hãy thử Lưu lại' })[state.durability] + (state.connection === 'offline' ? ' · Ngoại tuyến' : '') + (state.pending.total ? ` · ${state.pending.total} mục đang chờ` : '');
     durability.title = durability.textContent;
     if (!state.writable) durability.textContent = state.connection === 'auth-required' ? 'Phiên đã hết hạn · Đang xem công khai' : state.connection === 'online' ? 'Chế độ xem' : 'Đang mở bảng…';
@@ -201,6 +233,15 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
       if (kind === 'note') { record.node.style.backgroundColor = entity.color; record.node.dataset.columnId = entity.columnId || ''; if (!mountEditor) { record.text.textContent = textContent(entity.content) || ''; record.text.setAttribute('aria-label', 'Nội dung ghi chú'); } }
     }
     for (const [id, record] of records) if (!ids.has(id)) { if (drag?.id === id) cancelDrag(); destroyRecord(record); records.delete(id); }
+    // Phone list: columns left to right, each followed by its notes top to bottom, then the notes outside any column.
+    const columns = [...records.values()].filter(r => r.kind === 'column').sort((a, b) => a.entity.x - b.entity.x);
+    let loose = false;
+    columns.forEach((record, index) => { record.node.style.order = index * 1e5; });
+    [...records.values()].filter(r => r.kind === 'note').sort((a, b) => a.entity.y - b.entity.y || a.entity.x - b.entity.x).forEach((record, index) => {
+      let group = columns.findIndex(c => c.entity.id === record.entity.columnId); if (group < 0) { group = columns.length; loose = true; }
+      record.node.style.order = group * 1e5 + index + 1;
+    });
+    outside.style.order = columns.length * 1e5; outside.hidden = !loose;
     renderViews();
     if (selection && !records.has(selection.id)) selection = null;
     empty.textContent = state.snapshot?.deletedAt ? 'Bảng đang ở thùng rác. Khôi phục bảng để xem nội dung.' : state.snapshot ? 'Một mặt giấy trống, dành cho những điều của chúng mình.' : 'Đang mở mặt giấy…';
@@ -237,17 +278,28 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const stop = () => {dialog.remove(); controller.signal.removeEventListener('abort', stop);}; dialog.onclose = stop; controller.signal.addEventListener('abort',stop,{once:true}); dialog.showModal();
   }
   root.addEventListener('click', event => {
+    if (event.target === root) { setMore(false); return; }
+    if (event.target.closest('.notes-durability') && phone.matches && state.writable) { setMore(true); return; }
+    // Xong (editor.js) ends writing; on the phone it also returns from the note's tools to the dock.
+    if (event.target.closest('.notes-format-done')) { deselect(); return; }
     const handle = event.target.closest('[data-drag]'); if (handle && handle.dataset.drag !== 'resize' && state.writable) { const node = handle.closest('.paper-note,.paper-column'); select(handle.dataset.drag, node.dataset.noteId || node.dataset.columnId); }
     const control = event.target.closest('[data-action]'); if (!control) return;
     const action = control.dataset.action, entity = selected();
+    if (!['zoom-in', 'zoom-out', 'undo', 'redo', 'more', 'board-visibility'].includes(action)) setMore(false);
     run(async () => {
+      if (action === 'view-toggle') { setMode(!listMode); if (!listMode) applyCamera(); return; }
+      if (action === 'note-locate') { const record = records.get(control.closest('.paper-note').dataset.noteId); setMode(false); focusOn(record.entity); if (state.writable) select('note', record.entity.id); return; }
+      if (action === 'login') { authEvents.dispatchEvent(new Event('login-request')); return; }
+      if (action === 'more') { setMore(!root.classList.contains('is-more')); return; }
+      if (action === 'inspector-expand') { inspectorOpen = !inspectorOpen; inspector.classList.toggle('is-open', inspectorOpen); control.textContent = inspectorOpen ? '⌄' : '⌃'; control.setAttribute('aria-expanded', String(inspectorOpen)); return; }
+      if (action === 'inspector-close') { deselect(); return; }
       if (action === 'zoom-in' || action === 'zoom-out') { const rect = viewport.getBoundingClientRect(); zoom(camera.scale * (action === 'zoom-in' ? 1.2 : 1 / 1.2), rect.left + rect.width / 2, rect.top + rect.height / 2); return; }
       if (action === 'fit') { fit(); return; }
       if (!state.writable) return;
       if (action === 'save') await client.flush();
       if (action === 'undo') await client.undo();
       if (action === 'redo') await client.redo();
-      if (action === 'note-new') {const point=creationPoint();await mutate('note.create',{id:crypto.randomUUID(),columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0]});}
+      if (action === 'note-new') {const point=creationPoint(),id=crypto.randomUUID();await mutate('note.create',{id,columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0]});if(listing())records.get(id)?.node.scrollIntoView({block:'nearest'});}
       if (action === 'column-new') askName(root,{title:'Tên cột mới',signal:controller.signal,onSubmit:name=>run(()=>{const p=creationPoint();return mutate('column.create',{id:crypto.randomUUID(),name,x:p.x-160,y:p.y-110,width:360,height:480});})});
       if (action === 'board-rename') askName(root,{title:'Đổi tên bảng',value:state.snapshot?.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('board.rename',{name}))});
       if (action === 'board-trash') await mutate('board.trash',{});
@@ -271,13 +323,14 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
   }
   inspector.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.name === 'label') { event.preventDefault(); const entity = selected(); if (entity && state.writable) run(() => addLabel(entity, event.target.value)); } }, events);
   boardView.addEventListener('change', () => { if (boardView.value) run(() => mutate('board.share', { visibility: boardView.value })); }, events);
-  labelFilter.addEventListener('change', () => { filter = labelFilter.value; for (const record of records.values()) if (record.kind === 'note') record.node.classList.toggle('is-filtered', !!filter && !record.entity.labels?.includes(filter)); }, events);
+  for (const select of [labelFilter, dockFilter]) select.addEventListener('change', () => { filter = select.value; filterKey = ''; renderViews(); for (const record of records.values()) if (record.kind === 'note') record.node.classList.toggle('is-filtered', !!filter && !record.entity.labels?.includes(filter)); }, events);
   inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target, columnId=input.value || null;
     if(input.dataset.action==='note-visibility'){run(()=>mutate('note.update',{id:entity.id,visibility:input.value || null}));return;}
     run(()=>input.dataset.action==='object-column' ? geometry('note',entity,current=>({columnId,x:current.x,y:current.y}),true)
       : input.dataset.action==='object-size' && Number.isFinite(input.valueAsNumber) ? geometry(selection.kind,entity,{[input.name]:clampPaperSize(selection.kind,input.valueAsNumber)}) : undefined);
   },events);
   root.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && root.classList.contains('is-more')) { setMore(false); return; }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='s' && state.writable) {event.preventDefault();run(()=>client.flush());return;}
     if (event.target.closest('input,select,textarea,[contenteditable=true],.note-text')) return;
     if ((event.ctrlKey || event.metaKey) && ['z','y'].includes(event.key.toLowerCase()) && state.writable) {event.preventDefault();run(()=>event.shiftKey || event.key.toLowerCase()==='y' ? client.redo() : client.undo());return;}
@@ -285,7 +338,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     const delta={ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key]; if(!delta)return;
     const handle=event.target.closest('[data-drag]');
     if(handle && state.writable) {event.preventDefault();const node=handle.closest('.paper-note,.paper-column'),kind=node.classList.contains('paper-note')?'note':'column';select(kind,node.dataset.noteId||node.dataset.columnId);const e=selected(),amount=event.shiftKey?5:1;run(()=>geometry(kind,e,current=>({x:current.x+delta[0]*amount,y:current.y+delta[1]*amount})));}
-    else if(event.target===viewport) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera(true);}
+    else if(event.target===viewport && !listing()) {event.preventDefault();camera.x-=delta[0]*3;camera.y-=delta[1]*3;applyCamera(true);}
   },events);
   // While a note or column is dragged, the stickers that follow it move along (CSS translate; the saved move shifts them for real).
   function carryStickers(active){const moving=new Set(active&&!active.resize?[...records.values()].filter(r=>r.entity.id===active.id||active.kind==='column'&&r.entity.columnId===active.id).map(r=>r.entity.id):[]);
@@ -295,11 +348,16 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(previous) {for(const record of records.values())place(record.node,record.entity);if(previous.leased)client.releaseLease({kind:previous.kind,id:previous.id}).catch(()=>{});}
   }
   // Writing in a note also selects it, so its tools (who can view, labels, colour) show without hunting for the handle.
-  world.addEventListener('focusin',event=>{const node=event.target.closest('.paper-note');if(node&&state?.writable&&selection?.id!==node.dataset.noteId)select('note',node.dataset.noteId);},events);
+  world.addEventListener('focusin',event=>{const node=event.target.closest('.paper-note');if(!node)return;if(state?.writable&&selection?.id!==node.dataset.noteId)select('note',node.dataset.noteId);
+    const entity=records.get(node.dataset.noteId)?.entity;if(entity&&phone.matches&&!listMode&&event.target.closest('.note-text')&&entity.width*camera.scale<viewport.clientWidth*.8)focusOn(entity);},events);
+  // Phone: while a note is being written, the format row takes the dock's place (above the keyboard).
+  function writing(){const active=document.activeElement;root.classList.toggle('is-writing',!!active&&root.contains(active)&&!!active.closest('.note-text,.notes-format-row'));}
+  root.addEventListener('focusin',writing,events);root.addEventListener('focusout',()=>setTimeout(writing),events);
+  phone.addEventListener('change',()=>{viewport.scrollTop=0;setMore(false);},events);
   viewport.addEventListener('contextmenu',event=>event.preventDefault(),events);
-  viewport.addEventListener('wheel',event=>{if(event.target.closest('.note-text'))return;event.preventDefault();zoom(camera.scale*Math.exp(-event.deltaY*.0015),event.clientX,event.clientY);},{...events,passive:false});
+  viewport.addEventListener('wheel',event=>{if(event.target.closest('.note-text')||listing())return;event.preventDefault();zoom(camera.scale*Math.exp(-event.deltaY*.0015),event.clientX,event.clientY);},{...events,passive:false});
   viewport.addEventListener('pointerdown',event=>{
-    if(event.target.closest('.note-text,input,select,textarea,[contenteditable=true]'))return;
+    if(event.target.closest('.note-text,input,select,textarea,[contenteditable=true]')||listing())return;
     pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if(event.pointerType==='touch' && pointers.size===2) {cancelDrag();cameraDrag=null;viewport.classList.remove('is-panning');const [a,b]=[...pointers.values()];pinch={distance:Math.hypot(a.x-b.x,a.y-b.y),scale:camera.scale,point:worldPoint((a.x+b.x)/2,(a.y+b.y)/2)};viewport.setPointerCapture(event.pointerId);event.preventDefault();return;}
     // Right button anywhere, or left button / one finger on empty board (or a column's body), moves the view.
@@ -330,6 +388,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia 
     if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);
   }
   viewport.addEventListener('pointerup',event=>endPointer(event),events);viewport.addEventListener('pointercancel',event=>endPointer(event,true),events);viewport.addEventListener('lostpointercapture',event=>{if(drag?.pointerId===event.pointerId)endPointer(event,true);},events);
+  setMode(listMode,false);
   const unsubscribe=client.subscribe(render),mediaCleanup=mountMedia?.(decorations,{client,signal:controller.signal,formatRow});if(follow)fit();else applyCamera();
   const resizeObserver=new ResizeObserver(()=>{if(follow)fit();});resizeObserver.observe(viewport);
   const stopPresence=mountBoardPresence(viewport,{client,signal:controller.signal,worldPoint});

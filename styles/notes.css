@@ -142,3 +142,86 @@
 .notes-inspector select[data-action=note-visibility]{max-width:none}
 .notes-viewport{cursor:grab}.notes-viewport.is-panning,.notes-viewport.is-panning *{cursor:grabbing}
 .notes-viewport .paper-note{cursor:auto}
+/* Phone (≤600px): board switcher, save dot, bottom dock, ⋯ sheet, list mode and inspector sheet. These parts stay hidden on larger screens. */
+.notes-switcher,.notes-dock,.note-locate,.notes-list-outside,.notes-inspector [data-action^=inspector-]{display:none}
+@media(max-width:600px){
+.shell:has(.notes-dashboard){padding:0 8px}
+.shell:has(.notes-dashboard) .brand,.notes-heading{display:none}
+.notes-dashboard{height:var(--notes-vh,100dvh);min-height:0;padding:calc(64px + env(safe-area-inset-top,0px)) 0 0}
+.notes-switcher{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:58px;right:50px;z-index:8;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--paper-border);border-radius:14px;background:#fffaf4;color:#684b59;font:inherit;text-align:left;cursor:pointer}
+.notes-switcher-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:600 17px Georgia,serif;color:#5d3c4c}
+.notes-switcher-pill{flex:none;padding:2px 7px;border-radius:999px;background:#ead0d8;color:#7a4f60;font-size:11px}.notes-switcher-pill:empty{display:none}.notes-switcher-pill[data-visibility=public]{background:#dcebd9;color:#4f6b4b}
+.notes-switcher-caret{margin-left:auto;color:#8a6b73}
+/* The catalog bar is the switcher's bottom sheet. */
+.notes-catalog-bar{display:none}
+.notes-dashboard.is-switching:after{content:'';position:fixed;inset:0;z-index:40;background:#46324755}
+.notes-dashboard.is-switching .notes-catalog-bar{position:fixed;left:0;right:0;bottom:0;z-index:41;display:flex;flex-direction:column;align-items:stretch;gap:6px;max-height:80dvh;overflow-y:auto;padding:16px 14px calc(14px + env(safe-area-inset-bottom,0px));background:#fff8f2;border-radius:22px 22px 0 0;box-shadow:0 -10px 30px -12px #3b2a3366}
+.notes-dashboard.is-switching .notes-catalog-bar .notes-tab-strip{display:grid;gap:6px;padding:0}
+.notes-dashboard.is-switching .notes-tabs{display:grid;gap:6px}
+.notes-dashboard.is-switching .notes-catalog-bar .notes-board-tab,.notes-dashboard.is-switching .notes-catalog-bar .notes-tab-new{display:block;width:100%;max-width:none;margin:0;padding:12px 14px;border:1px solid var(--paper-border);border-radius:12px;background:#fffaf4;text-align:left;font-size:15px}
+.notes-dashboard.is-switching .notes-catalog-bar .notes-board-tab[aria-selected=true]{margin:0;padding:12px 14px;border-color:#9a5a74;background:#f8e4e8;font-weight:600}
+.notes-dashboard.is-switching .notes-catalog-bar .notes-tab-new:after{content:'Tạo bảng mới';margin-left:10px;font-size:15px;vertical-align:3px}
+.notes-dashboard.is-switching .notes-catalog-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0}
+/* Save status is a dot beside the switcher; tapping it opens the ⋯ sheet. */
+.notes-board{border-radius:16px}
+.notes-board>.notes-toolbar{display:contents}
+.notes-tools,.notes-camera{display:none}
+.notes-durability{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:8px;z-index:8;display:grid;place-items:center;width:44px;height:44px;font-size:0;cursor:pointer}
+.notes-durability:before{content:'';width:12px;height:12px;border-radius:50%;background:#d2a12c;box-shadow:0 0 0 4px #d2a12c33}
+.notes-durability[data-durability=saved]:before{background:#5d9a6e;box-shadow:0 0 0 4px #5d9a6e33}
+.notes-durability[data-durability=unsaved]:before{background:#b5425c;box-shadow:0 0 0 4px #b5425c33}
+.notes-durability[data-connection=offline]:before{background:#9a8c93;box-shadow:0 0 0 4px #9a8c9333}
+.notes-error{order:1}.notes-viewport{order:2;flex:1 1 auto;height:auto;min-height:0}.notes-dock{order:4}
+/* ⋯ sheet: the toolbar slides up over the board. */
+.notes-board.is-more:after{content:'';position:absolute;inset:0;z-index:40;background:#46324755}
+.notes-board.is-more>.notes-toolbar{position:absolute;left:0;right:0;bottom:0;z-index:41;display:flex;flex-direction:column;align-items:stretch;gap:10px;min-height:0;max-height:88%;overflow-y:auto;padding:16px 12px calc(12px + env(safe-area-inset-bottom,0px));border:0;border-radius:22px 22px 0 0;background:#fff8f2;box-shadow:0 -10px 30px -12px #3b2a3366;outline:0}
+.notes-board.is-more .notes-durability{position:static;order:-2;display:flex;gap:10px;align-items:center;width:auto;height:auto;font-size:13px;cursor:default}
+.notes-board.is-more .notes-camera{order:-1;display:grid;grid-template-columns:52px 1fr 52px;gap:6px;margin:0}
+.notes-board.is-more .notes-camera .notes-label-filter{display:none}
+.notes-board.is-more .notes-camera [data-action=fit]{grid-column:1/-1}
+.notes-board.is-more .notes-tools{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.notes-board.is-more .notes-tools :is([data-action=note-new],[data-action=column-new]){display:none}
+.notes-board.is-more .notes-view{grid-column:1/-1}.notes-board.is-more .notes-view select{flex:1}
+.notes-board.is-more [data-action=board-trash]{color:#a3304e}
+/* Bottom dock. */
+.notes-dock{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));border-top:1px solid #b9879744;background:#fff8f0}
+.notes-dock:has([data-action=login]:not([hidden])){grid-template-columns:1fr 1fr 1.6fr}
+.notes-dock [hidden]{display:none}
+.notes-dock .notes-button,.notes-dock-filter{min-width:0;min-height:52px;padding:4px;border:0;border-radius:12px;background:transparent;box-shadow:none;font-size:13px;font-weight:600;color:#684b59}
+.notes-dock [data-action=note-new]{background:#985a74;color:#fff}
+.notes-dock [data-action=more]{font-size:22px}
+.notes-dock [data-action=login]{background:#985a74;color:#fff;font-size:14px}
+.notes-dock-filter{position:relative;display:grid;place-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.notes-dock-filter.is-active{background:#f3dfe7;color:#8a3556}
+.notes-dock-filter select{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;cursor:pointer}
+.notes-dock-filter:focus-within{outline:3px solid var(--paper-focus);outline-offset:-3px}
+.notes-board.is-writing .notes-dock,.notes-board:has(.notes-format-row.has-sticker) .notes-dock{display:none}
+/* Inspector sheet: title, ⌃ and ✕ on top, paper colours below; ⌃ shows the rest. */
+.notes-inspector{left:0;right:0;bottom:0;z-index:30;gap:6px;max-height:72%;overflow-y:auto;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));border-width:1px 0 0;border-radius:22px 22px 0 0;background:#fff8f2}
+.notes-board.is-writing .notes-inspector{display:none}
+.notes-inspector>strong{order:0;flex:1 0 calc(100% - 112px);font-size:14px}
+.notes-inspector [data-action^=inspector-]{display:inline-block;order:0}
+.notes-inspector [data-action=note-color]{order:1;border-radius:50%}
+.notes-inspector.is-open>:not(strong,[data-action^=inspector-],[data-action=note-color]){order:2}
+.notes-inspector .notes-labels-edit{flex-basis:100%}.notes-inspector .notes-labels-edit .note-label{min-height:44px}
+.notes-inspector [data-action=object-trash]{order:3;color:#a3304e}
+.notes-inspector:not(.is-open)>:not(strong,[data-action^=inspector-],[data-action=note-color]){display:none}
+/* List mode: the same note nodes, stacked by column; text stays editable. */
+.notes-board.is-list .notes-viewport{overflow-y:auto;touch-action:pan-y;cursor:auto;overscroll-behavior:contain}
+.notes-board.is-list .notes-world{position:relative;inset:auto;display:flex;flex-direction:column;gap:10px;width:auto;height:auto;padding:12px 10px 24px;transform:none!important;will-change:auto}
+.notes-board.is-list :is(.paper-note,.paper-column){position:relative;left:auto!important;top:auto!important;width:auto!important;height:auto!important;z-index:auto}
+.notes-board.is-list .paper-column{border:0;background:none}
+.notes-board.is-list .column-handle{padding:8px 4px 0;border:0;background:none;font:600 20px Georgia,serif;cursor:pointer}
+.notes-board.is-list .paper-note{container-type:normal;border-radius:14px}
+.notes-board.is-list .paper-note .note-author{font-size:15px}
+.notes-board.is-list .paper-note .note-handle:before{font-size:18px}
+.notes-board.is-list .paper-note .note-badges :is(.note-label,.note-view){font-size:11px}
+.notes-board.is-list :is(.note-handle,.column-handle){touch-action:pan-y;cursor:pointer}
+.notes-board.is-list .note-text{flex:none;overflow:visible;padding:0 14px 4px}
+.notes-board.is-list .note-text .tiptap{min-height:56px;font-size:21px}
+.notes-board.is-list :is(.note-resize,.notes-decorations,.notes-peer-pointers,.paper-note.is-filtered,.notes-list-outside[hidden]){display:none}
+.notes-board.is-list .note-locate{display:block;align-self:flex-end;position:relative;z-index:1;border:0;background:none;box-shadow:none;color:#8b4f68;font-weight:600}
+.notes-board.is-list .notes-list-outside{display:block;margin:8px 4px 0;font:600 20px Georgia,serif;color:#80616b}
+/* Dialogs open as bottom sheets. */
+.notes-dialog{width:100%;max-width:100%;margin:auto 0 0;border-radius:22px 22px 0 0;padding:20px 16px calc(16px + env(safe-area-inset-bottom,0px))}
+}

@@ -176,8 +176,9 @@ try {
           await a("editor.view.focus();document.querySelector('.notes-format-row [data-format=color]').click();document.querySelector('[data-color-mode=wheel]').click()");
           for(const colorMode of ['rgb','wheel']){
             await a(`document.querySelector('[data-color-mode=${colorMode}]').click()`);
-            const fit=await a("(()=>{const row=document.querySelector('.notes-format-row'),panel=row.querySelector('.notes-color-panel').getBoundingClientRect();return {rowScroll:row.scrollWidth<=row.clientWidth,panelInside:panel.left>=0&&panel.right<=innerWidth,small:[...row.querySelectorAll('button,input')].filter(node=>node.getClientRects().length&&node.getBoundingClientRect().height<44||node.tagName==='BUTTON'&&node.getClientRects().length&&node.getBoundingClientRect().width<44).length,pageScroll:document.documentElement.scrollWidth>innerWidth};})()");
-            assert.deepEqual(fit,{rowScroll:true,panelInside:true,small:0,pageScroll:false},`320px ${colorMode} panel fits without scrollbars`);
+            const fit=await a("(()=>{const row=document.querySelector('.notes-format-row'),panel=row.querySelector('.notes-color-panel').getBoundingClientRect();return {doneVisible:row.querySelector('.notes-format-done').getBoundingClientRect().right<=innerWidth,panelInside:panel.left>=0&&panel.right<=innerWidth,small:[...row.querySelectorAll('button,input')].filter(node=>node.getClientRects().length&&node.getBoundingClientRect().height<44||node.tagName==='BUTTON'&&node.getClientRects().length&&node.getBoundingClientRect().width<44).length,pageScroll:document.documentElement.scrollWidth>innerWidth};})()");
+            // Phones scroll the format strip sideways; Xong stays pinned on screen.
+            assert.deepEqual(fit,{doneVisible:true,panelInside:true,small:0,pageScroll:false},`320px ${colorMode} panel fits on screen`);
           }
           const shot=await ca.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile('/private/tmp/task-format-320.png',Buffer.from(shot.data,'base64'));
           await a("document.querySelector('[data-color-action=close]').click()");
