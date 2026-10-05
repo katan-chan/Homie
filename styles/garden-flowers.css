@@ -1,10 +1,12 @@
 /* Phần G: hoa kỷ niệm trong vườn. Positions come from garden.js as % of the viewport (--x/--y wide, --px/--py phone). */
 .memory-flowers{position:absolute;inset:0;z-index:5;pointer-events:none}
-.memory-flower{--h:calc(clamp(72px,min(10vh,10.5vw),100px) * var(--size,1));position:absolute;left:calc(var(--x) * 1%);top:calc(var(--y) * 1%);display:flex;justify-content:center;align-items:flex-end;min-width:44px;height:var(--h);min-height:44px;margin:0;padding:0;border:0;border-radius:12px;background:none;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* --size = species scale × the memory's gardenSize. Each layout caps the height so the biggest flower stays clear of the
+   lettering (top 18% + its height, from styles.css) and fits phone widths; rows are spaced so heads stay tappable. */
+.memory-flower{--base:clamp(61px,min(8.5vh,8.9vw),85px);--h:min(calc(var(--base) * var(--size,1)),max(44px,calc(var(--y) * 1vh - 18vh - min(387px,48vw) - 6px)));position:absolute;z-index:var(--z);left:calc(var(--x) * 1%);top:calc(var(--y) * 1%);display:flex;justify-content:center;align-items:flex-end;min-width:44px;height:var(--h);min-height:44px;margin:0;padding:0;border:0;border-radius:12px;background:none;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .memory-plant{position:relative;display:block;height:100%;transform-origin:50% 100%}
 .memory-plant.is-mirrored{scale:-1 1}
 .memory-plant img{display:block;width:auto;height:100%}
-.memory-ribbon{position:absolute;left:var(--rx);top:var(--ry);width:max(18px,calc(var(--h) / var(--size,1) * .38));height:auto;transform:translate(-50%,-35%);filter:drop-shadow(0 1px 1px #8a3f5c40)}
+.memory-ribbon{position:absolute;left:var(--rx);top:var(--ry);width:max(14px,calc(var(--h) * .28));height:auto;transform:translate(-50%,-35%);filter:drop-shadow(0 1px 1px #8a3f5c40)}
 .memory-flower:hover .memory-plant{transform:scale(1.05)}
 .memory-flower:focus-visible{outline:3px solid #985a74;outline-offset:3px}
 @media (prefers-reduced-motion:no-preference){
@@ -12,8 +14,8 @@
   .memory-flower .memory-plant{transition:transform 200ms ease}
 }
 @keyframes memory-sway{0%,100%{rotate:-2deg}50%{rotate:2deg}}
-@media (max-width:599px){.memory-flower{--h:calc(clamp(64px,9vh,80px) * var(--size,1));left:calc(var(--px) * 1%);top:calc(var(--py) * 1%)}}
-@media (min-width:600px) and (max-height:500px){.memory-flower{--h:calc(54px * var(--size,1));left:calc(var(--sx) * 1%);top:calc(var(--sy) * 1%)}}
+@media (max-width:599px){.memory-flower{--h:min(calc(clamp(54px,7.6vh,68px) * var(--size,1)),13vh);z-index:var(--pz);left:calc(var(--px) * 1%);top:calc(var(--py) * 1%)}}
+@media (min-width:600px) and (max-height:500px){.memory-flower{--h:min(calc(46px * var(--size,1)),62px);z-index:var(--sz);left:calc(var(--sx) * 1%);top:calc(var(--sy) * 1%)}}
 
 .memory-sheet{width:min(580px,calc(100vw - 48px));max-height:calc(100dvh - 64px);padding:18px;border:1px solid #d9b6c1;border-radius:20px;background:#fff8f2;color:#5d3c4c;box-shadow:0 18px 80px #52334330;overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .memory-sheet[open]{display:grid;gap:12px;align-content:start}

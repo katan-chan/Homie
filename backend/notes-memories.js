@@ -11,7 +11,7 @@ function firstLine(node) {
  * Memories viewerId (account id, or null for a guest) may see via canSee, skipping trashed notes (and notes in a
  * trashed column or board), with from/to ('YYYY-MM-DD', inclusive) filtering memoryDate and gardenOnly keeping
  * garden: true. A memory without a date only appears when no range is given. Sorted by date. Synchronous.
- * @returns {{noteId: string, boardId: string, title: string, memoryDate: string|null, garden: boolean, gardenFlower: string|null}[]}
+ * @returns {{noteId: string, boardId: string, title: string, memoryDate: string|null, garden: boolean, gardenFlower: string|null, gardenSize: number|null}[]}
  */
 export function listMemories(store, viewerId, { from, to, gardenOnly = false } = {}) {
   // ponytail: decodes every visible note's text per call; index memories if boards grow past a few hundred notes.
@@ -19,6 +19,6 @@ export function listMemories(store, viewerId, { from, to, gardenOnly = false } =
     .filter(note => isMemory(note.labels) && (!gardenOnly || note.garden)
       && (from == null && to == null || note.memoryDate !== null
         && (from == null || note.memoryDate >= from) && (to == null || note.memoryDate <= to)))
-    .map(note => ({ noteId: note.id, boardId: note.boardId, title: firstLine(note.content), memoryDate: note.memoryDate, garden: note.garden, gardenFlower: note.gardenFlower }))
+    .map(note => ({ noteId: note.id, boardId: note.boardId, title: firstLine(note.content), memoryDate: note.memoryDate, garden: note.garden, gardenFlower: note.gardenFlower, gardenSize: note.gardenSize }))
     .sort((a, b) => (a.memoryDate ?? '9999').localeCompare(b.memoryDate ?? '9999') || a.noteId.localeCompare(b.noteId));
 }

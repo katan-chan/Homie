@@ -1,6 +1,6 @@
 // The garden tab owns lettering and the memory flowers; the shell owns the landscape.
 import { apiRequest, authEvents, getUser } from '../auth.js';
-import { gardenFlower } from '../notes/model.js';
+import { GARDEN_SIZE, gardenFlower } from '../notes/model.js';
 
 const FOCUS_KEY = 'homie-notes:focus';
 const NAME = { minhle: 'Minh', haiyen: 'Yến' };
@@ -13,7 +13,7 @@ const RIBBON = '<svg class="memory-ribbon" viewBox="0 0 40 30" aria-hidden="true
 const WIDE = [[30, 71], [41, 70], [51, 71], [61, 70], [71, 71], [81, 69], [35, 83], [46, 84], [56, 83], [66, 84],
   [27, 95], [38, 96], [49, 95], [59, 96], [69, 95]];
 const PHONE = [[44, 70], [62, 70], [80, 70], [18, 80], [36, 80], [54, 80], [72, 80], [12, 90], [30, 90], [48, 90],
-  [22, 100], [40, 100], [58, 100], [78, 100]];
+  [22, 100], [40, 100], [58, 100]];
 // Short landscape screens: the lettering fills the middle, so flowers grow on both sides of it.
 const SHORT = [[5, 70], [27, 76], [12, 86], [25, 97], [5, 99], [74, 70], [95, 76], [73, 98], [95, 99]];
 
@@ -82,7 +82,8 @@ export function render(container, { signal } = {}) {
     dialog.innerHTML = `<div class="memory-sheet-head"><h2 id="memory-sheet-title"></h2><button type="button" class="memory-close" aria-label="Đóng">×</button></div><p class="memory-meta"></p><p class="memory-body"></p><div class="memory-actions"><button type="button" class="memory-open">Mở trong Góc ghi chép</button></div>`;
     dialog.querySelector('h2').textContent = memory.title || 'Kỷ niệm';
     dialog.querySelector('.memory-meta').textContent = [memory.memoryDate && vnDate(memory.memoryDate),
-      NAME[memory.authorId] && `${NAME[memory.authorId]} viết`, memory.boardName && `bảng ${memory.boardName}`].filter(Boolean).join(' · ');
+      NAME[memory.authorId] && `${NAME[memory.authorId]} viết`, memory.boardName && `bảng ${memory.boardName}`,
+      `🌱 ${gardenFlower(memory.gardenFlower).name}`].filter(Boolean).join(' · ');
     const body = dialog.querySelector('.memory-body');
     body.textContent = memory.body ?? '';
     body.hidden = !memory.body;
@@ -109,8 +110,11 @@ export function render(container, { signal } = {}) {
       flower.className = 'memory-flower';
       flower.setAttribute('aria-label', `Hoa kỷ niệm: ${item.title || 'Kỷ niệm'}`);
       const species = gardenFlower(item.gardenFlower).id, [scale, rx, ry] = SPECIES[species];
+      const size = item.gardenSize ?? GARDEN_SIZE.default;
       flower.dataset.flower = species;
-      flower.style.cssText = `--x:${wide[0]};--y:${wide[1]};--px:${phone[0]};--py:${phone[1]};--sx:${short[0]};--sy:${short[1]};--size:${scale * (0.94 + (h % 5) * 0.03)};--rx:${rx}%;--ry:${ry}%;--delay:${-(h % 7)}s`;
+      flower.dataset.size = size;
+      // Rows further down stand in front, so a big flower never hides the head of one planted behind it.
+      flower.style.cssText = `--x:${wide[0]};--y:${wide[1]};--px:${phone[0]};--py:${phone[1]};--sx:${short[0]};--sy:${short[1]};--size:${scale * size};--rx:${rx}%;--ry:${ry}%;--delay:${-(h % 7)}s;--z:${wide[1]};--pz:${phone[1]};--sz:${short[1]}`;
       const stem = document.createElement('span');
       stem.className = h & 1 ? 'memory-plant is-mirrored' : 'memory-plant';
       stem.innerHTML = RIBBON;

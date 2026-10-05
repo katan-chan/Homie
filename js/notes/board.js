@@ -1,4 +1,4 @@
-import { clampPaperSize, gardenFlower, GARDEN_FLOWERS, isMemory, MEMORY_LABEL as MEMORY } from './model.js';
+import { clampPaperSize, gardenFlower, GARDEN_FLOWERS, GARDEN_SIZE, isMemory, MEMORY_LABEL as MEMORY } from './model.js';
 import { mountBoardPresence } from './editor.js';
 import { authEvents, getUser } from '../auth.js';
 
@@ -31,8 +31,10 @@ function button(label, action, mutation = false) {
   return node;
 }
 const flowerImage = id => new URL(`../../assets/flowers/memory-${id}.webp`, import.meta.url).href;
-/** Flower picker for planting a memory: a radio group of the garden species; onSubmit receives the chosen id. */
-export function pickFlower(container, { current = null, planted = false, signal, onSubmit }) {
+const sizeText = size => `${size.toLocaleString('vi', { minimumFractionDigits: 1 })}×`;
+/** Flower picker for planting a memory: a radio group of the garden species plus a size slider with a live preview;
+ * onSubmit receives the chosen id and size. */
+export function pickFlower(container, { current = null, size = null, planted = false, signal, onSubmit }) {
   const dialog = element('dialog', 'notes-dialog notes-flower-dialog'); dialog.setAttribute('aria-labelledby', 'notes-flower-title');
   const form = element('form', 'notes-flower-form'), group = element('fieldset', 'notes-flower-options');
   const legend = element('legend', '', planted ? 'Đổi hoa cho kỷ niệm' : 'Chọn hoa để trồng vào vườn'); legend.id = 'notes-flower-title'; group.append(legend);
@@ -43,13 +45,26 @@ export function pickFlower(container, { current = null, planted = false, signal,
     image.src = flowerImage(flower.id); image.alt = ''; image.width = 56; image.height = 64; image.draggable = false;
     option.append(input, image, element('span', '', flower.name)); group.append(option);
   }
+  // Cỡ hoa: the preview shows the chosen flower at the chosen size (1× = 64 px here).
+  const sizing = element('div', 'notes-flower-size'), preview = element('div', 'notes-flower-preview'), picture = document.createElement('img');
+  picture.alt = ''; picture.draggable = false; preview.append(picture);
+  const sizeLabel = element('div', 'notes-flower-size-label'), label = element('label', '', 'Cỡ hoa'), range = document.createElement('input'), shown = element('output', 'notes-flower-size-value');
+  label.htmlFor = range.id = 'notes-flower-size'; shown.htmlFor = range.id; shown.setAttribute('aria-hidden', 'true');
+  range.type = 'range'; range.name = 'size'; range.min = GARDEN_SIZE.min; range.max = GARDEN_SIZE.max; range.step = GARDEN_SIZE.step; range.value = size ?? GARDEN_SIZE.default;
+  sizeLabel.append(label, shown, range); sizing.append(preview, sizeLabel);
+  const update = () => {
+    const value = Number(range.value), flower = gardenFlower(form.elements.flower.value);
+    shown.textContent = sizeText(value); range.setAttribute('aria-valuetext', `${sizeText(value)} cỡ gốc`);
+    picture.src = flowerImage(flower.id); picture.style.height = `${64 * value}px`; preview.setAttribute('aria-label', `Xem trước: ${flower.name} cỡ ${sizeText(value)}`);
+  };
+  form.addEventListener('input', update); form.addEventListener('change', update);
   const submit = button(planted ? 'Đổi hoa' : '🌱 Trồng vào vườn', 'flower-save'); submit.type = 'submit';
   const cancel = button('Hủy', 'flower-cancel'); cancel.onclick = () => dialog.close();
   const actions = element('div', 'notes-flower-actions'); actions.append(cancel, submit);
-  form.append(group, actions); dialog.append(form); container.append(dialog);
+  form.append(group, sizing, actions); dialog.append(form); container.append(dialog); update();
   const close = () => { if (dialog.open) dialog.close(); dialog.remove(); signal?.removeEventListener('abort', close); };
   dialog.addEventListener('close', close, { once: true }); signal?.addEventListener('abort', close, { once: true });
-  form.addEventListener('submit', event => { event.preventDefault(); const id = form.elements.flower.value; close(); onSubmit(id); });
+  form.addEventListener('submit', event => { event.preventDefault(); const id = form.elements.flower.value, value = Number(range.value); close(); onSubmit(id, value); });
   dialog.showModal(); form.querySelector('input:checked').focus();
   return close;
 }
@@ -152,7 +167,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
     const entity = selected(); inspector.hidden = !state?.writable || !entity;
     if (inspector.hidden) { inspector.replaceChildren(); inspectorKey = ''; return; }
     const columns = state.snapshot.columns.filter(c => !c.deletedAt);
-    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}:${entity.memoryDate}:${entity.garden}:${entity.gardenFlower}`;
+    const key = `${selection.kind}:${entity.id}:${columns.map(c => c.id + c.name).join()}:${entity.visibility}:${entity.labels?.join('|')}:${entity.memoryDate}:${entity.garden}:${entity.gardenFlower}:${entity.gardenSize}`;
     if (key === inspectorKey) {
       const select = inspector.querySelector('select'); if (select && document.activeElement !== select) select.value = entity.columnId || '';
       for (const field of ['width', 'height']) { const input = inspector.querySelector(`[name=${field}]`); if (input && document.activeElement !== input) input.value = Math.round(entity[field]); }
@@ -362,7 +377,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
       if (action === 'label-remove') await mutate('note.update',{id:entity.id,labels:entity.labels.filter(label=>label!==control.dataset.label)});
       if (action === 'label-memory') await addLabel(entity, MEMORY);
-      if (action === 'note-garden-pick') pickFlower(root,{current:entity.gardenFlower,planted:entity.garden,signal:controller.signal,onSubmit:id=>run(()=>mutate('note.update',{id:entity.id,garden:true,gardenFlower:id}))});
+      if (action === 'note-garden-pick') pickFlower(root,{current:entity.gardenFlower,size:entity.gardenSize,planted:entity.garden,signal:controller.signal,onSubmit:(id,gardenSize)=>run(()=>mutate('note.update',{id:entity.id,garden:true,gardenFlower:id,gardenSize}))});
       if (action === 'note-garden-remove') await mutate('note.update',{id:entity.id,garden:false});
       if (action === 'label-add') { const input = inspector.querySelector('[name=label]'); await addLabel(entity, input.value); }
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});

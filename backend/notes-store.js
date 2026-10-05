@@ -144,9 +144,9 @@ function validateInverse(undo, target) {
 // where the sticker's centre lies (topmost note, else column). Undo records hold older shapes, so they are dropped.
 // Version 5 adds who may view: existing boards stay public (their author is whoever ran board.create), notes follow
 // their board and start without labels.
-// Version 6 adds journals and memories: boards get noteDefault null, notes memoryDate null, garden false and
-// gardenFlower null. Undo records gain the same defaults, so history survives this step. gardenFlower joined v6 before
-// it shipped, so v6 snapshots written without it get the default too (the step only fills missing fields).
+// Version 6 adds journals and memories: boards get noteDefault null, notes memoryDate null, garden false,
+// gardenFlower null and gardenSize null. Undo records gain the same defaults, so history survives this step. The garden
+// fields joined v6 before it shipped, so v6 snapshots written without them get the defaults too (only missing fields).
 export function migrateNotesSnapshot(saved) {
   if (![2, 3, 4, 5, 6].includes(saved?.formatVersion)) return saved;
   const state = saved.formatVersion >= 4 ? clone(saved) : migrateStickers(saved);
@@ -157,7 +157,7 @@ export function migrateNotesSnapshot(saved) {
     for (const op of state.operations) op.undo = null;
   }
   const v6 = (kind, record) => !record ? record : kind === 'board' ? { noteDefault: null, ...record }
-    : kind === 'note' ? { memoryDate: null, garden: false, gardenFlower: null, ...record } : record;
+    : kind === 'note' ? { memoryDate: null, garden: false, gardenFlower: null, gardenSize: null, ...record } : record;
   state.boards = state.boards.map(board => v6('board', board));
   state.notes = state.notes.map(note => v6('note', note));
   for (const change of state.operations.flatMap(op => op.undo?.changes ?? [])) {

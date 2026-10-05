@@ -41,7 +41,7 @@ test('listMemories returns only memories the viewer may see, skips trash, filter
   assert.deepEqual(ids('minhle'), [sea, shared], 'A private journal page stays hidden; trash hides the flower');
   assert.deepEqual(ids('haiyen'), [secret, sea, shared]);
   assert.ok(!ids('haiyen').includes(plain));
-  assert.deepEqual(listMemories(store, null)[0], { noteId: sea, boardId: open, title: 'Đi biển Vũng Tàu', memoryDate: '2026-10-12', garden: true, gardenFlower: null });
+  assert.deepEqual(listMemories(store, null)[0], { noteId: sea, boardId: open, title: 'Đi biển Vũng Tàu', memoryDate: '2026-10-12', garden: true, gardenFlower: null, gardenSize: null });
   assert.deepEqual(ids('haiyen', { gardenOnly: true }), [sea, shared]);
   assert.deepEqual(ids('haiyen', { from: '2026-10-01', to: '2026-10-31' }), [sea]);
   assert.deepEqual(ids('haiyen', { from: '2026-10-12' }), [sea, shared], 'Range ends are inclusive');

@@ -15,10 +15,14 @@ export function isMemory(labels) {
 }
 // Flowers a planted memory can grow as (assets/flowers/memory-<id>.webp); null means the first one.
 export const GARDEN_FLOWERS = Object.freeze([
-  { id: 'cosmos', name: 'Cánh bướm hồng' }, { id: 'daisy', name: 'Cúc họa mi' }, { id: 'poppy', name: 'Anh túc cam' },
-  { id: 'lavender', name: 'Oải hương' }, { id: 'allium', name: 'Cầu tím' },
+  { id: 'cosmos', name: 'Cosmos' }, { id: 'daisy', name: 'Daisy' }, { id: 'poppy', name: 'Poppy' },
+  { id: 'lavender', name: 'Lavender' }, { id: 'allium', name: 'Allium' },
 ].map(Object.freeze));
 export const gardenFlower = id => GARDEN_FLOWERS.find(flower => flower.id === id) ?? GARDEN_FLOWERS[0];
+// How big a memory's flower grows, in steps of 0.1; null means the default.
+export const GARDEN_SIZE = Object.freeze({ min: 0.8, max: 1.8, step: 0.1, default: 1.3 });
+const gardenSizeValid = value => value === null || (typeof value === 'number' && value >= GARDEN_SIZE.min && value <= GARDEN_SIZE.max
+  && Math.abs(value * 10 - Math.round(value * 10)) < 1e-9);
 export function notesError(code, message = code, status = 400) {
   return Object.assign(new Error(message), { code, status });
 }
@@ -116,7 +120,7 @@ function checkEntity(kind, value) {
   const fields = {
     board: ['id', 'name', 'authorId', 'visibility', 'noteDefault', 'revision', 'metadataRevision', 'deletedAt'],
     column: ['id', 'boardId', 'name', ...geometry, 'revision', 'deletedAt'],
-    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower', 'revision', 'deletedAt'],
+    note: ['id', 'boardId', 'columnId', 'authorId', ...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower', 'gardenSize', 'revision', 'deletedAt'],
     // Stickers live on the board in world coordinates; noteId/columnId (at most one) is what they follow when moved or trashed.
     decoration: ['id', 'boardId', 'noteId', 'columnId', 'assetId', ...geometry, 'rotation', 'z', 'revision', 'deletedAt'],
   };
@@ -137,6 +141,7 @@ function checkEntity(kind, value) {
       memoryDate(value.memoryDate);
       if (typeof value.garden !== 'boolean' || (value.garden && !isMemory(value.labels))) throw notesError('invalid_garden');
       if (value.gardenFlower !== null && !GARDEN_FLOWERS.some(flower => flower.id === value.gardenFlower)) throw notesError('invalid_garden_flower');
+      if (!gardenSizeValid(value.gardenSize)) throw notesError('invalid_garden_size');
     }
     if (kind === 'decoration') {
       requireId(value.assetId); number(value.rotation); number(value.z);
@@ -250,11 +255,11 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       requireKeys(p, ['id', 'name', ...geometry]);
       entity = add(kind, { ...p, name: name(p.name), boardId, revision: 1, deletedAt: null });
     } else if (kind === 'note') {
-      requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower']);
+      requireKeys(p, ['id', 'columnId', ...geometry, 'color'], ['visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower', 'gardenSize']);
       if (p.columnId !== null) active(state, 'column', mustFind(state, 'column', p.columnId, boardId));
       // A journal board's pages start private even when an older or offline client leaves visibility out.
       const visibility = board.noteDefault === 'private' && !('visibility' in p) ? userId : null;
-      entity = add(kind, { visibility, memoryDate: null, garden: false, gardenFlower: null, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
+      entity = add(kind, { visibility, memoryDate: null, garden: false, gardenFlower: null, gardenSize: null, ...p, labels: normalizeLabels(p.labels ?? []), boardId, authorId: userId, revision: 1, deletedAt: null });
     } else if (kind === 'decoration' && action === 'add') {
       requireKeys(p, ['id', 'assetId', ...geometry, 'rotation', 'z'], ['noteId', 'columnId']);
       checkAttachment(state, p, boardId, userId);
@@ -269,7 +274,7 @@ export function applyMetadataCommand(current, userId, command, { now = new Date(
       touch(kind, entity, () => { entity.deletedAt = action === 'restore' ? null : now; });
     } else if (action === 'update' || (kind === 'note' && action === 'move')) {
       const allowed = kind === 'column' ? ['name', ...geometry] : kind === 'note'
-        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
+        ? action === 'move' ? ['columnId', 'x', 'y'] : [...geometry, 'color', 'visibility', 'labels', 'memoryDate', 'garden', 'gardenFlower', 'gardenSize'] : [...geometry, 'rotation', 'z', 'noteId', 'columnId'];
       requireKeys(p, ['id'], allowed);
       if (Object.keys(p).length === 1) throw notesError('invalid_fields');
       active(state, kind, entity);

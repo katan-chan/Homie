@@ -52,7 +52,7 @@ test('GET /api/garden: members see only visible planted memories, trash hides th
   const [open, journal] = [randomUUID(), randomUUID()];
   await command('minhle', open, 'board.create', { name: 'Vườn nhà mình', visibility: 'public' });
   await command('haiyen', journal, 'board.create', { name: 'Nhật ký của Yến', visibility: 'shared', noteDefault: 'private' });
-  const sea = await note('minhle', open, ['Đi biển Vũng Tàu', 'Gió to, cát bay.', 'Về muộn.'], { labels: ['Kỷ niệm'], memoryDate: '2026-10-12', garden: true, gardenFlower: 'poppy' });
+  const sea = await note('minhle', open, ['Đi biển Vũng Tàu', 'Gió to, cát bay.', 'Về muộn.'], { labels: ['Kỷ niệm'], memoryDate: '2026-10-12', garden: true, gardenFlower: 'poppy', gardenSize: 1.8 });
   const unplanted = await note('minhle', open, ['Chưa trồng'], { labels: ['Kỷ niệm'], memoryDate: '2026-10-01', garden: false });
   const secret = await note('haiyen', journal, ['Bí mật của Yến'], { labels: ['Kỷ niệm'], memoryDate: '2026-09-01', garden: true, visibility: 'haiyen' });
   const shared = await note('haiyen', journal, ['Bữa cơm đầu tiên'], { labels: ['Kỷ niệm'], memoryDate: '2026-11-02', garden: true, visibility: null });
@@ -63,8 +63,8 @@ test('GET /api/garden: members see only visible planted memories, trash hides th
   const minh = await garden('minhle');
   assert.deepEqual(minh.map(item => item.noteId), [sea, shared], 'Yến’s private page, unplanted and trashed memories stay out');
   assert.deepEqual(minh[0], { noteId: sea, boardId: open, boardName: 'Vườn nhà mình', title: 'Đi biển Vũng Tàu',
-    memoryDate: '2026-10-12', gardenFlower: 'poppy', authorId: 'minhle', body: 'Gió to, cát bay.\nVề muộn.' });
-  assert.equal(minh[1].gardenFlower, null, 'No choice yet: the garden shows the default species');
+    memoryDate: '2026-10-12', gardenFlower: 'poppy', gardenSize: 1.8, authorId: 'minhle', body: 'Gió to, cát bay.\nVề muộn.' });
+  assert.deepEqual([minh[1].gardenFlower, minh[1].gardenSize], [null, null], 'No choice yet: the garden shows the default species and size');
   assert.deepEqual((await garden('haiyen')).map(item => item.noteId), [secret, sea, shared]);
   assert.ok(!(await garden('haiyen')).some(item => item.noteId === unplanted));
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState, clampPaperSize, GARDEN_FLOWERS, gardenFlower } from '../js/notes/model.js';
+import { emptyNotesState, applyMetadataCommand, projectBoard, validateNotesState, clampPaperSize, GARDEN_FLOWERS, GARDEN_SIZE, gardenFlower } from '../js/notes/model.js';
 
 const boardId = randomUUID(), columnId = randomUUID(), otherColumnId = randomUUID(), noteId = randomUUID();
 function apply(state, type, payload, accountId = 'minhle', board = boardId) {
@@ -121,7 +121,22 @@ test('gardenFlower: one of the garden species or null, chosen on create or updat
   const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], garden: true, gardenFlower: 'daisy' });
   assert.equal(created.notes.at(-1).gardenFlower, 'daisy');
   assert.equal(gardenFlower(null).id, GARDEN_FLOWERS[0].id);
-  assert.equal(gardenFlower('allium').name, 'Cầu tím');
+  assert.equal(gardenFlower('allium').name, 'Allium');
+});
+
+test('gardenSize: null or 0.8–1.8 in steps of 0.1', () => {
+  let state = apply(fixture(), 'note.update', { id: noteId, labels: ['Kỷ niệm'] });
+  assert.equal(state.notes[0].gardenSize, null, 'Old and new notes start without a size (the garden uses the default)');
+  for (const gardenSize of [0.7, 1.9, 1.25, '1.3', NaN, Infinity, 0]) {
+    assert.throws(() => apply(state, 'note.update', { id: noteId, garden: true, gardenSize }), { code: 'invalid_garden_size' }, String(gardenSize));
+  }
+  for (const gardenSize of [0.8, 1.3, 1.8, 0.1 * 13, null]) {
+    state = apply(state, 'note.update', { id: noteId, garden: true, gardenFlower: 'daisy', gardenSize });
+    assert.equal(state.notes[0].gardenSize, gardenSize);
+  }
+  assert.deepEqual([GARDEN_SIZE.min, GARDEN_SIZE.max, GARDEN_SIZE.default], [0.8, 1.8, 1.3]);
+  const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], garden: true, gardenSize: 1.5 });
+  assert.equal(created.notes.at(-1).gardenSize, 1.5);
 });
 
 test('a journal page created without visibility stays private to its author on the server', () => {
