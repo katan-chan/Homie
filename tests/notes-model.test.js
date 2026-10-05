@@ -104,3 +104,16 @@ test('journal boards and memories: noteDefault, memoryDate and garden only on a 
   const created = apply(state, 'note.create', { id: randomUUID(), columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff', labels: ['Kỷ niệm'], memoryDate: '2025-01-01', garden: true });
   assert.equal(created.notes.at(-1).garden, true);
 });
+
+test('a journal page created without visibility stays private to its author on the server', () => {
+  const journal = randomUUID(), page = { columnId: null, x: 0, y: 0, width: 100, height: 100, color: '#ffffff' };
+  let state = apply(emptyNotesState(), 'board.create', { name: 'Nhật ký', visibility: 'shared', noteDefault: 'private' }, 'haiyen', journal);
+  state = apply(state, 'note.create', { id: randomUUID(), ...page }, 'haiyen', journal);
+  assert.equal(state.notes.at(-1).visibility, 'haiyen', 'Omitted visibility follows the journal default');
+  state = apply(state, 'note.create', { id: randomUUID(), ...page, visibility: null }, 'haiyen', journal);
+  assert.equal(state.notes.at(-1).visibility, null, 'An explicit "Theo bảng" choice is kept');
+  state = apply(state, 'board.create', { name: 'Chung', visibility: 'shared' }, 'haiyen');
+  const shared = state.boards.at(-1).id;
+  state = apply(state, 'note.create', { id: randomUUID(), ...page }, 'haiyen', shared);
+  assert.equal(state.notes.at(-1).visibility, null, 'Other boards keep following the board');
+});

@@ -270,7 +270,8 @@ export function mountRoulette(container, { kind, signal }) {
   }
 
   async function loadHistory(append) {
-    const query = new URLSearchParams({ kind, limit: String(append ? MORE : Math.max(FIRST_PAGE, state.history.length)) });
+    // The server caps a page at 100; a reload past that keeps the first 100 and "Xem thêm" continues from there.
+    const query = new URLSearchParams({ kind, limit: String(append ? MORE : Math.min(100, Math.max(FIRST_PAGE, state.history.length))) });
     if (append) query.set('cursor', state.cursor);
     try {
       const page = await call(`/api/ideas/sessions?${query}`);
