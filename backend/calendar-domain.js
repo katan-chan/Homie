@@ -1,15 +1,13 @@
 // Calendar document (storage key "calendar"): occasions both members see and edit only as author,
 // and Hải Yến's cycles. Pure functions over a plain { events, cycles } doc; the API owns sessions,
-// requestId replay and persistence. Errors carry { status, code } like http.js httpError.
+// requestId replay and persistence.
+import { httpError as fail } from './http.js';
+import { isDate } from './dates.js';
 
 export const CYCLE_OWNER = 'haiyen';
 export const EVENT_KINDS = ['occasion', 'anniversary', 'milestone'];
 
-const fail = (status, code, message = code) => Object.assign(new Error(message), { status, code });
 const notFound = () => fail(404, 'not_found', 'Not found');
-
-const isDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
-  && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
 
 function text(value, max, field, { required = false } = {}) {
   if (typeof value !== 'string') throw fail(400, 'invalid_body', `${field} must be text`);
