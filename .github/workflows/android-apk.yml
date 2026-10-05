@@ -1,8 +1,13 @@
 name: Android APK
 
 on:
+  # The app loads the live Vercel site, so web changes reach phones without a new APK.
+  # Only rebuild when the native shell changes; `npx cap sync` writes new plugins into android/.
   push:
     branches: [main]
+    paths:
+      - 'android/**'
+      - 'capacitor.config.json'
   workflow_dispatch:
 
 permissions:
