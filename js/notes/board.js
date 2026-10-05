@@ -336,19 +336,20 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
       if (action.startsWith('move-')) {const delta={ 'move-left':[-10,0], 'move-right':[10,0], 'move-up':[0,-10], 'move-down':[0,10] }[action]; if(delta)await geometry(selection.kind,entity,current=>({x:current.x+delta[0],y:current.y+delta[1]}));}
       if (action === 'note-color') await mutate('note.update',{id:entity.id,color:control.dataset.color});
       if (action === 'label-remove') await mutate('note.update',{id:entity.id,labels:entity.labels.filter(label=>label!==control.dataset.label)});
-      if (action === 'label-memory') await addLabel(entity, MEMORY, { memoryDate: entity.memoryDate || today() });
+      if (action === 'label-memory') await addLabel(entity, MEMORY);
       if (action === 'note-garden') await mutate('note.update',{id:entity.id,garden:!entity.garden});
       if (action === 'label-add') { const input = inspector.querySelector('[name=label]'); await addLabel(entity, input.value); }
       if (action === 'object-trash') await mutate(`${selection.kind}.trash`,{id:entity.id});
       if (action === 'column-rename') askName(root,{title:'Đổi tên cột',value:entity.name,signal:controller.signal,onSubmit:name=>run(()=>mutate('column.update',{id:entity.id,name}))});
     });
   }, events);
-  async function addLabel(entity, value, extra = {}) {
+  async function addLabel(entity, value) {
     const label = value.trim().replace(/\s+/g, ' '); if (!label) return;
     // Reuse the spelling already on the board, so "kỷ niệm" and "Kỷ niệm" stay one label.
     const known = allLabels().find(other => other.toLocaleLowerCase('vi') === label.toLocaleLowerCase('vi')) || label;
     if (entity.labels.some(other => other.toLocaleLowerCase('vi') === known.toLocaleLowerCase('vi'))) return;
-    await mutate('note.update', { id: entity.id, labels: [...entity.labels, known], ...extra });
+    // A new memory is dated today unless it kept a date from before.
+    await mutate('note.update', { id: entity.id, labels: [...entity.labels, known], ...(isMemory([known]) && !entity.memoryDate ? { memoryDate: today() } : {}) });
   }
   inspector.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.name === 'label') { event.preventDefault(); const entity = selected(); if (entity && state.writable) run(() => addLabel(entity, event.target.value)); } }, events);
   boardView.addEventListener('change', () => { if (boardView.value) run(() => mutate('board.share', { visibility: boardView.value })); }, events);
@@ -356,7 +357,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   for (const select of [labelFilter, dockFilter]) select.addEventListener('change', () => { filter = select.value; filterKey = ''; renderViews(); for (const record of records.values()) if (record.kind === 'note') record.node.classList.toggle('is-filtered', !!filter && !record.entity.labels?.includes(filter)); }, events);
   inspector.addEventListener('change', event => {const entity=selected();if(!entity || !state.writable)return;const input=event.target, columnId=input.value || null;
     if(input.dataset.action==='note-visibility'){run(()=>mutate('note.update',{id:entity.id,visibility:input.value || null}));return;}
-    if(input.dataset.action==='note-memory-date'){if(input.validity.valid)run(()=>mutate('note.update',{id:entity.id,memoryDate:input.value || null}));return;}
+    if(input.dataset.action==='note-memory-date'){if(input.value&&input.validity.valid)run(()=>mutate('note.update',{id:entity.id,memoryDate:input.value}));return;}
     run(()=>input.dataset.action==='object-column' ? geometry('note',entity,current=>({columnId,x:current.x,y:current.y}),true)
       : input.dataset.action==='object-size' && Number.isFinite(input.valueAsNumber) ? geometry(selection.kind,entity,{[input.name]:clampPaperSize(selection.kind,input.valueAsNumber)}) : undefined);
   },events);

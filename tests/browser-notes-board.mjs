@@ -17,7 +17,7 @@ try {
     await wait("document.querySelector('[data-action=board-new]')");
     assert.equal(await evaluate("document.querySelector('#sidebar').open"),true,'Login keeps sidebar open');
     // Board creation lives in a "+" after the tablist, shown even before any board exists; the header has no create button.
-    assert.deepEqual(await evaluate("(()=>{const plus=document.querySelector('[data-action=board-new]');return{tabs:document.querySelectorAll('.notes-board-tab').length,label:plus.getAttribute('aria-label'),text:plus.textContent,role:plus.getAttribute('role'),inStrip:plus.parentElement.classList.contains('notes-tab-strip'),last:plus===plus.parentElement.lastElementChild,inTablist:!!plus.closest('[role=tablist]'),header:[...document.querySelectorAll('.notes-heading button')].some(b=>b.textContent.includes('Bảng mới')||b.dataset.action==='board-new')}})()"),{tabs:0,label:'Tạo bảng mới',text:'+',role:null,inStrip:true,last:true,inTablist:false,header:false});
+    assert.deepEqual(await evaluate("(()=>{const plus=document.querySelector('[data-action=board-new]');return{tabs:document.querySelectorAll('.notes-board-tab:not([data-board-tab=rules])').length,label:plus.getAttribute('aria-label'),text:plus.textContent,role:plus.getAttribute('role'),inStrip:plus.parentElement.classList.contains('notes-tab-strip'),last:plus===plus.parentElement.lastElementChild,inTablist:!!plus.closest('[role=tablist]'),header:[...document.querySelectorAll('.notes-heading button')].some(b=>b.textContent.includes('Bảng mới')||b.dataset.action==='board-new')}})()"),{tabs:0,label:'Tạo bảng mới',text:'+',role:null,inStrip:true,last:true,inTablist:false,header:false});
     // With no boards the frame is one big "+" and the tab "+" hides; the big one opens the same name dialog.
     await wait("document.querySelector('.notes-catalog-status [data-action=board-new-empty]')");
     assert.deepEqual(await evaluate("[getComputedStyle(document.querySelector('.notes-tab-new')).display,getComputedStyle(document.querySelector('.notes-empty-create')).display,document.querySelector('.notes-empty-create').getAttribute('aria-label')]"),['none','flex','Tạo bảng mới'],'Empty state swaps the tab + for the big +');
@@ -34,7 +34,7 @@ try {
     await evaluate("window.boardId=document.querySelector('[data-board-id]').dataset.boardId;document.querySelector('[data-action=note-new]').click()");
     await wait("document.querySelector('.paper-note')");
     assert.equal(await evaluate("document.querySelector('.note-author').textContent"),'Minh Lê');
-    assert.deepEqual(await evaluate("[document.querySelectorAll('.notes-board-tab').length,document.querySelector('.notes-board-tab').getAttribute('aria-selected'),document.querySelector('.notes-board-tab').dataset.boardTab===boardId]"),[1,'true',true],'The + tab creates and selects a board');
+    assert.deepEqual(await evaluate("[document.querySelectorAll('.notes-board-tab:not([data-board-tab=rules])').length,document.querySelector('.notes-board-tab').getAttribute('aria-selected'),document.querySelector('.notes-board-tab').dataset.boardTab===boardId]"),[1,'true',true],'The + tab creates and selects a board');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-tab-new')).display!=='none'&&!document.querySelector('.notes-empty-create')"),true,'Once a board exists the tab + returns and the big + is gone');
     assert.deepEqual(await evaluate("[parseFloat(document.querySelector('.paper-note').style.width),parseFloat(document.querySelector('.paper-note').style.height)]"),[360,320],'New notes are 360x320');
     // Clicking empty note body (well below the text) starts editing, caret at the end.
@@ -80,13 +80,13 @@ try {
     await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     // Board switching is local to the dashboard, and renamed/trash catalog entries stay live.
     await evaluate("document.querySelector('[data-action=board-new]').click();document.querySelector('.notes-name-form input').value='Bảng thứ hai';document.querySelector('.notes-name-form').requestSubmit()");
-    await wait("document.querySelectorAll('.notes-board-tab').length===2 && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
+    await wait("document.querySelectorAll('.notes-board-tab:not([data-board-tab=rules])').length===2 && document.querySelector('.notes-durability')?.dataset.durability==='saved'");
     await wait("document.querySelector('[data-action=board-visibility] option[value=public]')");
     await evaluate("(()=>{const s=document.querySelector('[data-action=board-visibility]');s.value='public';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
     await wait("document.querySelector('.notes-board-tab[aria-selected=true]').dataset.visibility==='public' && document.querySelector('.notes-durability').dataset.durability==='saved'");
     assert.equal(await evaluate("document.querySelectorAll('.paper-note').length"),0);
     // Arrow keys move only between board tabs; the + is not part of the tab set.
-    assert.deepEqual(await evaluate("(()=>{const t=[...document.querySelectorAll('.notes-board-tab')],key=k=>{document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return document.activeElement.dataset.boardTab;};t[0].focus();return[key('ArrowRight')===t[1].dataset.boardTab,key('ArrowRight')===t[0].dataset.boardTab,key('End')===t[1].dataset.boardTab];})()"),[true,true,true]);
+    assert.deepEqual(await evaluate("(()=>{const t=[...document.querySelectorAll('.notes-board-tab')],key=k=>{document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return document.activeElement.dataset.boardTab;};t[0].focus();return[t[2].dataset.boardTab,key('ArrowRight')===t[1].dataset.boardTab,key('End')===t[2].dataset.boardTab,key('ArrowRight')===t[0].dataset.boardTab,key('ArrowLeft')===t[2].dataset.boardTab,key('ArrowLeft')===t[1].dataset.boardTab];})()"),['rules',true,true,true,true,true],'Members get the Nội quy tab last; arrows wrap through it');
     await wait("document.querySelector('.notes-durability')?.dataset.durability==='saved'");
     const secondBoard=await evaluate("document.querySelector('[data-board-id]').dataset.boardId");
     await evaluate("document.querySelector('[data-action=board-rename]').click();document.querySelector('.notes-name-form input').value='Bảng đổi tên';document.querySelector('.notes-name-form').requestSubmit()");

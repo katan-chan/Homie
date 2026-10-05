@@ -32,7 +32,7 @@ try {
     await choose('[data-action=note-visibility]', 'minhle'); await wait(`document.querySelector('[data-note-id="${first}"] .note-view')?.textContent==='Chỉ mình tôi' && ${saved}`);
     await evaluate("document.querySelector('[data-action=label-memory]').click()"); await wait(`document.querySelector('[data-note-id="${first}"] .note-label.is-memory') && ${saved}`);
     await evaluate("{const i=document.querySelector('.notes-inspector [name=label]');i.focus();i.value='  Du   lịch ';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))}");
-    await wait(`[...document.querySelectorAll('[data-note-id="${first}"] .note-label')].map(l=>l.textContent).join()==='Kỷ niệm,Du lịch' && ${saved}`);
+    await wait(`[...document.querySelectorAll('[data-note-id="${first}"] .note-label:not(.is-memory-date)')].map(l=>l.textContent).join()==='Kỷ niệm,Du lịch' && ${saved}`);
     assert.equal(await evaluate("document.activeElement?.name"), 'label', 'Typing labels keeps focus in the label input');
     // A differently cased label reuses the board's spelling.
     await evaluate(`document.querySelector('[data-note-id="${second}"] .note-handle').click()`); await wait("document.querySelector('[data-action=label-add]') && !document.querySelector('[data-action=note-visibility]')?.value");
