@@ -48,7 +48,7 @@ try {
     assert.equal(await evaluate(`(()=>{const v=document.querySelector('.notes-viewport').getBoundingClientRect(),n=document.querySelector('[data-note-id="${second}"]').getBoundingClientRect();return n.left>=v.left&&n.right<=v.right&&n.top>=v.top&&n.bottom<=v.bottom;})()`), true, 'The note is in view');
     // Nội quy: a members-only tab that mounts the rules panel instead of a board.
     await evaluate("document.querySelector('[data-board-tab=rules]').click()");
-    await wait("!document.querySelector('.notes-board') && document.querySelector('#notes-selected-board').textContent.includes('Nội quy')");
+    await wait("!document.querySelector('.notes-board') && !!document.querySelector('#notes-selected-board .rules-panel')");
     assert.equal(await evaluate("document.querySelector('[data-board-tab=rules]').getAttribute('aria-selected')"), 'true');
     await evaluate("(async()=>{await (await import('/js/auth.js')).logout();})()"); await wait("!document.querySelector('[data-board-tab=rules]') && !document.querySelector('#notes-selected-board')?.textContent.includes('Nội quy')");
   }, undefined, { origin: fixture.origin });
