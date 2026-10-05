@@ -21,6 +21,16 @@ coverage/
 # Local deployment metadata
 .vercel/
 
+# Android signing keys and build outputs (keystore lives in ~/.homie-signing)
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# Local scratch files not needed for deploy
+tests/sticker_test/
+docs/demo-proposal.html
+
 # Runtime logs
 .data/
 *.log

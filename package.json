@@ -9,6 +9,7 @@
     "start": "node backend/server.js",
     "build": "node scripts/build.js",
     "build:notes": "node scripts/build-notes.js",
+    "build:android": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "test": "node --test tests/*.test.js",
     "test:notes-stack": "node --test tests/notes-stack.test.js",
     "test:browser": "node tests/browser-auth.mjs",
@@ -20,6 +21,8 @@
     "node": "22.x"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "@tiptap/core": "3.31.4",
     "@tiptap/extension-bold": "3.31.4",
     "@tiptap/extension-collaboration": "3.31.4",
@@ -38,6 +41,7 @@
     "yjs": "13.6.33"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "esbuild": "0.28.2"
   }
 }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Homie</string>
+    <string name="title_activity_main">Homie</string>
+    <string name="package_name">com.homie.app</string>
+    <string name="custom_url_scheme">com.homie.app</string>
+</resources>

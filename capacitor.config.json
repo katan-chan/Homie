@@ -1,0 +1,9 @@
+{
+  "appId": "com.homie.app",
+  "appName": "Homie",
+  "webDir": "dist",
+  "server": {
+    "url": "https://homie-ecru.vercel.app",
+    "cleartext": false
+  }
+}
