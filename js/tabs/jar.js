@@ -1,22 +1,7 @@
-// Stub owned by part A; replace with the real page, keeping the tab contract.
+// Hũ: three jars (kisses, apologies, feelings). The page lives in js/features/jar/.
+import { mountJar } from '../features/jar/page.js';
+
 export function render(container, { signal }) {
   if (signal.aborted) return () => {};
-  const section = document.createElement('section');
-  section.className = 'route-status';
-  const title = document.createElement('h1');
-  title.textContent = 'Hũ';
-  const status = document.createElement('p');
-  status.textContent = 'Đang làm';
-  section.append(title, status);
-  container.replaceChildren(section);
-
-  let disposed = false;
-  function cleanup() {
-    if (disposed) return;
-    disposed = true;
-    signal.removeEventListener('abort', cleanup);
-    section.remove();
-  }
-  signal.addEventListener('abort', cleanup, { once: true });
-  return cleanup;
+  return mountJar(container, { signal });
 }
