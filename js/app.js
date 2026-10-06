@@ -3,6 +3,9 @@ import { resolveTab } from './routing.js';
 import { authEvents, getUser, logout, refreshSession } from './auth.js';
 import { renderLogin } from './login.js';
 import { mountBackground } from './background.js';
+import { forgetDevice, initPush } from './push.js';
+
+initPush();
 
 const backgroundController = new AbortController();
 const background = mountBackground(document.querySelector('#app-background'), { signal: backgroundController.signal });
@@ -63,6 +66,7 @@ function updateAccountControls() {
     button.addEventListener('click', async () => {
       button.disabled = true;
       try {
+        await forgetDevice();
         await logout();
         await navigate(true);
         if (sidebar.open) document.querySelector('.menu-close').focus();

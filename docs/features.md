@@ -47,6 +47,10 @@ Lưới tháng (tháng trước/sau, Hôm nay) và bảng chi tiết ngày: số
 
 Hai trang cùng một kiểu: kho ý tưởng (mặt bảng giấy kéo đổi chỗ hoặc danh sách), lượt bốc chung cho cả hai máy, lịch sử đã làm. Seminar là chủ đề để hai đứa tìm hiểu rồi kể cho nhau nghe; Hoạt động chung có bảy loại (Trò chuyện, Sáng tạo, Khám phá, Chơi, Tự làm, Tụi mình, Nhảm nhí) và lọc theo loại. Bốc ngẫu nhiên đều trong các mục chưa bỏ qua và chưa làm trong 14 ngày; có thể bỏ qua, đặt lại các mục đã bỏ qua hoặc cho bốc cả mục vừa làm. "Xong rồi" ghi ngày, vài dòng và điểm 1–5 cho niềm vui của chính mình; người kia tự chấm phần mình. Chỉ người tạo sửa hoặc lưu trữ ý tưởng; lưu trữ giữ lịch sử.
 
+## Thông báo trên điện thoại
+
+Chỉ trong app Android: sau khi đăng nhập app xin quyền thông báo một lần. Người kia nhận thông báo khi có nụ hôn, lời xin lỗi hoặc cảm xúc được chia sẻ trong Hũ (sau vài giây, Hoàn tác thì không báo), và khi có note mới hoặc bảng vừa được chia sẻ trong Góc ghi chép mà người kia xem được (gom trong một phút thành một thông báo, kèm dòng đầu của note). Không báo cảm xúc riêng, trang nhật ký riêng, bảng riêng hay note đã xóa. Chạm thông báo mở Hũ hoặc đúng note. Không có thông báo trên web; tắt bằng cài đặt thông báo của Android.
+
 ## Giao diện và triển khai
 
 Ưu tiên điện thoại: các tab dễ chạm trong sidebar trái bật/tắt. Chọn tab giữ menu mở, nền không blur; nội dung có transition nhẹ và hỗ trợ giảm chuyển động. Logo riêng chỉ để nhận diện; trang có favicon từ logo. Homepage là vườn hoa toàn cảnh và vùng chữ không bị che.

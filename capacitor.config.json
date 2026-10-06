@@ -5,5 +5,13 @@
   "server": {
     "url": "https://homie-ecru.vercel.app",
     "cleartext": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "sound",
+        "alert"
+      ]
+    }
   }
 }

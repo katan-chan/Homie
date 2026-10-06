@@ -127,7 +127,7 @@ Mã trạng thái chính: 400 dữ liệu sai (ví dụ `invalid_fields`, `inval
 
 Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi module xuất `route(path) -> boolean` và `create(deps) -> { handle(req, res), close?() }` (có thể trả Promise). `server.js` chạy kiểm tra Origin allowlist và CORS chung trước, rồi dispatch module đầu tiên có `route` khớp, trước các route lõi. OPTIONS trên route feature trả 204. Mỗi module được tạo lazily ở request đầu tiên của nó, chỉ một lần; `create` lỗi trả 503 `storage_unavailable` và được thử lại ở request sau. Khi server dừng, các module được `close()` trước notes. Không sửa `server.js` hay `features.js` để thêm route: phần sở hữu chỉ sửa file module của mình.
 
-`deps = { auth, allowedOrigins, dataDir, remote, notesStore }`: `allowedOrigins` là Set origin; `remote` là storage Supabase hoặc null; `notesStore()` trả Promise tới notes store đang chạy (khởi tạo notes nếu chưa, cùng cơ chế thử lại với Notes API).
+`deps = { auth, allowedOrigins, dataDir, remote, push, notesStore }`: `allowedOrigins` là Set origin; `remote` là storage Supabase hoặc null; `notesStore()` trả Promise tới notes store đang chạy (khởi tạo notes nếu chưa, cùng cơ chế thử lại với Notes API).
 
 | Prefix | Module | Phần sở hữu |
 | --- | --- | --- |
@@ -136,6 +136,7 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/ideas | backend/ideas-api.js | C Seminar, Hoạt động chung |
 | /api/rules | backend/rules-api.js | E Nội quy |
 | /api/garden | backend/garden-api.js | G Hoa kỷ niệm |
+| /api/push | backend/push-api.js | Thông báo điện thoại |
 
 Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Prefix không có module thật thì trả 404 `{ error: "Not implemented", code: "not_implemented" }`.
 
@@ -205,6 +206,17 @@ Hai thành viên thấy mọi idea và session; chỉ tác giả sửa hoặc l�
 ### Hoa kỷ niệm: /api/garden
 
 GET/HEAD /api/garden (chỉ đọc) → `{ items: [{ noteId, boardId, boardName, title, memoryDate, authorId, body, gardenFlower, gardenSize }] }`: các kỷ niệm `garden: true` mà người xem được thấy (`listMemories(..., { gardenOnly: true })`), `body` là phần chữ sau dòng tiêu đề (≤4000 ký tự). Khách nhận `{ items: [] }`. Path hoặc method khác 404 `not_found`. Vườn vẽ mỗi item thành một bông có ruy băng hồng, cỡ theo `gardenSize`; bấm mở tấm kỷ niệm có nút "Mở trong Góc ghi chép" (dùng `homie-notes:focus`).
+
+### Thông báo điện thoại: /api/push
+
+Chỉ app Android (Capacitor + `@capacitor/push-notifications`) dùng. `POST /api/push/devices { token }` gắn token Firebase của máy vào account đang đăng nhập (một máy thuộc một account: đăng ký lại thì chuyển; mỗi account tối đa 5 máy, mới nhất trước); `DELETE /api/push/devices { token }` gỡ (app gọi trước khi đăng xuất). Cả hai cần quyền ghi như mọi feature API, trả 204; token sai dạng hoặc body có field khác 400 `invalid_token`. Token lưu trong document `push`: `{ devices: { minhle: [{ token, at }], haiyen: [...] } }`.
+
+Gửi (backend/push.js) qua Firebase Cloud Messaging HTTP v1 với service account trong `FIREBASE_SERVICE_ACCOUNT` (JSON hoặc base64 JSON, chỉ ở server); thiếu biến thì không gửi gì. Token Firebase trả 404 bị gỡ. Chỉ báo cho người kia, không bao giờ cho chính người làm:
+
+- Hũ: 8 giây sau khi thả (qua cửa sổ Hoàn tác) nếu viên còn trong bình và `visibility: 'shared'` (nụ hôn, lời xin lỗi, cảm xúc đã chia sẻ); cảm xúc riêng đổi sang chia sẻ cũng báo một lần. Data `{ hash: 'jar', kind }`.
+- Ghi chép: `watchNotes(store, push)` nghe commit notes (event `metadata` có `accountId`, `entityId`). `note.create`, và `board.create`/`board.share` làm bảng vừa hiện với người kia, được gom theo (người làm, bảng) và gửi sau 60 giây; lúc gửi kiểm tra lại bằng `publicBoard(boardId, người kia)` nên note riêng tư, trang nhật ký riêng hay note đã vào thùng rác không được nhắc. Data `{ hash: 'dashboard', boardId, noteId }`; app ghi `homie-notes:focus` rồi mở dashboard.
+
+Hẹn giờ nằm trong bộ nhớ: backend khởi động lại giữa chừng thì thông báo đang chờ bị mất (dữ liệu không ảnh hưởng).
 
 ### Nội quy: /api/rules
 

@@ -1,7 +1,7 @@
 import { isMemory } from '../js/notes/model.js';
 
 // Memories are notes labelled "Kỷ niệm"; the date and the garden flag live on the note.
-function firstLine(node) {
+export function firstLine(node) {
   const text = value => value.text ?? (value.content || []).map(text).join('');
   for (const block of node?.content || []) { const line = text(block).trim(); if (line) return line.slice(0, 120); }
   return '';

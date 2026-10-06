@@ -87,7 +87,7 @@ test('feature modules are created once with deps, can read the notes store and c
     async create(deps) {
       if (failNext) { failNext = false; throw new Error('boot failure'); }
       created++;
-      assert.deepEqual(Object.keys(deps).sort(), ['allowedOrigins', 'auth', 'dataDir', 'notesStore', 'remote']);
+      assert.deepEqual(Object.keys(deps).sort(), ['allowedOrigins', 'auth', 'dataDir', 'notesStore', 'push', 'remote']);
       assert.equal(deps.dataDir, dataDir);
       return {
         handle: async (req, res) => { const store = await deps.notesStore(); sendJson(res, 200, { canSee: typeof store.canSee }); },

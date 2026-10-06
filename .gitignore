@@ -21,6 +21,10 @@ coverage/
 # Local deployment metadata
 .vercel/
 
+# Firebase: the app config and the server key never go into the public repo (CI and Render get them as secrets)
+google-services.json
+*firebase-adminsdk*.json
+
 # Android signing keys and build outputs (keystore lives in ~/.homie-signing)
 *.jks
 *.keystore

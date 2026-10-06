@@ -7,6 +7,7 @@ import { createNotesStore } from './notes-store.js';
 import { createNotesApi, notesRoute } from './notes-api.js';
 import { createNoteMedia } from './note-media.js';
 import { features } from './features.js';
+import { createPush, watchNotes } from './push.js';
 export { hashPassword } from './auth.js';
 
 function failure(status, message) {
@@ -48,18 +49,19 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
   const remote = 'remote' in options ? options.remote : supabaseFromEnv();
   const dataDir = options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data';
   const profiles = createProfiles(dataDir, remote);
+  const push = options.push ?? createPush({ dataDir, remote });
   let notesReady, closing = false;
   const notes = () => {
     if (!notesReady) {
       notesReady = createNotesStore({ dataDir, remote })
-        .then(store => ({ store, api: createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir, store, remote, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }) }));
+        .then(store => ({ store, unwatch: watchNotes(store, push), api: createNotesApi({ store, auth, allowedOrigins: allowed, profiles, media: createNoteMedia({ dataDir, store, remote, ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath }) }) }));
       // Observe initialization even if a request disconnects; notes failure never affects health/auth/profile.
       // A failed start (for example remote storage unreachable) is retried on the next request instead of cached.
       notesReady.catch(() => { notesReady = null; });
     }
     return notesReady;
   };
-  const deps = { auth, allowedOrigins: allowed, dataDir, remote, notesStore: () => notes().then(({ store }) => store) };
+  const deps = { auth, allowedOrigins: allowed, dataDir, remote, push, notesStore: () => notes().then(({ store }) => store) };
   // Each feature module is created on its first request; a failed create is retried like notes.
   const featureModules = new Map();
   const featureModule = feature => {
@@ -178,7 +180,8 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     closing = true;
     // Features may read the notes store, so they close first.
     const cleanup = Promise.all([...featureModules.values()].map(ready => ready.then(module => module.close?.()).catch(() => {})))
-      .then(() => notesReady?.then(({ api }) => api.close()).catch(() => {}));
+      .then(() => notesReady?.then(({ api, unwatch }) => { unwatch(); return api.close(); }).catch(() => {}))
+      .then(() => push.close()).catch(() => {});
     close(error => { cleanup.then(() => callback?.(error)); });
     return server;
   };

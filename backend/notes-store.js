@@ -448,7 +448,8 @@ export async function createNotesStore({ dataDir, remote = null }) {
         // Use the loader's inverse check before ACK so persisted history remains reopenable.
         if (inverseTarget) validateInverse(undo, inverseTarget);
         return commit(candidate, userId, request.operationId, request.boardId, hash, result, undo,
-          { type: 'metadata', boardId: request.boardId, revision, operationId: request.operationId, commandType: request.type });
+          { type: 'metadata', boardId: request.boardId, revision, operationId: request.operationId, commandType: request.type,
+            accountId: userId, entityId: typeof request.payload?.id === 'string' ? request.payload.id : null });
       });
     },
     applyText(userId, noteId, update, operationId, { authorize } = {}) {

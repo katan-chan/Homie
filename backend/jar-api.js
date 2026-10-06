@@ -2,6 +2,7 @@
 import { handleErrors, httpError, readJson, requireMember, requireWrite, sendJson } from './http.js';
 import { createDocStore } from './doc-store.js';
 import { localDate, localTime, parseRange } from './dates.js';
+import { jarMessage, partnerOf } from './push.js';
 
 export const KINDS = ['kiss', 'sorry', 'mood'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,8 +100,14 @@ export function setArchived(doc, viewerId, id, archived, body = {}, now = new Da
 
 export const route = path => /^\/api\/jar(?:\/|$)/.test(path);
 
-export function create({ auth, allowedOrigins, dataDir, remote }) {
+export function create({ auth, allowedOrigins, dataDir, remote, push = null, notifyDelay = 8000 }) {
   const store = createDocStore({ key: 'jar', dataDir, remote, empty: emptyJar, validate: validateJar });
+  // The partner hears about a ball after the Undo window, and only if it is still in the jar and shared then.
+  const notify = id => push?.later(`jar:${id}`, notifyDelay, async () => {
+    const record = (await store.read()).records.find(item => item.id === id);
+    const message = jarMessage(record);
+    if (message) await push.send(partnerOf(record.ownerId), message);
+  });
   const write = req => requireWrite(req, { auth, allowedOrigins });
   const reply = (res, status, record) => sendJson(res, status, { record: shape(record) });
 
@@ -131,6 +138,7 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
           created = doc.records.length > before;
           return result;
         });
+        if (created) notify(record.id);
         return reply(res, created ? 201 : 200, record);
       }
       throw httpError(405, 'method_not_allowed', 'Method not allowed');
@@ -139,7 +147,13 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     if (parts.length === 1 && req.method === 'PUT') {
       const viewer = write(req);
       const body = await readJson(req);
-      return reply(res, 200, await store.update(doc => updateMood(doc, viewer, id, body)));
+      let wasShared = true;
+      const record = await store.update(doc => {
+        wasShared = doc.records.find(item => item.id === id)?.visibility === 'shared';
+        return updateMood(doc, viewer, id, body);
+      });
+      if (!wasShared && record.visibility === 'shared') notify(record.id);
+      return reply(res, 200, record);
     }
     if (parts.length === 2 && ['archive', 'restore'].includes(action) && req.method === 'POST') {
       const viewer = write(req);
