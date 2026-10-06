@@ -79,7 +79,10 @@ export function mountJar(container, { signal, api = jarApi }) {
     act.addEventListener('click', () => k === 'mood' ? openMood({ opener: act }) : send(k, act.getBoundingClientRect()));
     shelf.append(act); acts[k] = act;
   }
-  shelf.append(hint);
+  // Phones: the list and the time range open in a sheet, so the page fits one screen.
+  const listBtn = button('jar-btn jar-list-btn', 'Xem danh sách');
+  listBtn.addEventListener('click', openList);
+  shelf.append(listBtn, hint);
 
   function buildStage(k) {
     const s = SHAPES[k], path = jarPath(s), [rib, ribDark] = RIBBON[k], lx = s.nl - 8, lw = s.nr - s.nl + 16, bx = s.nr - 18;
@@ -195,7 +198,10 @@ export function mountJar(container, { signal, api = jarApi }) {
     if (j === undefined) return;
     event.preventDefault(); setKind(KINDS[(j + 3) % 3], true);
   });
-  const layout = () => tablist.setAttribute('aria-label', phoneQuery.matches ? 'Chọn bình' : 'Danh sách của bình');
+  const layout = () => {
+    tablist.setAttribute('aria-label', phoneQuery.matches ? 'Chọn bình' : 'Danh sách của bình');
+    if (!phoneQuery.matches && listSection.closest('dialog')) listSection.closest('dialog').close();
+  };
   phoneQuery.addEventListener('change', layout, { signal });
   layout();
 
@@ -370,6 +376,12 @@ export function mountJar(container, { signal, api = jarApi }) {
     root.append(dialog);
     openSheet = current;
     return current;
+  }
+  function openList() {
+    const s = sheet(listTitle.textContent, listBtn, { onClose: () => { top.append(chips); shelf.after(listSection); } });
+    s.dialog.classList.add('jar-list-sheet');
+    s.box.append(chips, listSection);
+    s.dialog.showModal();
   }
   const actionsRow = (...buttons) => { const row = el('div', 'jar-actions'); row.append(...buttons); return row; };
 

@@ -39,6 +39,7 @@
 .jar-act.mood{background:#fbf0d6;border-color:#ecd29a;color:#7a5a12}
 .jar-act:active{transform:scale(.96)}
 .jar-act:disabled{opacity:.55;cursor:wait}
+.jar-list-btn{display:none}
 .jar-hint{display:none;text-align:center;font-size:13px;color:var(--muted);margin:10px 0 0;grid-column:1/-1}
 
 /* Candy balls (also used by Lịch through colors.js mini()). */
@@ -136,15 +137,25 @@
 .jar-toast button{min-height:44px;border:0;background:transparent;color:#ffc9d9;font-weight:600;padding:0 10px;border-radius:10px;flex:none}
 
 @media(max-width:640px){
-  .jar-page{padding:100px 0 88px}
-  .jar-title{font-size:34px}
+  /* One phone screen, no page scroll: the jar shrinks to the height left; list and range live in a sheet. */
+  .jar-page{display:flex;flex-direction:column;gap:8px;height:calc(100dvh - 74px - env(safe-area-inset-top,0px));margin-top:calc(64px + env(safe-area-inset-top,0px));
+    padding:0 0 calc(10px + env(safe-area-inset-bottom,0px))}
+  .jar-title{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .jar-sub,.jar-page>.jar-list,.jar-top>.jar-chips{display:none}
   .jar-tabs{width:100%}
   .jar-tab{flex:1;justify-content:center;padding:0 6px}
-  .jar-shelf{grid-template-columns:minmax(0,1fr);padding:18px 12px 12px}
-  .jar-stage,.jar-act{width:min(100%,300px)}
+  .jar-status{margin:0}
+  .jar-shelf{flex:1;min-height:0;margin:0;container-type:size;grid-template-columns:minmax(0,1fr);align-content:center;row-gap:8px;padding:10px 12px}
+  .jar-stage{width:min(100cqw,300px,(100cqh - 190px)*.8)}
+  .jar-act{width:min(100%,300px)}
   .jar-stage:not(.is-current),.jar-act:not(.is-current){display:none}
   .jar-act{flex-direction:row;gap:10px;min-height:56px}
-  .jar-hint{display:block}
+  .jar-plank{margin:-15px -4px 0}
+  .jar-list-btn{display:block;justify-self:center;width:min(100%,300px)}
+  .jar-hint{display:block;margin:0}
+  .jar-list-sheet .jar-chips{margin:-4px 0 0}
+  .jar-list-sheet .jar-list{margin:0;padding:0;background:none}
+  .jar-list-sheet .jar-list>h2{display:none}
   .jar-sheet{margin:auto 0 0;width:100%;max-width:100%;max-height:90dvh;border-radius:22px 22px 0 0}
   .jar-sheet-box{padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px))}
 }

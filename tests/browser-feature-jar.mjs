@@ -31,6 +31,18 @@ try {
     assert.equal(await evaluate("document.querySelector('.jar-tabs').getAttribute('aria-label')"), 'Chọn bình');
     assert.deepEqual(await layout(), { overflow: false, small: [] }, '390: no sideways scroll, 44px targets');
     assert.equal(await evaluate("document.querySelector('.jar-act.kiss').textContent"), 'Hôn Yến');
+    // The phone page fits one screen; the list and the time range open in a sheet and go back when it closes.
+    for (const [width, height] of [[390, 664], [360, 640], [390, 844]]) {
+      await size(width, height);
+      await wait(`innerHeight===${height}`);
+      assert.ok(await evaluate('document.documentElement.scrollHeight<=innerHeight'), `${width}x${height} has no page scroll`);
+    }
+    assert.deepEqual(await evaluate(`[${shown('.jar-page>.jar-list')},${shown('.jar-chip')}]`), [0, 0], 'Phone page hides the list and range');
+    await click('.jar-list-btn');
+    await wait("document.querySelector('dialog.jar-list-sheet[open] .jar-chips') && document.querySelector('dialog.jar-list-sheet .jar-list')");
+    assert.equal(await evaluate("document.querySelector('dialog.jar-list-sheet h2').textContent"), 'Trong bình nụ hôn');
+    await evaluate("document.querySelector('dialog.jar-list-sheet').close()");
+    await wait("!document.querySelector('dialog.jar-list-sheet') && document.querySelector('.jar-page>.jar-list') && document.querySelector('.jar-top>.jar-chips')");
 
     // Kiss: the ball flies (a ghost appears), lands, the server answer clears "pending", toast offers undo.
     await click('.jar-act.kiss');
