@@ -44,13 +44,11 @@ export function mountJar(container, { signal, api = jarApi }) {
 
   const root = el('section', 'jar-page');
   const title = el('h1', 'jar-title', 'Hũ');
-  const sub = el('p', 'jar-sub', 'Ba chiếc bình của hai đứa: nụ hôn, lời xin lỗi và cảm xúc.');
   const top = el('div', 'jar-top');
   const tablist = el('div', 'jar-tabs'); tablist.setAttribute('role', 'tablist');
   const chips = el('div', 'jar-chips'); chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Khoảng thời gian');
   const statusLine = el('div', 'jar-status'); statusLine.setAttribute('role', 'status');
   const shelf = el('div', 'jar-shelf');
-  const hint = el('p', 'jar-hint', 'Vuốt ngang trên bình để đổi bình. Chạm một viên để xem.');
   const listSection = el('section', 'jar-list'); listSection.id = 'jar-list'; listSection.setAttribute('role', 'tabpanel');
   const listTitle = el('h2'), rows = el('div', 'jar-rows');
   const fx = el('div', 'jar-fx'), toastHost = el('div', 'jar-toast-host');
@@ -58,7 +56,7 @@ export function mountJar(container, { signal, api = jarApi }) {
   listSection.append(listTitle, rows);
   top.append(tablist, chips);
   const defs = svg('jar-defs', '<defs><linearGradient id="jar-glass" x1="0" x2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".7"/><stop offset=".55" stop-color="#fdf1f4" stop-opacity=".3"/><stop offset="1" stop-color="#f3d3de" stop-opacity=".6"/></linearGradient></defs>');
-  root.append(defs, title, sub, top, statusLine, shelf, listSection, fx, toastHost);
+  root.append(defs, title, top, statusLine, shelf, listSection, fx, toastHost);
   container.replaceChildren(root);
 
   for (const k of KINDS) {
@@ -82,7 +80,7 @@ export function mountJar(container, { signal, api = jarApi }) {
   // Phones: the list and the time range open in a sheet, so the page fits one screen.
   const listBtn = button('jar-btn jar-list-btn', 'Xem danh sách');
   listBtn.addEventListener('click', openList);
-  shelf.append(listBtn, hint);
+  shelf.append(listBtn);
 
   function buildStage(k) {
     const s = SHAPES[k], path = jarPath(s), [rib, ribDark] = RIBBON[k], lx = s.nl - 8, lw = s.nr - s.nl + 16, bx = s.nr - 18;
@@ -480,7 +478,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     const cancel = button('jar-btn', 'Hủy'); cancel.addEventListener('click', () => s.dialog.close());
     const submit = el('button', 'jar-btn primary', item ? 'Lưu' : 'Thả vào bình'); submit.type = 'submit';
     const noteField = field('Ghi chú (không bắt buộc)', note); noteField.append(count);
-    s.box.append(alert, pad, el('p', 'jar-pad-hint', 'Chạm hoặc kéo trong ô, hoặc dùng hai thanh trượt.'), val.wrap, en.wrap,
+    s.box.append(alert, pad, val.wrap, en.wrap,
       field('Gọi tên cảm xúc (không bắt buộc)', label), sugg, noteField, audience, actionsRow(cancel, submit));
 
     let shownQuadrant = null;

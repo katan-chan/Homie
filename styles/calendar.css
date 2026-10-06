@@ -1,8 +1,7 @@
 /* Phần B: tab Lịch (.cal-page) và sheet của nó (.cal-sheet). Mọi selector có tiền tố cal-. */
 .cal-page{--cal-card:#fffdf9;--cal-line:#ecd5dc;--cal-border:#d9b6c1;--cal-muted:#866b77;--cal-lilac:#ece2f3;--cal-lilac-ink:#6a4a7d;--cal-warn:#fbe1d2;--cal-warn-ink:#8a4520;
   position:relative;margin:104px 0 48px;padding:24px;min-width:0;color:var(--ink);background:#fff8f2f2;border:1px solid var(--cal-line);border-radius:24px;box-shadow:0 12px 40px #6543550b}
-.cal-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 4px}
-.cal-sub{margin:0 0 18px;color:var(--cal-muted)}
+.cal-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 14px}
 .cal-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .cal-month{font:600 20px Georgia,"Times New Roman",serif;margin:0 8px;min-width:150px}
 .cal-spacer{flex:1}
@@ -73,7 +72,7 @@
   .cal-page{display:flex;flex-direction:column;height:calc(100dvh - 74px - env(safe-area-inset-top,0px));margin:calc(64px + env(safe-area-inset-top,0px)) -6px 0;
     padding:10px 10px calc(10px + env(safe-area-inset-bottom,0px));border-radius:20px;overflow:hidden}
   .cal-title{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  .cal-sub,.cal-legend,.cal-split>.cal-panel{display:none}
+  .cal-legend,.cal-split>.cal-panel{display:none}
   .cal-body,.cal-split{display:flex;flex-direction:column;align-items:stretch;flex:1;min-height:0;gap:8px}
   .cal-head{margin:0;gap:6px}
   .cal-month{flex:1 0 calc(100% - 100px);min-width:0;font-size:18px;margin:0;text-align:center}

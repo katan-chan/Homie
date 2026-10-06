@@ -4,7 +4,6 @@
 .roulette *,.roulette-sheet *{box-sizing:border-box}
 .roulette :focus-visible,.roulette-sheet :focus-visible{outline:3px solid var(--r-accent);outline-offset:2px}
 .roulette-title{font:500 clamp(30px,4vw,40px)/1.15 var(--r-serif);letter-spacing:-.5px;margin:0}
-.roulette-sub{margin:0;color:var(--r-muted);max-width:640px}
 .roulette h2{font:600 19px var(--r-serif);margin:0}
 .roulette-split{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px;align-items:start}
 .roulette-panel{background:var(--r-card);border:1px solid var(--r-line);border-radius:18px;padding:16px;display:grid;gap:10px;min-width:0}

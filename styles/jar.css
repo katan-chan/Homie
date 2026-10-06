@@ -2,8 +2,7 @@
 .jar-page{--j-card:#fffdf9;--j-border:#d9b6c1;--j-rose:#f9dbe5;--j-lilac:#ece2f3;--j-lilac-ink:#6a4a7d;--j-sage:#deead9;--j-sage-ink:#3f6a4b;--j-warn:#fbe1d2;--j-warn-ink:#8a4520;--j-danger:#a3304e;--j-hand:"Patrick Hand","Comic Sans MS",cursive;
   position:relative;padding:120px 0 72px;container-type:inline-size}
 .jar-defs{position:absolute;width:0;height:0}
-.jar-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 4px}
-.jar-sub{margin:0 0 14px;color:var(--muted)}
+.jar-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 14px}
 .jar-top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .jar-tabs{display:inline-flex;border:1px solid var(--j-border);border-radius:14px;overflow:hidden;background:var(--j-card)}
 .jar-tab{min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);display:inline-flex;align-items:center;gap:8px}
@@ -40,7 +39,6 @@
 .jar-act:active{transform:scale(.96)}
 .jar-act:disabled{opacity:.55;cursor:wait}
 .jar-list-btn{display:none}
-.jar-hint{display:none;text-align:center;font-size:13px;color:var(--muted);margin:10px 0 0;grid-column:1/-1}
 
 /* Candy balls (also used by Lịch through colors.js mini()). */
 .k-kiss{--mark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 21s-7.5-4.6-9.6-9C.9 8.7 3 4.5 7 4.5c2.2 0 3.6 1.2 5 3 1.4-1.8 2.8-3 5-3 4 0 6.1 4.2 4.6 7.5-2.1 4.4-9.6 9-9.6 9z'/%3E%3C/svg%3E")}
@@ -114,7 +112,6 @@
 .jar-pad .q{position:absolute;font:15px var(--j-hand);color:#5d3c4cb3;pointer-events:none}
 .jar-pad .tl{top:8px;left:12px}.jar-pad .tr{top:8px;right:12px}.jar-pad .bl{bottom:8px;left:12px}.jar-pad .br{bottom:8px;right:12px}
 .jar-pad-ball{position:absolute;transform:translate(-50%,-50%);pointer-events:none;transition:width .12s,height .12s}
-.jar-pad-hint{margin:-6px 0 0;text-align:center;font-size:13px;color:var(--muted)}
 .jar-range{display:grid;font-size:14px}
 .jar-range input{width:100%;min-height:44px;accent-color:var(--accent)}
 .jar-range .ends{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
@@ -141,18 +138,17 @@
   .jar-page{display:flex;flex-direction:column;gap:8px;height:calc(100dvh - 74px - env(safe-area-inset-top,0px));margin-top:calc(64px + env(safe-area-inset-top,0px));
     padding:0 0 calc(10px + env(safe-area-inset-bottom,0px))}
   .jar-title{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  .jar-sub,.jar-page>.jar-list,.jar-top>.jar-chips{display:none}
+  .jar-page>.jar-list,.jar-top>.jar-chips{display:none}
   .jar-tabs{width:100%}
   .jar-tab{flex:1;justify-content:center;padding:0 6px}
   .jar-status{margin:0}
   .jar-shelf{flex:1;min-height:0;margin:0;container-type:size;grid-template-columns:minmax(0,1fr);align-content:center;row-gap:8px;padding:10px 12px}
-  .jar-stage{width:min(100cqw,300px,(100cqh - 190px)*.8)}
+  .jar-stage{width:min(100cqw,300px,(100cqh - 150px)*.8)}
   .jar-act{width:min(100%,300px)}
   .jar-stage:not(.is-current),.jar-act:not(.is-current){display:none}
   .jar-act{flex-direction:row;gap:10px;min-height:56px}
   .jar-plank{margin:-15px -4px 0}
   .jar-list-btn{display:block;justify-self:center;width:min(100%,300px)}
-  .jar-hint{display:block;margin:0}
   .jar-list-sheet .jar-chips{margin:-4px 0 0}
   .jar-list-sheet .jar-list{margin:0;padding:0;background:none}
   .jar-list-sheet .jar-list>h2{display:none}

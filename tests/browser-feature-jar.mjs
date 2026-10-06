@@ -27,7 +27,7 @@ try {
     await login('minhle');
     await open();
     assert.equal(await evaluate("document.querySelector('.jar-empty:not([hidden])').textContent"), 'Bình còn trống.\nThả viên đầu tiên nhé.');
-    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')},${shown('.jar-hint')}]`), [1, 1, 1], '390: one jar, one button and the swipe hint');
+    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')}]`), [1, 1], '390: one jar, one button');
     assert.equal(await evaluate("document.querySelector('.jar-tabs').getAttribute('aria-label')"), 'Chọn bình');
     assert.deepEqual(await layout(), { overflow: false, small: [] }, '390: no sideways scroll, 44px targets');
     assert.equal(await evaluate("document.querySelector('.jar-act.kiss').textContent"), 'Hôn Yến');
@@ -156,7 +156,7 @@ try {
     // Desktop 1440: three jars on the shelf; the tabs only pick the list.
     await size(1440, 1000);
     await open();
-    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')},${shown('.jar-hint')}]`), [3, 3, 0], '1440: three jars and buttons');
+    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')},${shown('.jar-list-btn')}]`), [3, 3, 0], '1440: three jars and buttons, list on the page');
     assert.equal(await evaluate("document.querySelector('.jar-tabs').getAttribute('aria-label')"), 'Danh sách của bình');
     await clickText('.jar-tab', 'Xin lỗi');
     assert.equal(await evaluate("document.querySelector('.jar-list h2').textContent"), 'Trong bình xin lỗi');

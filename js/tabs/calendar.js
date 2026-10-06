@@ -42,7 +42,7 @@ export function render(container, { signal }) {
   const toast = el('div', 'cal-toast');
   toast.setAttribute('role', 'status');
   toast.hidden = true;
-  root.append(el('h1', 'cal-title', 'Lịch'), el('p', 'cal-sub', 'Mỗi ngày: số nụ hôn, số lời xin lỗi và màu cảm xúc của hai đứa.'), body, toast);
+  root.append(el('h1', 'cal-title', 'Lịch'), body, toast);
   container.replaceChildren(root);
 
   const range = () => { const grid = monthGrid(month); return { from: grid[0], to: grid[41] }; };

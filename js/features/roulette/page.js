@@ -7,11 +7,11 @@ import { confirmArchive, openDoneSheet, openIdeaSheet, openRateSheet } from './s
 
 const KIND = {
   seminar: {
-    title: 'Gợi ý chủ đề seminar', sub: 'Chủ đề để hai đứa tìm hiểu rồi kể cho nhau nghe. Seminar là một loại hoạt động, không phải lịch họp.',
+    title: 'Gợi ý chủ đề seminar',
     pick: '🌱 Gieo một hạt', add: '+ Chủ đề', pool: 'Kho chủ đề', empty: 'Chưa có chủ đề nào. Thêm một chủ đề nhé.',
   },
   activity: {
-    title: 'Hoạt động chung', sub: 'Những điều để cùng làm: trò chuyện, sáng tạo, khám phá, chơi, tự làm.',
+    title: 'Hoạt động chung',
     pick: '🎲 Chọn gì đó cho tụi mình', add: '+ Ý tưởng', pool: 'Kho ý tưởng', empty: 'Chưa có ý tưởng nào. Thêm một ý tưởng nhé.',
   },
 };
@@ -50,7 +50,7 @@ export function mountRoulette(container, { kind, signal }) {
   const poolHost = el('div', 'roulette-pool');
   const toastLine = el('p', 'roulette-toast');
   toastLine.setAttribute('role', 'status');
-  root.append(el('h1', 'roulette-title', K.title), el('p', 'roulette-sub', K.sub), split, tools);
+  root.append(el('h1', 'roulette-title', K.title), split, tools);
   if (kind === 'activity') {
     chips.setAttribute('role', 'group');
     chips.setAttribute('aria-label', 'Lọc theo loại');
