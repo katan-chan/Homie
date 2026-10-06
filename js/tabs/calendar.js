@@ -29,7 +29,7 @@ async function sessions(kind, query, options) {
 
 export function render(container, { signal }) {
   if (signal.aborted) return () => {};
-  const today = todayLocal();
+  let today = todayLocal();
   let viewerId = getUser()?.id ?? null;
   let month = today.slice(0, 7), selected = today, data = emptyData(), state = 'loading', partial = false;
   let generation = 0, loader = null, toastTimer = 0, disposed = false;
@@ -205,11 +205,23 @@ export function render(container, { signal }) {
   }
   authEvents.addEventListener('change', authChanged);
 
+  // A page left open past midnight (or woken on a phone) moves "today" forward; a selected old today follows it.
+  function rollDay() {
+    const now = todayLocal();
+    if (disposed || now === today) return;
+    if (selected === today) { selected = now; month = now.slice(0, 7); }
+    today = now;
+    if (viewerId) load();
+  }
+  const dayTimer = setInterval(rollDay, 60_000);
+  document.addEventListener('visibilitychange', rollDay, { signal });
+
   function cleanup() {
     if (disposed) return;
     disposed = true;
     loader?.abort();
     clearTimeout(toastTimer);
+    clearInterval(dayTimer);
     authEvents.removeEventListener('change', authChanged);
     signal.removeEventListener('abort', cleanup);
     root.remove();
