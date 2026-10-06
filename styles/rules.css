@@ -2,6 +2,12 @@
 .rules-panel,.rules-dialog{--rules-ink:#5d3c4c;--rules-muted:#866b77;--rules-line:#ecd5dc;--rules-border:#d9b6c1;--rules-accent:#985a74;--rules-danger:#a3304e;color:var(--rules-ink);font:15px/1.45 var(--font)}
 .rules-panel *,.rules-dialog *{box-sizing:border-box}
 .rules-panel{display:grid;gap:12px;padding:12px;min-width:0;max-width:100%}
+/* Inside Góc ghi chép the panel sits on the same paper board as the other tabs; long lists scroll inside it. */
+.notes-board-host>.rules-panel{flex:1 1 auto;min-height:0;align-content:start;padding:16px;overflow-y:auto;overscroll-behavior:contain;
+  border:1.5px solid var(--board-line,#b98797);border-radius:4px 18px 14px 17px;box-shadow:0 12px 35px #86556916;
+  background-color:#fbf3ec;background-image:var(--board-flowers,none),radial-gradient(#b98f851f .7px,transparent .9px),linear-gradient(135deg,#fff7ed70,#f2dce340);background-size:220px 220px,18px 18px,100% 100%}
+.notes-board-host>.rules-panel .rules-empty{background:#fffdf9cc}
+@media(max-width:600px){.notes-board-host>.rules-panel{border-radius:16px;padding:12px}}
 .rules-tools{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
 .rules-hint,.rule-note{margin:0;font-size:13px;color:var(--rules-muted)}
 .rules-hint{flex:1 1 260px}
