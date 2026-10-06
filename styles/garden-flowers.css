@@ -22,7 +22,7 @@
 .memory-sheet::backdrop{background:#3b2a3366}
 .memory-sheet p{margin:0}
 .memory-sheet-head{display:flex;align-items:center;gap:8px}
-.memory-sheet h2{flex:1;margin:0;font:600 20px var(--font);overflow-wrap:anywhere}
+.memory-sheet h2{flex:1;margin:0;font:600 20px var(--font-head);overflow-wrap:anywhere}
 .memory-meta{color:#866b77;font-size:13px}
 .memory-body{padding:10px 12px;border-radius:12px;background:#fff;font:20px/1.35 "Patrick Hand","Comic Sans MS",cursive;white-space:pre-wrap;overflow-wrap:anywhere}
 .memory-actions{display:flex;justify-content:flex-end}

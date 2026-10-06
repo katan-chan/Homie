@@ -9,7 +9,7 @@
 .rules-status{margin:0;font-size:14px;overflow-wrap:anywhere}
 .rules-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:12px;align-items:start}
 .rule-card{display:grid;gap:8px;align-content:start;min-width:0;padding:14px;border:1px solid #ecdcae;border-radius:16px;background:#fff8e6}
-.rule-card h3,.rules-history h3{margin:0;font:600 17px var(--font);overflow-wrap:anywhere}
+.rule-card h3,.rules-history h3{margin:0;font:600 17px var(--font-head);overflow-wrap:anywhere}
 .rule-card h3:focus{outline:none}.rule-card h3:focus-visible{outline:3px solid var(--rules-accent);outline-offset:2px}
 .rule-rev{display:grid;gap:6px;justify-items:start;min-width:0;padding:10px;border:1px dashed var(--rules-line);border-radius:12px;background:#fffdf9}
 .rule-rev.is-active{border-style:solid;border-color:#a9c9b1}
@@ -39,7 +39,7 @@
 .rules-dialog::backdrop{background:#3b2a3366}
 .rules-dialog p{margin:0}
 .rules-dialog-head{display:flex;align-items:center;gap:8px}
-.rules-dialog-head h2{flex:1;margin:0;font:600 20px var(--font);overflow-wrap:anywhere}
+.rules-dialog-head h2{flex:1;margin:0;font:600 20px var(--font-head);overflow-wrap:anywhere}
 .rules-icon-button{padding:0;font-size:20px}
 .rules-form{display:grid;gap:12px}
 .rules-field{display:grid;gap:4px;font-size:13px;font-weight:600}

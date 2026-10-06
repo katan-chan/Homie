@@ -2,7 +2,7 @@
 .jar-page{--j-card:#fffdf9;--j-border:#d9b6c1;--j-rose:#f9dbe5;--j-lilac:#ece2f3;--j-lilac-ink:#6a4a7d;--j-sage:#deead9;--j-sage-ink:#3f6a4b;--j-warn:#fbe1d2;--j-warn-ink:#8a4520;--j-danger:#a3304e;--j-hand:"Patrick Hand","Comic Sans MS",cursive;
   position:relative;padding:120px 0 72px;container-type:inline-size}
 .jar-defs{position:absolute;width:0;height:0}
-.jar-title{font:500 40px/1.2 var(--font);letter-spacing:-1px;margin:0 0 14px}
+.jar-title{font:500 40px/1.2 var(--font-head);letter-spacing:-1px;margin:0 0 14px}
 .jar-top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .jar-tabs{display:inline-flex;border:1px solid var(--j-border);border-radius:14px;overflow:hidden;background:var(--j-card)}
 .jar-tab{min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);display:inline-flex;align-items:center;gap:8px}
@@ -73,7 +73,7 @@
 
 /* List of the chosen jar: the full alternative to the balls, rows at least 52px. */
 .jar-list{margin-top:18px;display:grid;max-width:760px;padding:14px 8px;border-radius:20px;background:#fff8f2eb}
-.jar-list h2{font:600 19px var(--font);margin:0 0 4px;padding-inline:10px}
+.jar-list h2{font:600 19px var(--font-head);margin:0 0 4px;padding-inline:10px}
 .jar-day{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:12px 0 2px;padding-inline:10px}
 .jar-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:52px;padding:6px 10px;border:0;border-radius:12px;background:transparent;color:var(--ink);text-align:left;width:100%}
 .jar-row:hover{background:var(--j-rose)}
@@ -92,7 +92,7 @@
 .jar-sheet::backdrop{background:#3b2a3366}
 .jar-sheet-box{display:grid;gap:12px;align-content:start;padding:20px}
 .jar-sheet-head{display:flex;align-items:center;gap:8px}
-.jar-sheet-head h2{flex:1;font:600 20px var(--font);margin:0;overflow-wrap:anywhere}
+.jar-sheet-head h2{flex:1;font:600 20px var(--font-head);margin:0;overflow-wrap:anywhere}
 @keyframes jar-sheet-in{from{opacity:0;translate:0 24px}}
 .jar-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .jar-ball-head{display:flex;gap:14px;align-items:center}
