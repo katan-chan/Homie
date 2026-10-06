@@ -37,7 +37,7 @@ assets/
   characters/             # atlas Loopy WebP
   typography/             # lettering WebP
   brand/                  # logo raster, favicon, nguồn và prompt
-  fonts/                  # Patrick Hand + OFL
+  fonts/                  # Playpen Sans (chữ giao diện, woff2 theo subset) và Patrick Hand (chữ viết tay), kèm OFL
   vendor/                 # notes.js bundle do build tạo, gitignored
 backend/server.js         # HTTP health/auth/profiles, CORS/CSRF, delegate notes
 backend/auth.js           # scrypt, session và rate limit

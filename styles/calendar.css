@@ -1,9 +1,9 @@
 /* Phần B: tab Lịch (.cal-page) và sheet của nó (.cal-sheet). Mọi selector có tiền tố cal-. */
 .cal-page{--cal-card:#fffdf9;--cal-line:#ecd5dc;--cal-border:#d9b6c1;--cal-muted:#866b77;--cal-lilac:#ece2f3;--cal-lilac-ink:#6a4a7d;--cal-warn:#fbe1d2;--cal-warn-ink:#8a4520;
   position:relative;margin:104px 0 48px;padding:24px;min-width:0;color:var(--ink);background:#fff8f2f2;border:1px solid var(--cal-line);border-radius:24px;box-shadow:0 12px 40px #6543550b}
-.cal-title{font:500 40px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-1px;margin:0 0 14px}
+.cal-title{font:500 40px/1.2 var(--font);letter-spacing:-1px;margin:0 0 14px}
 .cal-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.cal-month{font:600 20px Georgia,"Times New Roman",serif;margin:0 8px;min-width:150px}
+.cal-month{font:600 20px var(--font);margin:0 8px;min-width:150px}
 .cal-spacer{flex:1}
 .cal-btn{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--cal-border);border-radius:12px;background:var(--cal-card);color:var(--ink)}
 .cal-btn.small{padding:0 10px;font-size:13px}
@@ -30,7 +30,7 @@
 .cal-marks{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
 
 .cal-panel{background:var(--cal-card);border:1px solid var(--cal-line);border-radius:18px;padding:16px;display:grid;gap:10px;min-width:0}
-.cal-panel h2{font:600 19px Georgia,"Times New Roman",serif;margin:0}
+.cal-panel h2{font:600 19px var(--font);margin:0}
 .cal-who{display:flex;align-items:center;gap:8px;font-size:14px;overflow-wrap:anywhere}
 .cal-who i{width:18px;height:18px}
 .cal-totals{margin:4px 0}
@@ -51,7 +51,7 @@
 .cal-sheet::backdrop{background:#3b2a3366}
 .cal-sheet-body{display:grid;gap:12px;padding:20px}
 .cal-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.cal-sheet-head h2{font:600 19px Georgia,"Times New Roman",serif;margin:0;overflow-wrap:anywhere}
+.cal-sheet-head h2{font:600 19px var(--font);margin:0;overflow-wrap:anywhere}
 .cal-icon-btn{width:44px;height:44px;flex:none;border:0;border-radius:12px;background:transparent;color:var(--ink);font-size:24px}
 .cal-field{display:grid;gap:4px;font-size:14px;min-width:0}
 .cal-field>span{color:#866b77;font-size:13px}

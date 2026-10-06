@@ -1,5 +1,5 @@
 /* Phần C: Gợi ý chủ đề seminar và Hoạt động chung (js/features/roulette). */
-.roulette,.roulette-sheet{--r-card:#fffdf9;--r-border:#d9b6c1;--r-line:#ecd5dc;--r-ink:#5d3c4c;--r-muted:#866b77;--r-accent:#985a74;--r-butter:#fff0b8;--r-sage:#deead9;--r-sage-ink:#3f6a4b;--r-warn:#fbe1d2;--r-warn-ink:#8a4520;--r-danger:#a3304e;--r-serif:Georgia,"Times New Roman",serif;--r-hand:'Homie Patrick Hand',"Comic Sans MS",cursive;color:var(--r-ink)}
+.roulette,.roulette-sheet{--r-card:#fffdf9;--r-border:#d9b6c1;--r-line:#ecd5dc;--r-ink:#5d3c4c;--r-muted:#866b77;--r-accent:#985a74;--r-butter:#fff0b8;--r-sage:#deead9;--r-sage-ink:#3f6a4b;--r-warn:#fbe1d2;--r-warn-ink:#8a4520;--r-danger:#a3304e;--r-serif:var(--font);--r-hand:'Homie Patrick Hand',"Comic Sans MS",cursive;color:var(--r-ink)}
 .roulette{position:relative;padding:112px 0 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0}
 .roulette *,.roulette-sheet *{box-sizing:border-box}
 .roulette :focus-visible,.roulette-sheet :focus-visible{outline:3px solid var(--r-accent);outline-offset:2px}
