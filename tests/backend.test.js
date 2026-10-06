@@ -112,6 +112,18 @@ test('sessions expire and production cookies are Secure', async t => {
   assert.throws(() => createBackend(origin, { production: false, sameSite: 'None' }), /Secure/i);
 });
 
+test('a session in use slides forward; an unused one still expires', async t => {
+  const { request } = await setup(t, { sessionTtlMs: 600 });
+  const cookie = cookieOf(await login(request));
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  await wait(400);
+  assert.equal((await request('/api/auth/session', { headers: { Cookie: cookie } })).status, 200, 'Used after 400 ms: extended to 600 ms from now');
+  await wait(400);
+  assert.equal((await request('/api/auth/session', { headers: { Cookie: cookie } })).status, 200, 'Past the original 600 ms, still in');
+  await wait(700);
+  assert.equal((await request('/api/auth/session', { headers: { Cookie: cookie } })).status, 401, 'Left alone longer than the ttl');
+});
+
 test('profiles are public but only their authenticated owners can write', async t => {
   const { request } = await setup(t);
   for (const id of ['minhle', 'haiyen']) {
@@ -164,7 +176,7 @@ test('serialized concurrent writes preserve both owners profiles', async t => {
   assert.equal(stored.haiyen.bio, 'two');
 });
 
-test('profiles persist across server restart without credentials', async t => {
+test('profiles and sessions persist across server restart; only a hash of the session token is stored', async t => {
   const dataDir = await mkdtemp(join(tmpdir(), 'homie-persist-test-'));
   t.after(() => rm(dataDir, { recursive: true, force: true }));
   const first = await setup(t, { dataDir });
@@ -175,7 +187,14 @@ test('profiles persist across server restart without credentials', async t => {
   assert.ok(!saved.includes('password') && !saved.includes(credentials.minhle));
   const second = await setup(t, { dataDir });
   assert.deepEqual(await (await second.request('/api/profiles/minhle')).json(), { profile: { id: 'minhle', displayName: 'Tên mới', bio: 'Saved biography' } });
-  assert.equal((await second.request('/api/auth/session', { headers: { Cookie: cookie } })).status, 401);
+  const resumed = await second.request('/api/auth/session', { headers: { Cookie: cookie } });
+  assert.equal(resumed.status, 200, 'A restart (or Render waking up) keeps people logged in');
+  assert.match(resumed.headers.get('set-cookie'), /Max-Age=7776000/, 'Opening the app renews the 90-day cookie');
+  const sessions = await readFile(join(dataDir, 'sessions.json'), 'utf8');
+  assert.ok(!sessions.includes(cookie.split('=')[1]), 'The raw token never reaches storage');
+  assert.equal((await second.request('/api/auth/logout', { method: 'POST', headers: { ...mutationHeaders, Cookie: cookie } })).status, 204);
+  const third = await setup(t, { dataDir });
+  assert.equal((await third.request('/api/auth/session', { headers: { Cookie: cookie } })).status, 401, 'Logout is durable too');
 });
 
 test('invalid persisted profiles fail closed and are not overwritten', async t => {

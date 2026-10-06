@@ -189,7 +189,8 @@ export function createNotesApi({ store, auth, allowedOrigins, profiles, media })
       while (queue.length && !blocked && valid()) { const frame = queue.shift(); queuedBytes -= Buffer.byteLength(frame); blocked = !res.write(frame); }
     }
     const heartbeat = setInterval(() => write(': heartbeat\n\n'), HEARTBEAT_MS); heartbeat.unref();
-    const expiry = stream.account ? setTimeout(expire, Math.max(0, stream.account.expiresAt - Date.now())) : null; expiry?.unref();
+    // Timers cap at about 24.8 days; at the deadline the session is checked again (sliding sessions may still be live).
+    const expiry = stream.account ? setTimeout(valid, Math.min(2 ** 31 - 1, Math.max(0, stream.account.expiresAt - Date.now()))) : null; expiry?.unref();
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('X-Accel-Buffering', 'no');
     res.writeHead(200); res.on('drain', drain); res.on('close', close);
     // Register before reading the snapshot. Reconnects always refresh; no unbounded event history is retained.

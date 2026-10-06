@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { createAuth } from './auth.js';
+import { createAuth, emptySessions, validateSessions } from './auth.js';
 import { supabaseFromEnv } from './supabase.js';
 import { accountIds, createProfiles, validateProfile } from './profiles.js';
 import { createNotesStore } from './notes-store.js';
@@ -8,6 +8,7 @@ import { createNotesApi, notesRoute } from './notes-api.js';
 import { createNoteMedia } from './note-media.js';
 import { features } from './features.js';
 import { createPush, watchNotes } from './push.js';
+import { createDocStore } from './doc-store.js';
 export { hashPassword } from './auth.js';
 
 function failure(status, message) {
@@ -44,10 +45,12 @@ function readJson(request) {
 export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? '', options = {}) {
   // The Vercel /api proxy preserves the browser Origin for this allowlist.
   const allowed = new Set(frontendOrigins.split(',').map((origin) => origin.trim()).filter(Boolean));
-  const auth = createAuth(options);
   // Supabase when SUPABASE_URL + SUPABASE_SECRET_KEY are set (production); files in dataDir otherwise. Tests may pass options.remote.
   const remote = 'remote' in options ? options.remote : supabaseFromEnv();
   const dataDir = options.dataDir ?? process.env.PROFILE_DATA_DIR ?? '.data';
+  // Sessions survive restarts (Render's free plan sleeps after idle time) in the 'sessions' document.
+  const auth = createAuth({ ...options, sessionStore: options.sessionStore
+    ?? createDocStore({ key: 'sessions', dataDir, remote, empty: emptySessions, validate: validateSessions }) });
   const profiles = createProfiles(dataDir, remote);
   const push = options.push ?? createPush({ dataDir, remote });
   let notesReady, closing = false;
@@ -85,11 +88,12 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     if (origin) {
       response.setHeader('Access-Control-Allow-Origin', origin);
       response.setHeader('Access-Control-Allow-Credentials', 'true');
-      response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, OPTIONS');
+      response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, DELETE, OPTIONS');
       response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
     }
     const send = (status, body) => response.writeHead(status).end(body === undefined ? undefined : JSON.stringify(body));
     const path = request.url?.split('?')[0];
+    await auth.load();
     const feature = features.find(candidate => candidate.route(path));
     if (feature) {
       if (request.method === 'OPTIONS') return send(204);
@@ -147,6 +151,7 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
         const cookie = auth.issue(request, body.accountId);
         if (!cookie) throw failure(503, 'Authentication is busy');
         response.setHeader('Set-Cookie', cookie);
+        await auth.flush();
         return send(200, { user });
       }
       if (path === '/api/auth/logout') {
@@ -155,11 +160,13 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
           if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).length) throw failure(400, 'Logout does not accept fields');
         }
         response.setHeader('Set-Cookie', auth.logout(request));
+        await auth.flush();
         return send(204);
       }
       if (path === '/api/auth/session') {
         const id = auth.userId(request);
         if (!id) throw failure(401, 'Authentication required');
+        response.setHeader('Set-Cookie', auth.refreshCookie(request));
         return send(200, { user: await profiles.get(id) });
       }
       if (request.method !== 'PUT') return send(200, { profile: await profiles.get(profileId) });
@@ -181,7 +188,7 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     // Features may read the notes store, so they close first.
     const cleanup = Promise.all([...featureModules.values()].map(ready => ready.then(module => module.close?.()).catch(() => {})))
       .then(() => notesReady?.then(({ api, unwatch }) => { unwatch(); return api.close(); }).catch(() => {}))
-      .then(() => push.close()).catch(() => {});
+      .then(() => push.close()).then(() => auth.close()).catch(() => {});
     close(error => { cleanup.then(() => callback?.(error)); });
     return server;
   };
