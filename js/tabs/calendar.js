@@ -3,9 +3,12 @@
 import { apiRequest, authEvents, getUser } from '../auth.js';
 import { aggregateDays, addDays, monthGrid, shiftMonth, todayLocal } from '../features/calendar/model.js';
 import { el, button, renderHead, renderGrid, renderPanel, renderLegend } from '../features/calendar/view.js';
-import { eventForm, eventView, cycleForm, cycleList } from '../features/calendar/sheets.js';
+import { openSheet, eventForm, eventView, cycleForm, cycleList } from '../features/calendar/sheets.js';
+import { vnDate } from '../features/calendar/model.js';
 
 const FOCUS_KEY = 'homie-notes:focus';
+// On phones the day panel opens as a popup sheet instead of sitting under the grid.
+const phone = matchMedia('(max-width:600px)');
 const emptyData = () => ({ events: [], memories: [], jar: [], activities: [], cycles: [] });
 
 async function sessions(kind, query, options) {
@@ -29,10 +32,10 @@ async function sessions(kind, query, options) {
 
 export function render(container, { signal }) {
   if (signal.aborted) return () => {};
-  const today = todayLocal();
+  let today = todayLocal();
   let viewerId = getUser()?.id ?? null;
   let month = today.slice(0, 7), selected = today, data = emptyData(), state = 'loading', partial = false;
-  let generation = 0, loader = null, toastTimer = 0, disposed = false;
+  let generation = 0, loader = null, toastTimer = 0, disposed = false, daySheet = null;
 
   const root = el('section', 'cal-page');
   const body = el('div', 'cal-body');
@@ -93,7 +96,12 @@ export function render(container, { signal }) {
   const on = {
     month: n => { month = shiftMonth(month, n); selected = month === today.slice(0, 7) ? today : `${month}-01`; data = emptyData(); load(); },
     today: () => { goTo(today); draw(); },
-    select: (date, { focus = false } = {}) => { goTo(date); draw(); if (focus) root.querySelector(`.cal-day[data-date="${date}"]`)?.focus(); },
+    select: (date, { focus = false } = {}) => {
+      goTo(date);
+      draw();
+      if (focus) root.querySelector(`.cal-day[data-date="${date}"]`)?.focus();
+      else if (phone.matches) openDay(date);
+    },
     addEvent: () => eventForm(root, { date: selected, signal, save: saveEvent(crypto.randomUUID()) }),
     openEvent: event => eventView(root, { event, viewerId, signal, onEdit: editEvent, onArchive: archiveEvent }),
     openMemory: memory => {
@@ -168,6 +176,14 @@ export function render(container, { signal }) {
     } catch { if (!disposed) say('Chưa tải được các kỳ. Thử lại nhé.'); }
   }
 
+  function openDay(date) {
+    const sheet = openSheet(root, vnDate(date), { signal });
+    daySheet = { ...sheet, date };
+    sheet.dialog.classList.add('cal-day-sheet');
+    sheet.dialog.addEventListener('close', () => { if (daySheet?.dialog === sheet.dialog) daySheet = null; });
+    draw();
+  }
+
   function draw() {
     if (disposed) return;
     const { from, to } = range();
@@ -188,6 +204,8 @@ export function render(container, { signal }) {
     }
     parts.push(split, renderLegend(viewerId));
     body.replaceChildren(...parts);
+    // The open day popup follows reloads, so an edit or archive made from it shows up at once.
+    if (daySheet) daySheet.body.replaceChildren(daySheet.body.firstChild, renderPanel({ date: daySheet.date, day: day(daySheet.date), viewerId, on }));
     if (focused) root.querySelector(`.cal-day[data-date="${selected}"]`)?.focus();
   }
 
@@ -205,11 +223,23 @@ export function render(container, { signal }) {
   }
   authEvents.addEventListener('change', authChanged);
 
+  // A page left open past midnight (or woken on a phone) moves "today" forward; a selected old today follows it.
+  function rollDay() {
+    const now = todayLocal();
+    if (disposed || now === today) return;
+    if (selected === today) { selected = now; month = now.slice(0, 7); }
+    today = now;
+    if (viewerId) load();
+  }
+  const dayTimer = setInterval(rollDay, 60_000);
+  document.addEventListener('visibilitychange', rollDay, { signal });
+
   function cleanup() {
     if (disposed) return;
     disposed = true;
     loader?.abort();
     clearTimeout(toastTimer);
+    clearInterval(dayTimer);
     authEvents.removeEventListener('change', authChanged);
     signal.removeEventListener('abort', cleanup);
     root.remove();

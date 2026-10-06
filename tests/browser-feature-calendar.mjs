@@ -82,6 +82,27 @@ try {
     await size(390, 844);
     await wait(ready);
     assert.deepEqual(await layout(), { overflow: false, small: [], spill: 0 }, '390 layout');
+    // Phone: the month fits one screen; a tapped day opens as a popup, arrow keys only move the selection.
+    for (const [width, height] of [[390, 844], [390, 664], [360, 640]]) {
+      await size(width, height);
+      await wait(ready);
+      assert.ok(await evaluate('document.documentElement.scrollHeight<=innerHeight'), `${width}x${height} has no page scroll`);
+    }
+    await size(390, 844);
+    await wait(ready);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.cal-split>.cal-panel')).display"), 'none');
+    await evaluate(`${cell}.click()`);
+    await wait("document.querySelector('dialog.cal-day-sheet[open] .cal-panel')");
+    assert.deepEqual(await text('dialog.cal-day-sheet .cal-who'), ['Minh: Vui', 'Yến: chưa có cảm xúc được chia sẻ']);
+    assert.deepEqual(await text('dialog.cal-day-sheet .cal-t'), ['Đi Đà Lạt', 'Cách cây quang hợp']);
+    await evaluate("document.querySelector('dialog.cal-day-sheet [aria-label=\"Đóng\"]').click()");
+    await wait("!document.querySelector('dialog.cal-day-sheet')");
+    await evaluate(`${cell}.focus();${cell}.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
+    await wait(`document.activeElement?.dataset.date!=='${today}'`);
+    assert.equal(await evaluate("!!document.querySelector('dialog.cal-day-sheet')"), false, 'Arrow keys do not open the popup');
+    await evaluate(`${cell}.click()`);
+    await wait("document.querySelector('dialog.cal-day-sheet[open]')");
+    await evaluate("document.querySelector('dialog.cal-day-sheet').close()");
 
     // Yến: shading, "Ghi kỳ mới", list of cycles; and she still sees Minh's occasion but not his private mood.
     await switchTo('haiyen');
@@ -96,6 +117,19 @@ try {
     assert.match(await evaluate(`${cell}.getAttribute('aria-label')`), /trong kỳ$/);
     assert.equal(await evaluate("document.querySelector('.cal-page').textContent.includes('Nền tím nhạt')"), true);
     assert.deepEqual(await layout(), { overflow: false, small: [], spill: 0 }, '390 layout with cycle');
+    await size(320, 640);
+    await wait(ready);
+    assert.deepEqual(await layout(), { overflow: false, small: [], spill: 0 }, '320 layout keeps 44 px day cells');
+
+    // Past midnight the open page moves "today" and the selection forward; the ongoing cycle reaches the new day.
+    const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    const moved = `document.querySelector('.cal-day.today')?.dataset.date==='${tomorrow}' && document.querySelector('.cal-day[aria-pressed=true]').dataset.date==='${tomorrow}'`;
+    await evaluate("{const R=Date;window.__RealDate=R;window.Date=class extends R{constructor(...a){super(...(a.length?a:[R.now()+86400000]))}static now(){return R.now()+86400000}};document.dispatchEvent(new Event('visibilitychange'))}");
+    await wait(`${moved} && ${ready} && document.querySelector('.cal-day.today').classList.contains('cycle')`);
+    await evaluate("window.Date=window.__RealDate;document.dispatchEvent(new Event('visibilitychange'))");
+    await wait(`document.querySelector('.cal-day.today')?.dataset.date==='${today}' && ${ready}`);
+    await size(390, 844);
+    await wait(ready);
     await evaluate("[...document.querySelectorAll('.cal-panel button')].find(b=>b.textContent==='Xem các kỳ').click()");
     await wait("document.querySelector('dialog.cal-sheet[open]')?.textContent.includes('đang diễn ra')");
     await evaluate("[...document.querySelectorAll('dialog.cal-sheet[open] button')].find(b=>b.textContent==='Đóng'||b.getAttribute('aria-label')==='Đóng').click()");
