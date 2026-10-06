@@ -64,15 +64,25 @@
 .cal-audience{font-size:13px;padding:8px 12px;border-radius:10px;background:#ece2f3;color:#6a4a7d}
 .cal-sheet .cal-alert{margin:0}
 .cal-sheet .cal-item{background:#fffdf9}
+.cal-day-sheet .cal-panel{padding:0;border:0;background:none}
+.cal-day-sheet .cal-panel h2{display:none}
 
 @media(max-width:900px){.cal-split{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:600px){
-  .cal-page{margin:88px -6px 32px;padding:16px 10px;border-radius:20px}
-  .cal-title{font-size:34px}
-  .cal-month{min-width:0;font-size:18px;margin:0 4px}
+  /* The whole tab fits one phone screen with no page scroll; the day panel opens as a popup (.cal-day-sheet). */
+  .cal-page{display:flex;flex-direction:column;height:calc(100dvh - 74px - env(safe-area-inset-top,0px));margin:calc(64px + env(safe-area-inset-top,0px)) -6px 0;
+    padding:10px 10px calc(10px + env(safe-area-inset-bottom,0px));border-radius:20px;overflow:hidden}
+  .cal-title{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .cal-sub,.cal-legend,.cal-split>.cal-panel{display:none}
+  .cal-body,.cal-split{display:flex;flex-direction:column;align-items:stretch;flex:1;min-height:0;gap:8px}
+  .cal-head{margin:0;gap:6px}
+  .cal-month{flex:1 0 calc(100% - 100px);min-width:0;font-size:18px;margin:0;text-align:center}
+  .cal-head>.cal-btn:not([aria-label]){flex:1;padding:0 8px}
   .cal-spacer{display:none}
-  .cal-grid{gap:3px}
-  .cal-day{min-height:58px;padding:3px;gap:1px;justify-items:center;text-align:center}
+  .cal-alert,.cal-partial{margin:0}
+  .cal-grid{flex:1;min-height:0;grid-template-rows:auto repeat(6,minmax(44px,1fr));gap:3px}
+  .cal-dow{padding:0}
+  .cal-day{min-height:44px;padding:3px;gap:1px;justify-items:center;text-align:center}
   .cal-dots i{width:9px;height:9px}
   .cal-marks{font-size:10px;white-space:normal;line-height:1.15;overflow-wrap:anywhere}
   .cal-page .jar-skin{width:8px;height:8px}
@@ -83,7 +93,7 @@
 /* Narrow phones: the page bleeds to the screen edge so seven day cells keep a 44 px touch target. */
 @media(max-width:380px){
   .cal-page{margin-inline:-16px;padding-inline:2px;border-inline:0;border-radius:0}
-  .cal-title,.cal-sub,.cal-head,.cal-panel,.cal-legend,.cal-alert,.cal-partial{margin-inline:8px}
+  .cal-head,.cal-alert,.cal-partial{margin-inline:8px}
   .cal-grid{gap:1px}
   .cal-day{border-radius:6px}
 }
