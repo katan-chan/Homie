@@ -12,7 +12,7 @@ Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầ
 | Lịch | `calendar` | Lịch tháng gom viên trong bình, dịp, kỷ niệm, hoạt động; kỳ riêng của Hải Yến. Chi tiết bên dưới. |
 | Gợi ý chủ đề seminar | `seminar` | Kho chủ đề và lượt bốc chung để hai đứa tìm hiểu rồi kể cho nhau nghe. Chi tiết bên dưới. |
 | Hoạt động chung | `activity` | Kho ý tưởng theo bảy loại và lượt bốc chung. Chi tiết bên dưới. |
-| Minh Lê | `minhle` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. |
+| Minh Lê | `minhle` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. Khi đã đăng nhập, dưới hồ sơ có tờ PSI (Minh nghĩ gì về Minh). |
 | Hải Yến | `haiyen` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. |
 
 ## Bảng ghi chú (Góc ghi chép)
@@ -31,6 +31,7 @@ Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầ
 - Kỷ niệm: note có nhãn Kỷ niệm có thêm ô "Ngày kỷ niệm" (gắn nhãn thì mặc định hôm nay) và nút "🌱 Trồng vào vườn" / "Nhổ khỏi vườn"; đầu note hiện ngày và huy hiệu "Trong vườn". Bỏ nhãn Kỷ niệm thì note tự ra khỏi vườn. Trồng vào vườn thì chọn loài hoa (Cosmos, Daisy, Poppy, Lavender, Allium) và "Cỡ hoa" có xem trước; trong Vườn hoa, kỷ niệm thành bông hoa có ruy băng hồng, bấm vào mở tấm kỷ niệm và nút "Mở trong Góc ghi chép"; "Đổi hoa" đổi loài/cỡ. Khách không thấy hoa kỷ niệm. Kỷ niệm có ngày hiện trong Lịch.
 - Mở note từ trang khác: chạm kỷ niệm trong Lịch mở đúng bảng, căn note vào giữa và làm nổi note vài giây.
 - Nội quy (tab cuối dải bảng, chỉ khi đã đăng nhập): đề xuất nội quy, đề xuất sửa kèm lý do; một bản chỉ có hiệu lực khi cả hai đồng ý, bản cũ vẫn áp dụng tới lúc đó. Lưu trữ cần một người đề nghị và người kia xác nhận; ai cũng rút hoặc giữ lại được. Có lịch sử các bản.
+- Tờ PSI (trong hồ sơ Minh Lê, chỉ hai thành viên thấy): mỗi ngày một tờ giấy 2x2 Minh tự nhận xét bản thân: thích ở bản thân, không thích ở bản thân, điểm yếu, điểm mạnh. Mỗi ô cao cố định, viết dài thì cuộn trong ô (tối đa 4000 ký tự). Chỉ minhle viết, chỉ tờ hôm nay (giờ Việt Nam), sửa được tới hết ngày; tờ cũ chỉ xem; có nút chép từ tờ gần nhất. Yến chỉ đọc. App Android của minhle nhắc bằng thông báo cục bộ lúc 21:00 mỗi tối khi tờ hôm nay chưa điền (Android 14 có thể lệch vài phút nếu chưa cấp quyền hẹn giờ chính xác).
 - Khách xem danh sách bảng công khai, nội dung note và hình đã chèn; không thấy thùng rác, presence, Nội quy hoặc hình chưa chèn.
 
 Hoàn tác chỉ trong phiên tab hiện tại. Thùng rác, cột và di chuyển cột vẫn tác động cả note bị ẩn với mình (ví dụ bỏ cột thì note riêng của người kia trong cột cũng ẩn theo, khôi phục cột thì hiện lại).

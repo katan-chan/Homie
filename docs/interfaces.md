@@ -70,7 +70,7 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
 | js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
 | js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
-| js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar và /api/ideas/sessions) |
+| js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules,psi}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar và /api/ideas/sessions) |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
 | scripts/build.js | Tạo dist/ và thay cấu hình API public |
@@ -137,6 +137,7 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/rules | backend/rules-api.js | E Nội quy |
 | /api/garden | backend/garden-api.js | G Hoa kỷ niệm |
 | /api/push | backend/push-api.js | Thông báo điện thoại |
+| /api/psi | backend/psi-api.js | Tờ PSI của Minh Lê |
 
 Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Prefix không có module thật thì trả 404 `{ error: "Not implemented", code: "not_implemented" }`.
 
@@ -233,6 +234,17 @@ Document `rules`: `{ rules, requests }`. Rule `{ id, revisions: [{ n, title (1�
 | POST /api/rules/:id/archive-cancel | `{ requestId, version }`; ai cũng rút hoặc từ chối được; chưa có đề nghị 409 `archive_not_requested` |
 
 Hai thành viên thấy mọi rule. Mọi POST cần requestId (400 `invalid_request_id`); lặp requestId (theo account) không chạy lại mà trả trạng thái hiện tại của rule đã ghi. Lệnh trên rule cần `version` nguyên (400 `invalid_version`) và khớp (409 `version_conflict`); rule đã lưu trữ 409 `archived`; mỗi lệnh thành công tăng version. `:id` không phải UUID, action lạ, method hoặc path khác 404. Chữ sai 400 `invalid_title`, `invalid_text`, `invalid_reason` với message tiếng Việt.
+
+### Tờ PSI: /api/psi
+
+Document `psi`: `{ sheets: { 'YYYY-MM-DD': { likes, dislikes, weaknesses, strengths, savedAt } } }`; ngày theo Asia/Ho_Chi_Minh.
+
+| Lệnh | Hành vi |
+| --- | --- |
+| GET/HEAD /api/psi | Hai thành viên; `{ today, sheets }` mọi tờ (khách 401) |
+| PUT /api/psi/today | Chỉ minhle (người khác 403 `owner_only`); body chỉ gồm 4 field chữ, mỗi field ≤4000 ký tự sau trim (400 `invalid_<field>`, field lạ 400 `invalid_body`), ít nhất một ô có chữ (400 `empty_sheet`); ghi đè tờ của ngày hiện tại trên server, trả `{ date, sheet }`. Body tối đa 64 KB |
+
+UI: `js/features/psi/panel.js` (`mountPsiPanel(container, { signal })`) do `js/profile.js` mount khi definition có `psi: true` và người xem là thành viên; mount lại khi đổi account. Nhắc 21:00: `js/psi-reminder.js` dùng `@capacitor/local-notifications` (chỉ app Android, chỉ minhle): mỗi lần mở app, đăng nhập hoặc lưu thì hủy rồi đặt lại 30 tối tới (id 7000–7029), bỏ tối nay nếu đã có tờ; account khác hoặc đăng xuất thì hủy. Bấm thông báo mở `#minhle` và focus ô đầu.
 
 Helper dùng chung (giữ signature; cần đổi thì báo F0/phiên chính):
 

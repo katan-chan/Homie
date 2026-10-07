@@ -4,8 +4,10 @@ import { authEvents, getUser, logout, refreshSession } from './auth.js';
 import { renderLogin } from './login.js';
 import { mountBackground } from './background.js';
 import { forgetDevice, initPush } from './push.js';
+import { initPsiReminder } from './psi-reminder.js';
 
 initPush();
+initPsiReminder();
 
 const backgroundController = new AbortController();
 const background = mountBackground(document.querySelector('#app-background'), { signal: backgroundController.signal });

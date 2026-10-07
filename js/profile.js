@@ -15,6 +15,7 @@ export function renderProfile(container, { signal }, definition) {
       <div class="profile-actions"></div>
       <div class="profile-editor"></div>
       <p class="profile-status form-message" role="status"></p>
+      <div class="profile-psi"></div>
     </div>`;
   container.replaceChildren(section);
   const title = section.querySelector('.profile-name');
@@ -27,6 +28,21 @@ export function renderProfile(container, { signal }, definition) {
   let draft = null;
   let loginCleanup = null;
   let disposed = false;
+  // Tờ PSI (Minh Lê only): members see it; it remounts when the account changes so only the owner gets the editor.
+  const psiHost = section.querySelector('.profile-psi');
+  let psi = null;
+  function syncPsi() {
+    const viewer = definition.psi && ['minhle', 'haiyen'].includes(getUser()?.id) ? getUser().id : null;
+    if (psi?.viewer === viewer || disposed) return;
+    psi?.controller.abort();
+    psi = viewer ? { viewer, controller: new AbortController() } : null;
+    psiHost.replaceChildren();
+    if (!psi) return;
+    const session = psi;
+    import('./features/psi/panel.js')
+      .then(({ mountPsiPanel }) => { if (psi === session && !session.controller.signal.aborted) mountPsiPanel(psiHost, { signal: session.controller.signal }); })
+      .catch(() => { if (psi === session) psiHost.textContent = 'Chưa mở được tờ PSI.'; });
+  }
 
   function showActions() {
     if (disposed || signal.aborted) return;
@@ -161,10 +177,13 @@ export function renderProfile(container, { signal }, definition) {
       editor.replaceChildren();
     }
     showActions();
+    syncPsi();
   }, { signal });
   showActions();
   loadProfile();
+  syncPsi();
   return () => {
+    psi?.controller.abort();
     disposed = true;
     loginCleanup?.();
     section.remove();

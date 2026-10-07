@@ -5,6 +5,7 @@ const definition = {
   id: 'minhle',
   displayName: 'Minh Lê',
   accent: '#6e7b5b',
+  psi: true,
 };
 
 export function render(container, context) {
