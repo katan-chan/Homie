@@ -392,3 +392,14 @@ for (const mode of ['reopen', 'reconnect', 'same-account login', 'different-acco
     assert.equal(client.getState().durability, 'saved');
   });
 }
+
+test('typing is held locally and merged into one text write until save', async t => {
+  const f = await fixture(t), c = await f.open(); await waitFor(() => c.getState().connection === 'online');
+  const doc = await c.getDocument(f.noteId), p = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+  p.insert(0, [text]); doc.getXmlFragment('body').insert(0, [p]);
+  for (const letter of 'Chào!') text.insert(text.length, letter);
+  await c.flush(); assert.equal(f.sent.filter(s => s.path.endsWith('/text')).length, 0); assert.equal(c.getState().pending.text, 1);
+  await c.save();
+  assert.equal(f.sent.filter(s => s.path.endsWith('/text')).length, 1); assert.equal(c.getState().pending.total, 0);
+  assert.equal(f.store.publicBoard(f.boardId).notes[0].content.content[0].content[0].text, 'Chào!');
+});

@@ -3,7 +3,7 @@ import { getUser, getAuthGeneration, authEvents, refreshSession } from '../auth.
 import { Y, IndexeddbPersistence, Awareness } from '../../assets/vendor/notes.js';
 import { applyMetadataCommand, validateCommand, requireId, requireAccount, notesError } from './model.js';
 
-const MAX_TEXT = 262144, MAX_UPLOAD = 50 * 1024 * 1024;
+const MAX_TEXT = 262144, MAX_UPLOAD = 50 * 1024 * 1024, TEXT_IDLE_MS = 2000;
 const remote = Symbol('committed'), cache = Symbol('cache');
 const clone = value => structuredClone(value);
 function canonicalRequest(entry) {
@@ -167,6 +167,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   const acknowledged = new Map(), ownOperations = new Map(), undoStack = [], redoStack = [];
   let closed = false, generation = 0, authGeneration = session.generation(), privateMode = !!accountId && session.account() === accountId;
   let expiredGeneration = null, controller = new AbortController(), stopStream = () => {}, stopAuth = () => {};
+  // Typed text stays in the local queue but is held back until typing pauses, Ctrl+S, tab hide or close: one server write per burst.
+  const holding = new Set(); let idle = null;
   let queue = [], snapshot = null, presence = [], localWrites = Promise.resolve(), sending = null, refreshJob = null, refreshWanted = false;
   let confirmed = false, durability = 'unknown', connection = 'connecting', error = null, leaseState = 'none', latestPresence = null;
   let heartbeat = null;
@@ -269,9 +271,12 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
         for (const entry of queue) if (entry.kind === 'text' && entry.noteId === noteId) Y.applyUpdate(doc, decode(entry.update), cache);
         record.listener = (bytes, origin) => {
           if (origin === remote || origin === cache || !writable() || documents.get(noteId) !== record) return;
-          const entry = { kind: 'text', noteId, update: encode(bytes), operationId: crypto.randomUUID() };
-          queue.push(entry); durability = 'saving'; notify();
-          write(async () => { await persist(); await storage.saveNote(key, doc); }).then(() => flush()).catch(failure => { if (alive(g)) failed(failure, true); });
+          const last = queue.at(-1), merged = last?.kind === 'text' && last.noteId === noteId && holding.has(last.operationId) && Y.mergeUpdates([decode(last.update), bytes]);
+          if (merged && merged.length <= MAX_TEXT) last.update = encode(merged);
+          else { const entry = { kind: 'text', noteId, update: encode(bytes), operationId: crypto.randomUUID() }; queue.push(entry); holding.add(entry.operationId); }
+          clearTimeout(idle); idle = setTimeout(() => save().catch(() => {}), TEXT_IDLE_MS);
+          durability = 'saving'; notify();
+          write(async () => { await persist(); await storage.saveNote(key, doc); }).catch(failure => { if (alive(g)) failed(failure, true); });
         };
         doc.on('update', record.listener);
         return doc;
@@ -417,7 +422,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
         if (!alive(g) || !writable()) break;
         if (connection !== 'online' && entry.kind !== 'upload' && entry.command?.type !== 'board.create') continue;
         // Matching receipts were retired; a remaining receipt represents visible conflicting work.
-        if (acknowledged.has(entry.operationId)) continue;
+        if (acknowledged.has(entry.operationId) || holding.has(entry.operationId)) continue;
         try {
           const identity = await requestIdentity(entry);
           if (!alive(g) || !writable()) break;
@@ -528,7 +533,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     const doc = await documentFor(noteId); check(true);
     Y.applyUpdate(doc, bytes); await localWrites;
     if (durability === 'unsaved') throw error;
-    await flush(); return getState();
+    await save(); return getState();
   }
   function bridgePresence() {
     for (const [noteId, value] of awareness) {
@@ -576,15 +581,21 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     check(); generation++; controller.abort(); stopStream(); controller = new AbortController(); refreshJob = null;
     leases.clear(); leaseState = 'lost'; connection = 'connecting'; startStream(); notify();
   }
-  async function close() {
-    if (closed) return;
+  function save() { clearTimeout(idle); idle = null; holding.clear(); return flush(); }
+  function hidden() { if (globalThis.document?.visibilityState === 'hidden' && holding.size) save().catch(() => {}); }
+  let closing = null;
+  function close() { return closing ??= shutdown(); }
+  async function shutdown() {
+    // Bounded: a slow network must not hold the unmount; unsent text stays in the local queue for the next open.
+    if (holding.size && writable()) await Promise.race([save().catch(() => {}), new Promise(resolve => setTimeout(resolve, 3000))]);
+    clearTimeout(idle); globalThis.document?.removeEventListener('visibilitychange', hidden);
     closed = true; generation++; controller.abort(); stopStream(); stopAuth(); clearInterval(heartbeat);
     signal?.removeEventListener('abort', close); globalThis.removeEventListener?.('online', reconnect); globalThis.removeEventListener?.('offline', offline);
     listeners.clear(); clearPrivate(); await localWrites;
   }
   const client = { clientId, boardId, accountId, getState,
     subscribe(fn) { check(); listeners.add(fn); fn(getState()); return () => listeners.delete(fn); },
-    command, applyText, flush, close, reconnect, refresh,
+    command, applyText, flush, save, close, reconnect, refresh,
     getPending() { check(true); return clone(queue); },
     getUploadReceipt(operationId) { check(true); return clone(acknowledged.get(operationId)?.result ?? null); },
     async discardPending(operationId) {
@@ -614,6 +625,7 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
   } catch (failure) { failed(failure, true); }
   stopAuth = session.subscribe(authChanged);
   globalThis.addEventListener?.('online', reconnect); globalThis.addEventListener?.('offline', offline);
+  globalThis.document?.addEventListener('visibilitychange', hidden);
   startStream();
   heartbeat = setInterval(() => {
     if (!closed) check();

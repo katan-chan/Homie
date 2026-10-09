@@ -364,7 +364,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
       if (action === 'zoom-in' || action === 'zoom-out') { const rect = viewport.getBoundingClientRect(); zoom(camera.scale * (action === 'zoom-in' ? 1.2 : 1 / 1.2), rect.left + rect.width / 2, rect.top + rect.height / 2); return; }
       if (action === 'fit') { fit(); return; }
       if (!state.writable) return;
-      if (action === 'save') await client.flush();
+      if (action === 'save') await client.save();
       if (action === 'undo') await client.undo();
       if (action === 'redo') await client.redo();
       if (action === 'note-new') {const point=creationPoint(),id=crypto.randomUUID();await mutate('note.create',{id,columnId:selection?.kind==='column'?selection.id:null,x:point.x-180,y:point.y-120,width:360,height:320,color:colors[0],...(state.snapshot?.noteDefault==='private'?{visibility:state.accountId}:{})});if(listing())records.get(id)?.node.scrollIntoView({block:'nearest'});}
@@ -404,7 +404,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   },events);
   root.addEventListener('keydown', event => {
     if (event.key === 'Escape' && root.classList.contains('is-more')) { setMore(false); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='s' && state.writable) {event.preventDefault();run(()=>client.flush());return;}
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='s' && state.writable) {event.preventDefault();run(()=>client.save());return;}
     if (event.target.closest('input,select,textarea,[contenteditable=true],.note-text')) return;
     if ((event.ctrlKey || event.metaKey) && ['z','y'].includes(event.key.toLowerCase()) && state.writable) {event.preventDefault();run(()=>event.shiftKey || event.key.toLowerCase()==='y' ? client.redo() : client.undo());return;}
     if(event.key==='Escape') {cancelDrag();return;}
