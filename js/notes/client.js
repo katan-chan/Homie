@@ -581,7 +581,8 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
     check(); generation++; controller.abort(); stopStream(); controller = new AbortController(); refreshJob = null;
     leases.clear(); leaseState = 'lost'; connection = 'connecting'; startStream(); notify();
   }
-  function save() { clearTimeout(idle); idle = null; holding.clear(); return flush(); }
+  // An in-flight flush may already have skipped the held entries: let it finish, then send them.
+  async function save() { clearTimeout(idle); idle = null; holding.clear(); await sending?.catch(() => {}); return flush(); }
   function hidden() { if (globalThis.document?.visibilityState === 'hidden' && holding.size) save().catch(() => {}); }
   let closing = null;
   function close() { return closing ??= shutdown(); }

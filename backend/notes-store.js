@@ -10,6 +10,10 @@ export const NOTES_FORMAT_VERSION = 6;
 export const MAX_TEXT_UPDATE_BYTES = 256 * 1024;
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_NODES = 10000, MAX_TEXT_DEPTH = 32;
+// The operation log (undo + retry dedupe) lives only in server memory: it is neither saved nor loaded, so each save stays small.
+// ponytail: undo/retry do not survive a restart; persist a bounded tail if that ever matters.
+const KEEP_OPERATIONS = 500;
+const stored = state => ({ ...state, operations: [] });
 const collectionKeys = ['boards', 'columns', 'notes', 'decorations'];
 const metadata = state => Object.fromEntries(collectionKeys.map(key => [key, state[key]]));
 const clone = value => structuredClone(value);
@@ -193,71 +197,6 @@ function validateSnapshot(state) {
   const assets = new Set();
   for (const asset of state.assets) { validateAsset(asset); if (assets.has(asset.id)) throw notesError('duplicate_id'); assets.add(asset.id); }
   for (const decoration of state.decorations) if (!assets.has(decoration.assetId)) throw notesError('asset_not_found');
-  const operations = new Set(), priorOperations = new Map();
-  for (const op of state.operations) {
-    requireKeys(op, ['id', 'accountId', 'boardId', 'fingerprint', 'result', 'undo']);
-    requireId(op.id); requireAccount(op.accountId);
-    if (op.boardId !== null && !findEntity(state, 'board', op.boardId)) throw notesError('invalid_state');
-    if (operations.has(op.id) || typeof op.fingerprint !== 'string' || !/^[\da-f]{64}$/.test(op.fingerprint)) throw notesError('invalid_state');
-    operations.add(op.id);
-    requireKeys(op.result, ['revision', 'operationId'], ['entity', 'revisions', 'asset']);
-    if (op.result.asset !== undefined) {
-      validateAsset(op.result.asset);
-      if (op.boardId !== null || op.undo !== null || op.result.asset.id !== op.id || op.result.asset.createdBy !== op.accountId || !assets.has(op.result.asset.id)) throw notesError('invalid_state');
-    }
-    if (!Number.isSafeInteger(op.result.revision) || op.result.revision < 1 || op.result.operationId !== op.id) throw notesError('invalid_state');
-    const eventRevision = op.boardId === null ? state.revision : findEntity(state, 'board', op.boardId).revision;
-    if (op.result.revision > eventRevision) throw notesError('invalid_state');
-    if (op.result.entity) {
-      requireKeys(op.result.entity, ['kind', 'id']);
-      if (!findEntity(state, op.result.entity.kind, op.result.entity.id)) throw notesError('invalid_state');
-    }
-    if (op.result.revisions !== undefined) {
-      if (!Array.isArray(op.result.revisions) || !op.result.revisions.length) throw notesError('invalid_state');
-      for (const entry of op.result.revisions) {
-        requireKeys(entry, ['kind', 'id', 'revision']);
-        const entity = findEntity(state, entry.kind, entry.id);
-        if (!entity || !Number.isSafeInteger(entry.revision) || entry.revision < 1
-          || entry.revision > entity[entry.kind === 'board' ? 'metadataRevision' : 'revision']) throw notesError('invalid_state');
-      }
-    }
-    if (op.undo !== null) {
-      requireKeys(op.undo, ['changes', 'groups', 'entity', 'undoOf']);
-      if (op.undo.undoOf !== null) {
-        requireId(op.undo.undoOf);
-        const target = priorOperations.get(op.undo.undoOf);
-        if (!target?.undo || target.accountId !== op.accountId || target.boardId !== op.boardId
-          || !Array.isArray(op.undo.changes) || op.undo.changes.length !== target.undo.changes.length
-          || target.undo.changes.some(change => !op.undo.changes.some(other => other.kind === change.kind && other.id === change.id))) throw notesError('invalid_state');
-      }
-      requireKeys(op.undo.entity, ['kind', 'id']);
-      if (!op.result.entity || canonical(op.result.entity) !== canonical(op.undo.entity)
-        || !Array.isArray(op.undo.changes) || !op.undo.changes.length || !Array.isArray(op.undo.groups)) throw notesError('invalid_state');
-      for (const change of op.undo.changes) {
-        requireKeys(change, ['kind', 'id', 'before', 'after']);
-        const live = findEntity(state, change.kind, change.id);
-        if (!live || change.after?.id !== change.id || change.before !== null && change.before?.id !== change.id) throw notesError('invalid_state');
-        const ownerBoard = change.kind === 'board' ? live.id : live.boardId;
-        if (ownerBoard !== op.boardId || change.kind === 'note'
-          && [change.before, change.after].filter(Boolean).some(note => note.authorId !== live.authorId)) throw notesError('invalid_state');
-        // Validate historic records in the present hierarchy (entities are never permanently removed).
-        for (const record of [change.before, change.after].filter(Boolean)) {
-          const historic = clone(metadata(state));
-          const collection = historic[{ board: 'boards', column: 'columns', note: 'notes', decoration: 'decorations' }[change.kind]];
-          collection[collection.findIndex(entity => entity.id === change.id)] = record;
-          validateNotesState(historic);
-        }
-      }
-      for (const group of op.undo.groups) {
-        requireKeys(group, ['kind', 'id', 'memberIds']);
-        if (!['board', 'column', 'note'].includes(group.kind) || !findEntity(state, group.kind, group.id)
-          || !Array.isArray(group.memberIds) || new Set(group.memberIds).size !== group.memberIds.length
-          || group.memberIds.some(id => !collectionKeys.some(key => state[key].some(entity => entity.id === id)))) throw notesError('invalid_state');
-      }
-      if (op.undo.undoOf !== null) validateInverse(op.undo, priorOperations.get(op.undo.undoOf).undo);
-    }
-    priorOperations.set(op.id, op);
-  }
   return state;
 }
 
@@ -284,8 +223,10 @@ function rebaseUndo(state, original) {
       for (let remaining = versions.size; remaining >= 0; remaining -= 1) {
         const operation = versions.get(revision);
         if (!operation?.undo.undoOf) return revision;
-        const target = operations.get(operation.undo.undoOf).undo.changes
+        // The inverse's target may have aged out of the in-memory log.
+        const target = operations.get(operation.undo.undoOf)?.undo?.changes
           .find(other => other.kind === change.kind && other.id === change.id);
+        if (!target) throw notesError('undo_conflict', 'Operation history no longer available', 409);
         revision = target.before?.[key] ?? 0;
       }
       throw notesError('undo_conflict', 'Invalid undo lineage', 409);
@@ -305,8 +246,9 @@ export async function createNotesStore({ dataDir, remote = null }) {
     if (saved === null) throw Object.assign(new Error('No notes yet'), { code: 'ENOENT' });
     return saved;
   };
+  const load = async () => validateSnapshot(stored(migrateNotesSnapshot(await read())));
   let state;
-  try { state = validateSnapshot(migrateNotesSnapshot(await read())); }
+  try { state = await load(); }
   catch (error) {
     if (error.code !== 'ENOENT') throw notesError('storage_unavailable', 'Notes snapshot is invalid or unavailable', 503);
     state = { formatVersion: NOTES_FORMAT_VERSION, revision: 0, ...emptyNotesState(), texts: {}, operations: [], assets: [] };
@@ -323,10 +265,10 @@ export async function createNotesStore({ dataDir, remote = null }) {
   async function persist(candidate) {
     // ponytail: rewrites the whole snapshot per commit; fine for two accounts, move to per-board rows if it grows.
     if (remote) {
-      try { await remote.putDocument('notes', candidate); return; }
+      try { await remote.putDocument('notes', stored(candidate)); return; }
       catch {
         // The upsert may have committed before the network failed: reconcile before any retry can overwrite it.
-        try { const saved = validateSnapshot(migrateNotesSnapshot(await read())); if (saved.revision === candidate.revision) { state = saved; needsSync = true; throw notesError('durability_uncertain', 'Commit reached storage; retry the same operation ID', 503); } }
+        try { const saved = await load(); if (saved.revision === candidate.revision) { state = { ...saved, operations: candidate.operations }; needsSync = true; throw notesError('durability_uncertain', 'Commit reached storage; retry the same operation ID', 503); } }
         catch (error) { if (error.code === 'durability_uncertain') throw error; }
         throw notesError('storage_unavailable', 'Notes write failed (remote)', 503);
       }
@@ -336,14 +278,14 @@ export async function createNotesStore({ dataDir, remote = null }) {
     let renamed = false;
     try {
       const file = await open(temporary, 'wx', 0o600);
-      try { await file.writeFile(`${JSON.stringify(candidate)}\n`); await file.sync(); }
+      try { await file.writeFile(`${JSON.stringify(stored(candidate))}\n`); await file.sync(); }
       finally { await file.close(); }
       await rename(temporary, path); renamed = true;
       await syncDirectory();
     } catch (error) {
       if (renamed) {
         // The rename may have committed: reconcile before any retry can overwrite it.
-        try { state = validateSnapshot(migrateNotesSnapshot(JSON.parse(await readFile(path, 'utf8')))); needsSync = true; }
+        try { state = { ...await load(), operations: candidate.operations }; needsSync = true; }
         catch { unavailable = true; }
         throw notesError('durability_uncertain', 'Commit reached disk; retry the same operation ID', 503);
       }
@@ -383,6 +325,7 @@ export async function createNotesStore({ dataDir, remote = null }) {
   async function commit(candidate, userId, operationId, boardId, hash, result, undo, event) {
     candidate.revision = state.revision + 1;
     candidate.operations.push({ id: operationId, accountId: userId, boardId, fingerprint: hash, result, undo });
+    candidate.operations = candidate.operations.slice(-KEEP_OPERATIONS);
     await persist(candidate);
     state = candidate;
     if (event) publish(event);

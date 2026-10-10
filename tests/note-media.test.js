@@ -72,7 +72,7 @@ test('acceptance binds original session/source/config; durable retry survives re
   assert.deepEqual(await reopened.ingest({stream:Readable.from([bytes]),metadata:meta,sessionToken:'new-same-account-session'}),result);
   await assert.rejects(f.ingest(bytes,{...meta,name:'Changed',previewId:p.previewId}),{code:'operation_conflict'});
 });
-test('expired preview requires reconversion, while completed asset receipt survives actual store restart',async t=>{
+test('expired preview requires reconversion; the in-memory asset receipt does not survive a store restart',async t=>{
   const f=await fixture(t),bytes=await mediaBytes(),meta=f.metadata(bytes),p=await f.ingest(bytes,{...meta,preview:true});
   const realNow=Date.now;t.mock.method(Date,'now',()=>realNow()+300001);
   await assert.rejects(f.ingest(bytes,{...meta,previewId:p.previewId}),{code:'preview_required'});
@@ -80,7 +80,9 @@ test('expired preview requires reconversion, while completed asset receipt survi
   const accepted=await f.ingest(bytes,{...meta,previewId:newer.previewId});await f.media.close();await f.store.close();
   const reopened=await createNotesStore({dataDir:f.dir}),{createNoteMedia}=await import('../backend/note-media.js');
   const media=createNoteMedia({dataDir:f.dir,store:reopened,ffmpegPath:'/missing/ffmpeg',ffprobePath:'/missing/ffprobe'});t.after(async()=>{await media.close();await reopened.close();});
-  assert.deepEqual(await media.ingest({stream:Readable.from([bytes]),metadata:meta,sessionToken:'new-session'}),accepted,'retry uses durable account/op/source receipt, not preview memory or binaries');
+  assert.ok(reopened.library().some(asset=>asset.id===accepted.asset.id),'the asset itself is saved');
+  // ponytail: receipts live in memory only, so a retry after a restart must review again; persist receipts if lost ACKs show up.
+  await assert.rejects(media.ingest({stream:Readable.from([bytes]),metadata:meta,sessionToken:'new-session'}),{code:'preview_required'});
   await assert.rejects(media.ingest({stream:Readable.from([bytes]),metadata:{...meta,operationId:randomUUID(),preview:true},sessionToken:'new-session'}),{code:'media_unavailable'});
 });
 test('two-job bound, queued abort and close clean temp jobs without library mutation',async t=>{

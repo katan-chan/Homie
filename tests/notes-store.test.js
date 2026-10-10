@@ -27,7 +27,7 @@ function textUpdate(text) {
   const update = Y.encodeStateAsUpdate(doc); doc.destroy(); return update;
 }
 
-test('persists author, dedup and rich text; retries after restart return original result', async t => {
+test('persists author and rich text, dedups in memory, and never saves the operation log', async t => {
   const f = await fixture(t), operationId = randomUUID();
   const update = textUpdate('Xin chào Hải Yến');
   const command = f.command('note.update', { id: f.noteId, color: '#aabbcc' }, 'haiyen');
@@ -36,9 +36,9 @@ test('persists author, dedup and rich text; retries after restart return origina
   await assert.rejects(f.store.applyCommand('minhle', command), { code: 'account_mismatch' });
   await assert.rejects(f.store.applyCommand('haiyen', { ...command, payload: { id: f.noteId, color: '#ffffff' } }), { code: 'operation_conflict' });
   const textResult = await f.store.applyText('haiyen', f.noteId, update, operationId);
-  await f.reopen();
-  assert.deepEqual(await f.store.applyCommand('haiyen', command), first);
   assert.deepEqual(await f.store.applyText('haiyen', f.noteId, update, operationId), textResult);
+  assert.deepEqual(JSON.parse(await readFile(join(f.dataDir, 'notes.json'), 'utf8')).operations, []);
+  await f.reopen();
   assert.equal(f.store.publicBoard(f.boardId).notes[0].authorId, 'minhle');
   assert.equal(f.store.publicBoard(f.boardId).notes[0].content.content[0].content[0].text, 'Xin chào Hải Yến');
   const restored = new Y.Doc();
@@ -87,11 +87,8 @@ test('corrupt, wrong-version and invalid-reference snapshots fail closed without
   const f = await fixture(t); await f.store.close();
   const path = join(f.dataDir, 'notes.json'), valid = JSON.parse(await readFile(path, 'utf8'));
   const invalidReference = structuredClone(valid); invalidReference.notes[0].columnId = randomUUID();
-  const invalidDedup = structuredClone(valid); invalidDedup.operations[0].result.revisions[0].revision = 'invalid';
-  const cyclicLineage = structuredClone(valid); cyclicLineage.operations[0].undo.undoOf = cyclicLineage.operations[0].id;
-  const futureLineage = structuredClone(valid); futureLineage.operations[0].undo.undoOf = futureLineage.operations[1].id;
   for (const bytes of ['{broken', JSON.stringify({ ...valid, formatVersion: 1 }), JSON.stringify({ ...valid, formatVersion: 999 }),
-    JSON.stringify(invalidReference), JSON.stringify(invalidDedup), JSON.stringify(cyclicLineage), JSON.stringify(futureLineage)]) {
+    JSON.stringify(invalidReference)]) {
     await writeFile(path, bytes);
     await assert.rejects(createNotesStore({ dataDir: f.dataDir }));
     assert.equal(await readFile(path, 'utf8'), bytes);
@@ -248,17 +245,15 @@ test('a directory-sync failure after rename reconciles committed state and resol
     assert.equal(f.store.publicBoard(f.boardId).notes[0].x, 321, 'Live state reconciles the completed rename');
     assert.equal(events.length, 0, 'No successful commit event was emitted before directory sync');
     const disk = JSON.parse(await readFile(join(f.dataDir, 'notes.json'), 'utf8'));
-    assert.equal(disk.operations.filter(operation => operation.id === command.operationId).length, 1);
+    assert.equal(disk.notes[0].x, 321); assert.deepEqual(disk.operations, []);
     const result = await f.store.applyCommand('minhle', command);
     assert.equal(result.operationId, command.operationId);
     assert.equal(events.length, 1); assert.equal(events[0].type, 'refresh');
-    await f.reopen();
-    assert.deepEqual(await f.store.applyCommand('minhle', command), result);
   } finally { patched.mock.restore(); syncBuiltinESMExports(); }
 });
 
 for (const grouped of [false, true]) {
-  test(`successive own undo/redo preserves history and dedup after restart (${grouped ? 'column group' : 'note'})`, async t => {
+  test(`successive own undo/redo preserves history and dedup (${grouped ? 'column group' : 'note'})`, async t => {
     const f = await fixture(t);
     const id = grouped ? randomUUID() : f.noteId, type = grouped ? 'column.update' : 'note.update';
     if (grouped) {
@@ -275,10 +270,8 @@ for (const grouped of [false, true]) {
     const undo = operation => f.send('command.undo', { operationId: operation.operationId });
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const undoB = await undo(b); assert.equal(x(), initialX + 10);
-      await f.reopen();
       const undoA = await undo(a); assert.equal(x(), initialX);
       assert.equal(f.store.entity('note', f.noteId).x, initialNoteX);
-      await f.reopen();
       a = await undo(undoA); assert.equal(x(), initialX + 10);
       b = await undo(undoB); assert.equal(x(), initialX + 20);
       assert.equal(f.store.entity('note', f.noteId).x, initialNoteX + 20);
@@ -306,21 +299,7 @@ test('undo lineage rejects normal lookalike writes and cannot cross a reverted p
   await assert.rejects(f.send('command.undo', { operationId: own.operationId }), { code: 'undo_conflict' });
 });
 
-test('loading rejects a backward undo link that does not describe its saved inverse', async t => {
-  const f = await fixture(t);
-  await f.send('note.update', { id: f.noteId, x: 10 });
-  const b = await f.send('note.update', { id: f.noteId, x: 20 });
-  const c = await f.send('note.update', { id: f.noteId, x: 30 });
-  await f.store.close();
-  const path = join(f.dataDir, 'notes.json'), snapshot = JSON.parse(await readFile(path, 'utf8'));
-  snapshot.operations.find(operation => operation.id === c.operationId).undo.undoOf = b.operationId;
-  const bytes = JSON.stringify(snapshot);
-  await writeFile(path, bytes);
-  await assert.rejects(createNotesStore({ dataDir: f.dataDir }), { code: 'storage_unavailable' });
-  assert.equal(await readFile(path, 'utf8'), bytes);
-});
-
-for (const reuseOldRedo of [false, true]) test(`restarted inverse history preserves every entity kind (${reuseOldRedo ? 'older redo after repeated creation undo' : 'fresh inverses'})`, async t => {
+for (const reuseOldRedo of [false, true]) test(`inverse history preserves every entity kind (${reuseOldRedo ? 'older redo after repeated creation undo' : 'fresh inverses'})`, async t => {
   const f = await fixture(t), assetId = randomUUID();
   await f.store.registerAsset('minhle', { id: assetId, name: 'Hoa', mimeType: 'image/gif', fileName: `${assetId}.gif`, posterName: `${assetId}.png`, width: 30, height: 40, bytes: 123, animated: false }, randomUUID());
   const cases = [
@@ -336,10 +315,9 @@ for (const reuseOldRedo of [false, true]) test(`restarted inverse history preser
     const created = await send(type, { ...fields, ...(kind === 'board' ? {} : { id }) });
     const undoCreate = await send('command.undo', { operationId: created.operationId });
     const firstTombstone = f.store.entity(kind, id).deletedAt;
-    await f.reopen();
     assert.notEqual(f.store.entity(kind, id).deletedAt, null);
     await send('command.undo', { operationId: undoCreate.operationId });
-    await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
+    assert.equal(f.store.entity(kind, id).deletedAt, null);
     if (reuseOldRedo) {
       await new Promise(resolve => setTimeout(resolve, 5));
       await send('command.undo', { operationId: created.operationId });
@@ -348,33 +326,17 @@ for (const reuseOldRedo of [false, true]) test(`restarted inverse history preser
         baseRevision: f.store.privateBoard(boardId).revision };
       const redoResult = await f.store.applyCommand('minhle', redoCommand);
       assert.equal(f.store.entity(kind, id).deletedAt, null);
-      await f.reopen();
-      assert.equal(f.store.entity(kind, id).deletedAt, null);
+        assert.equal(f.store.entity(kind, id).deletedAt, null);
       assert.deepEqual(await f.store.applyCommand('minhle', redoCommand), redoResult);
     }
     const removed = await send(`${kind}.${kind === 'decoration' ? 'remove' : 'trash'}`, kind === 'board' ? {} : { id });
     const restored = await send('command.undo', { operationId: removed.operationId });
-    await f.reopen(); assert.equal(f.store.entity(kind, id).deletedAt, null);
+    assert.equal(f.store.entity(kind, id).deletedAt, null);
     await send('command.undo', { operationId: restored.operationId });
-    await f.reopen(); assert.notEqual(f.store.entity(kind, id).deletedAt, null);
+    assert.notEqual(f.store.entity(kind, id).deletedAt, null);
   }
 });
 
-
-test('inverse validation retains tombstone status, timestamp syntax and other metadata checks', async t => {
-  const f = await fixture(t), noteId = randomUUID();
-  const created = await f.send('note.create', { id: noteId, columnId: null, x: 0, y: 0, width: 200, height: 250, color: '#ffffff' });
-  const undone = await f.send('command.undo', { operationId: created.operationId });
-  await f.store.close();
-  const path = join(f.dataDir, 'notes.json'), original = JSON.parse(await readFile(path, 'utf8'));
-  for (const patch of [{ deletedAt: 'invalid timestamp' }, { deletedAt: null }, { color: '#000000' }]) {
-    const invalid = structuredClone(original);
-    Object.assign(invalid.operations.find(operation => operation.id === undone.operationId).undo.changes[0].after, patch);
-    const bytes = JSON.stringify(invalid); await writeFile(path, bytes);
-    await assert.rejects(createNotesStore({ dataDir: f.dataDir }), { code: 'storage_unavailable' });
-    assert.equal(await readFile(path, 'utf8'), bytes);
-  }
-});
 
 test('stickers follow the note or column they are attached to; free stickers stay put; trash follows attachment', async t => {
   const f = await fixture(t), assetId = randomUUID(), columnId = randomUUID(), [onNote, onColumn, free] = [randomUUID(), randomUUID(), randomUUID()];
@@ -436,7 +398,7 @@ test('format 4 boards migrate to public boards authored by their creator; notes 
   assert.deepEqual([board.authorId, board.visibility, board.notes[0].visibility, board.notes[0].labels], ['minhle', 'public', null, []]);
 });
 
-test('format 5 snapshots migrate to format 6 without journal or memory, and keep their undo history', async t => {
+test('format 5 snapshots migrate to format 6 without journal or memory, and drop their saved undo history', async t => {
   const f = await fixture(t), moved = await f.send('note.update', { id: f.noteId, x: 40 });
   await f.store.close();
   const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
@@ -449,23 +411,18 @@ test('format 5 snapshots migrate to format 6 without journal or memory, and keep
   await writeFile(path, JSON.stringify(saved));
   const store = await f.reopen(), board = store.privateBoard(f.boardId);
   assert.deepEqual([board.noteDefault, board.notes[0].memoryDate, board.notes[0].garden, board.notes[0].gardenFlower, board.notes[0].gardenSize], [null, null, false, null, null]);
-  await f.send('command.undo', { operationId: moved.operationId });
-  assert.equal(store.privateBoard(f.boardId).notes[0].x, 10, 'Undo recorded before the migration still works');
+  await assert.rejects(f.send('command.undo', { operationId: moved.operationId }), { code: 'not_found' });
+  await f.send('note.update', { id: f.noteId, x: 50 });
   assert.equal(JSON.parse(await readFile(path, 'utf8')).formatVersion, 6);
 });
 
 test('format 6 snapshots written before the garden fields existed load with gardenFlower and gardenSize null', async t => {
-  const f = await fixture(t), moved = await f.send('note.update', { id: f.noteId, x: 40 });
+  const f = await fixture(t);
   await f.store.close();
   const path = join(f.dataDir, 'notes.json'), saved = JSON.parse(await readFile(path, 'utf8'));
   const strip = ({ gardenFlower, gardenSize, ...record }) => record;
   saved.notes = saved.notes.map(strip);
-  for (const change of saved.operations.flatMap(op => op.undo?.changes ?? [])) if (change.kind === 'note') {
-    change.after = strip(change.after); if (change.before) change.before = strip(change.before);
-  }
   await writeFile(path, JSON.stringify(saved));
   const store = await f.reopen();
   assert.deepEqual([store.privateBoard(f.boardId).notes[0].gardenFlower, store.privateBoard(f.boardId).notes[0].gardenSize], [null, null]);
-  await f.send('command.undo', { operationId: moved.operationId });
-  assert.equal(store.privateBoard(f.boardId).notes[0].x, 10, 'Undo still works');
 });
