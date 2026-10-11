@@ -475,11 +475,17 @@ export async function openBoardClient({ boardId, accountId = null, signal, trans
         } catch (failure) {
           if (!alive(g)) break;
           if (['lease_conflict', 'lease_required'].includes(failure.code)) { leases.clear(); leaseState = 'blocked'; error = failure; notify(); continue; }
+          if (failure.code === 'invalid_text' && entry.repairFor) {
+            // A refused repair is stale (the note may have been cleaned since): drop it; the next failure rebuilds it from the current note.
+            await write(async () => { queue = queue.filter(e => e.operationId !== entry.operationId);
+              await storage.update(scope, record => ({ ...record, queue: record.queue.filter(e => e.operationId !== entry.operationId) })); });
+            failed(failure); break;
+          }
           if (failure.code === 'invalid_text') {
-            // Dependencies may be missing. Merge the committed state and prepend a bounded repair; preserve original ID/bytes.
+            // Dependencies may be missing. Merge the committed state and prepend a bounded repair (one per note); preserve original ID/bytes.
             await refresh(); const doc = await documentFor(entry.noteId);
             const repair = Y.encodeStateAsUpdate(doc, snapshot?.texts?.[entry.noteId] ? Y.encodeStateVectorFromUpdate(decode(snapshot.texts[entry.noteId])) : undefined);
-            if (repair.length <= MAX_TEXT && !queue.some(e => e.repairFor === entry.operationId)) {
+            if (repair.length <= MAX_TEXT && !queue.some(e => e.repairFor && e.noteId === entry.noteId)) {
               queue.unshift({ kind: 'text', noteId: entry.noteId, operationId: crypto.randomUUID(), update: encode(repair), repairFor: entry.operationId }); await write(persist);
             }
           }

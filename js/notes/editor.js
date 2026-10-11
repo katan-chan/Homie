@@ -9,6 +9,24 @@ const formatButtons = [['B','In đậm','toggleBold','bold'],['I','In nghiêng',
 const defaultFontSize = 28, minFontSize = 10, maxFontSize = 72;
 const validFontSize = value => /^\d{2}px$/.test(value || '') && parseInt(value) >= minFontSize && parseInt(value) <= maxFontSize;
 const fontSizeOf = editor => {const size = editor.getAttributes('textStyle').fontSize; return validFontSize(size) ? parseInt(size) : defaultFontSize;};
+// Mirrors the backend cssColor check. Pasted HTML brings colours like rgba(...) or var(--x) the server refuses.
+const validColor = value => /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value || '')
+  || /^rgb\(\s*(?:\d{1,3}\s*,\s*){2}\d{1,3}\s*\)$/.test(value || '') && value.match(/\d+/g).every(n => Number(n) <= 255);
+// One refused mark makes the server reject every later update of the note, so drop what it would refuse.
+// ponytail: scans the whole note per change; scan only the changed range if notes get very long.
+function cleanStyles(editor) {
+  if (editor.isDestroyed || !editor.isEditable) return;
+  const { state } = editor, type = state.schema.marks.textStyle, tr = state.tr;
+  state.doc.descendants((node, pos) => {
+    const mark = node.isText && node.marks.find(m => m.type === type);
+    if (!mark) return;
+    const color = validColor(mark.attrs.color) ? mark.attrs.color : null, fontSize = validFontSize(mark.attrs.fontSize) ? mark.attrs.fontSize : null;
+    if (color === (mark.attrs.color ?? null) && fontSize === (mark.attrs.fontSize ?? null)) return;
+    tr.removeMark(pos, pos + node.nodeSize, type);
+    if (color || fontSize) tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, color, fontSize }));
+  });
+  if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false));
+}
 // With only a caret (no selected text) the size applies to the whole note, like resizing a sticky note; the caret is kept.
 function setFontSize(editor, size) {
   const value = Math.min(maxFontSize, Math.max(minFontSize, Math.round(size))), {from, to, empty} = editor.state.selection;
@@ -237,7 +255,8 @@ export function mountNoteEditor(element, { noteId, client, signal, readOnly = fa
           message.textContent = 'Nội dung dán vượt giới hạn 100.000 ký tự.'; return true;
         },
       },
-      onCreate: updateControls, onTransaction: updateControls, ...options,
+      // After the transaction: inside y-prosemirror's sync a direct dispatch would not reach Yjs.
+      onCreate: updateControls, onTransaction: updateControls, onUpdate: ({editor}) => queueMicrotask(() => cleanStyles(editor)), ...options,
     });
     element.dataset.editorState = 'ready';
   }

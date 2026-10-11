@@ -403,3 +403,15 @@ test('typing is held locally and merged into one text write until save', async t
   assert.equal(f.sent.filter(s => s.path.endsWith('/text')).length, 1); assert.equal(c.getState().pending.total, 0);
   assert.equal(f.store.publicBoard(f.boardId).notes[0].content.content[0].content[0].text, 'Chào!');
 });
+
+test('a refused text style keeps at most one repair per note and drains once the style is removed', async t => {
+  const f = await fixture(t), c = await f.open(); await waitFor(() => c.getState().connection === 'online');
+  const doc = await c.getDocument(f.noteId), p = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+  p.insert(0, [text]); doc.getXmlFragment('body').insert(0, [p]); text.insert(0, 'Dán', { textStyle: { color: 'var(--x)' } });
+  for (let i = 0; i < 5; i++) await c.save().catch(() => {});
+  assert.ok(c.getState().pending.text <= 2, `queue grew to ${c.getState().pending.text}`);
+  text.format(0, 3, { textStyle: null });
+  for (let i = 0; i < 5 && c.getState().pending.total; i++) await c.save().catch(() => {});
+  assert.equal(c.getState().pending.total, 0);
+  assert.equal(f.store.publicBoard(f.boardId).notes[0].content.content[0].content[0].text, 'Dán');
+});
