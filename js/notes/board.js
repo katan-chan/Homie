@@ -97,8 +97,12 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   // Journal boards: the author decides that new notes start as "only me"; sharing a page is then per note.
   const journal = document.createElement('input'); journal.type = 'checkbox'; journal.dataset.action = 'board-note-default'; journal.dataset.mutation = '';
   const journalLabel = element('label', 'notes-view notes-journal'); journalLabel.append(journal, 'Note mới: Chỉ mình tôi');
+  // Desktop ⋯: below 1400px the less-used board tools fold behind it (same is-more state as the phone sheet).
+  const toolsMore = button('⋯', 'more'); toolsMore.setAttribute('aria-label', 'Thêm công cụ bảng'); toolsMore.setAttribute('aria-expanded', 'false');
   const labelFilter = document.createElement('select'); labelFilter.className = 'notes-label-filter'; labelFilter.setAttribute('aria-label', 'Lọc theo nhãn');
-  mutations.append(boardViewLabel, journalLabel, button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true));
+  mutations.append(boardViewLabel, journalLabel, button('+ Note', 'note-new', true), button('+ Cột', 'column-new', true), button('Đổi tên bảng', 'board-rename', true), button('Bỏ bảng', 'board-trash', true), button('Thùng rác', 'trash', true), button('Hoàn tác vị trí', 'undo', true), button('Làm lại vị trí', 'redo', true), button('Lưu', 'save', true), toolsMore);
+  // Narrow desktop windows show these as icons (styles/notes.css); the label keeps their name.
+  for (const node of mutations.querySelectorAll('[data-action=undo],[data-action=redo]')) node.setAttribute('aria-label', node.textContent);
   // One shared format row per board; editors register into it (see mountBoardNoteEditor).
   const formatRow = element('div', 'notes-format-row'); formatRow.setAttribute('role', 'toolbar'); formatRow.setAttribute('aria-label', 'Định dạng chữ'); formatRow.hidden = true;
   const durability = element('p', 'notes-durability'); durability.setAttribute('role', 'status');
@@ -110,6 +114,7 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   const cameraTools = element('div', 'notes-camera');
   const zoomLabel = element('output', 'notes-zoom', '100%'); zoomLabel.setAttribute('aria-label', 'Độ thu phóng');
   cameraTools.append(labelFilter, button('−', 'zoom-out'), zoomLabel, button('+', 'zoom-in'), button('Vừa màn hình', 'fit'));
+  cameraTools.lastChild.setAttribute('aria-label', 'Vừa màn hình');
   const inspector = element('div', 'notes-inspector'); inspector.setAttribute('aria-label', 'Chỉnh đối tượng đã chọn');
   const hint = element('p', 'notes-hint', 'Kéo nền hoặc giữ chuột phải để di chuyển góc nhìn · Cuộn trên nền để zoom · Hai ngón để thu phóng trên điện thoại');
   // Phone (≤600px, styles/notes.css): a bottom dock replaces the toolbar, the toolbar becomes the ⋯ sheet, and notes can be read as a list.
@@ -139,7 +144,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   }
   function setMore(open) {
     if (root.classList.contains('is-more') === open) return;
-    root.classList.toggle('is-more', open); more.setAttribute('aria-expanded', String(open));
+    root.classList.toggle('is-more', open); more.setAttribute('aria-expanded', String(open)); toolsMore.setAttribute('aria-expanded', String(open));
+    if (!phone.matches) return;
     if (open) toolbar.focus(); else if (toolbar.contains(document.activeElement)) more.focus();
   }
   // Phone: writing in a small note first brings it to the screen width.
@@ -424,7 +430,8 @@ export function mountBoard(container, { client, signal, mountEditor, mountMedia,
   world.addEventListener('focusin',event=>{const node=event.target.closest('.paper-note');if(!node)return;if(state?.writable&&selection?.id!==node.dataset.noteId)select('note',node.dataset.noteId);
     const entity=records.get(node.dataset.noteId)?.entity;if(entity&&phone.matches&&!listMode&&event.target.closest('.note-text')&&entity.width*camera.scale<viewport.clientWidth*.8)focusOn(entity);},events);
   // Phone: while a note is being written, the format row takes the dock's place (above the keyboard).
-  function writing(){const active=document.activeElement;root.classList.toggle('is-writing',!!active&&root.contains(active)&&!!active.closest('.note-text,.notes-format-row'));}
+  // A picker dialog opened from the format row keeps the row (and its opener) in place until focus returns.
+  function writing(){const active=document.activeElement;if(active?.closest('dialog[open]'))return;root.classList.toggle('is-writing',!!active&&root.contains(active)&&!!active.closest('.note-text,.notes-format-row'));}
   root.addEventListener('focusin',writing,events);root.addEventListener('focusout',()=>setTimeout(writing),events);
   phone.addEventListener('change',()=>{viewport.scrollTop=0;setMore(false);},events);
   viewport.addEventListener('contextmenu',event=>event.preventDefault(),events);

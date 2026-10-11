@@ -56,8 +56,8 @@ try {await withBrowser(async(evaluate,{call})=>{
   assert.ok(Math.abs(await evaluate("document.querySelector('.note-decoration').getBoundingClientRect().x")-(follow.sticker+40*follow.scale))<2,'The sticker rides along during the note drag');
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:follow.x+40*follow.scale,y:follow.y,button:'left',buttons:0});
   await wait(`document.querySelector('.notes-durability').dataset.durability==='saved' && Math.abs(parseFloat(document.querySelector('.note-decoration').style.left)-parseFloat(document.querySelector('.paper-note').style.left)-(${follow.offset}))<0.01 && !document.querySelector('.note-decoration').style.translate`);
-  // Selecting a decoration (focus or press) swaps the format row to its tools at the same height; nothing overlays the decoration.
-  const rowHeight=await evaluate("document.querySelector('.notes-format-row').getBoundingClientRect().height");
+  // Selecting a decoration (focus or press) shows its tools in the row it replaces (toolbar or format row) at the same height; nothing overlays the decoration.
+  const rowHeight=await evaluate("[...document.querySelectorAll('.notes-format-row,.notes-toolbar')].map(e=>e.getBoundingClientRect().height).find(h=>h>0)");
   assert.equal(await evaluate("document.querySelector('.note-decoration').children.length===1&&!document.querySelector('.note-decoration button')"),true,'No handle or block on the decoration');
   await evaluate("document.querySelector('.note-decoration').focus()");await wait("!document.querySelector('.notes-format-row .notes-sticker-tools').hidden && document.querySelector('.note-decoration').classList.contains('is-selected')");
   assert.equal(await evaluate("Math.abs(document.querySelector('.notes-format-row').getBoundingClientRect().height-"+rowHeight+")<2&&getComputedStyle(document.querySelector('.notes-format-row [data-format=toggleBold]')).display==='none'"),true,'Sticker tools replace the text tools without growing the row');

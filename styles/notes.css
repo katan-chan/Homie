@@ -133,7 +133,51 @@
 .notes-labels-edit{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.notes-labels-edit .note-label{min-height:32px;cursor:pointer}.notes-inspector .notes-labels-edit input{width:140px}
 .paper-note.is-filtered{opacity:.18;pointer-events:none}
 /* The save status has a fixed basis, so its changing text never re-wraps the toolbar (the board would jump). */
-@media(min-width:601px){.notes-toolbar .notes-durability{flex:1 1 150px;min-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}}
+/* Desktop (601px+): the toolbar stays one row at every width, so the board keeps its height. Less-used tools fold into ⋯ (is-more),
+   the format row takes the toolbar's place only while writing, and the inspector folds to one row (⌃ shows the rest). */
+@media(min-width:601px){
+.notes-toolbar{flex-wrap:nowrap;gap:clamp(4px,.6vw,8px);min-height:0;padding:8px clamp(8px,1.2vw,16px)}
+.notes-toolbar>*{flex:none}.notes-tools,.notes-camera{flex-wrap:nowrap;gap:clamp(4px,.5vw,8px)}
+.notes-toolbar .notes-button{padding-inline:clamp(8px,.9vw,14px)}
+.notes-toolbar .notes-durability{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.notes-tools [data-action=more]{display:none}
+.notes-board.is-more .notes-toolbar{flex-wrap:wrap}.notes-board.is-more .notes-tools{flex-wrap:wrap}
+/* An open colour panel keeps its row, so focus can return to the opener even if the editor lost focus meanwhile. */
+.notes-board:not(.is-writing) .notes-format-row:not(.has-sticker,:has([aria-expanded=true])){display:none}
+.notes-board.is-writing .notes-toolbar,.notes-board:has(.notes-format-row.has-sticker,.notes-format-row [aria-expanded=true]) .notes-toolbar{display:none}
+.notes-board .notes-format-row{flex-wrap:nowrap;overflow-x:auto;margin:0;padding:8px clamp(8px,1.2vw,16px);border-width:0 0 1px;border-radius:0;scrollbar-width:none}
+.notes-board .notes-format-row::-webkit-scrollbar{display:none}
+.notes-board .notes-format-row>*{flex:none}.notes-board .notes-format-row:has(.notes-color-panel:not([hidden])){flex-wrap:wrap}
+.notes-board .notes-format-hint{display:none}
+/* Xong stays reachable while the rest of a narrow row scrolls under it. */
+.notes-board .notes-format-done{display:inline-flex;margin-left:auto;position:sticky;right:0;background:#985a74;border-color:#985a74;color:#fff;font-weight:600;box-shadow:-10px 0 10px #fffaf4}
+.notes-board .notes-format-done:hover:not(:disabled){background:#86506a}
+}
+@media(min-width:601px) and (max-width:1599px){
+.notes-toolbar :is([data-action=undo],[data-action=redo],[data-action=fit]){font-size:0;width:44px;padding-inline:0}
+.notes-toolbar :is([data-action=undo],[data-action=redo],[data-action=fit]):before{font-size:18px;line-height:1}
+.notes-toolbar [data-action=undo]:before{content:'↶'}.notes-toolbar [data-action=redo]:before{content:'↷'}.notes-toolbar [data-action=fit]:before{content:'⤢'}
+}
+@media(min-width:601px) and (max-width:1399px){
+.notes-tools [data-action=more]{display:inline-flex;font-size:18px;line-height:1}
+.notes-board:not(.is-more) :is(.notes-journal,[data-action=board-rename],[data-action=board-trash],[data-action=trash],.notes-camera .notes-label-filter){display:none}
+}
+@media(min-width:601px) and (max-width:1599px),(min-width:601px) and (max-height:760px){
+.notes-board .notes-inspector [data-action^=inspector-]{display:inline-flex}
+.notes-board .notes-inspector:not(.is-open)>:not(strong,[data-action^=inspector-],[data-action=note-color]){display:none}
+}
+@media(min-width:601px) and (max-width:999px){
+.notes-board:not(.is-more) .notes-view:not(.notes-journal){display:none}
+.notes-zoom{display:none}
+.notes-toolbar .notes-durability{flex:none;display:grid;place-items:center;width:44px;height:44px;margin-left:auto;font-size:0}
+}
+/* Save status as a coloured dot wherever its text does not fit (phone and narrow windows); the title keeps the words. */
+@media(max-width:999px){
+.notes-durability:before{content:'';width:12px;height:12px;border-radius:50%;background:#d2a12c;box-shadow:0 0 0 4px #d2a12c33}
+.notes-durability[data-durability=saved]:before{background:#5d9a6e;box-shadow:0 0 0 4px #5d9a6e33}
+.notes-durability[data-durability=unsaved]:before{background:#b5425c;box-shadow:0 0 0 4px #b5425c33}
+.notes-durability[data-connection=offline]:before{background:#9a8c93;box-shadow:0 0 0 4px #9a8c9333}
+}
 /* The author line scales with the note (28px at the default 360x320 note, by the smaller of width/height). */
 .paper-note{container-type:size}
 .paper-note .note-author{font-size:clamp(4px,min(7.8cqi,8.75cqb),96px)}
@@ -167,10 +211,6 @@
 .notes-board>.notes-toolbar{display:contents}
 .notes-tools,.notes-camera{display:none}
 .notes-durability{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:8px;z-index:8;display:grid;place-items:center;width:44px;height:44px;font-size:0;cursor:pointer}
-.notes-durability:before{content:'';width:12px;height:12px;border-radius:50%;background:#d2a12c;box-shadow:0 0 0 4px #d2a12c33}
-.notes-durability[data-durability=saved]:before{background:#5d9a6e;box-shadow:0 0 0 4px #5d9a6e33}
-.notes-durability[data-durability=unsaved]:before{background:#b5425c;box-shadow:0 0 0 4px #b5425c33}
-.notes-durability[data-connection=offline]:before{background:#9a8c93;box-shadow:0 0 0 4px #9a8c9333}
 .notes-error{order:1}.notes-viewport{order:2;flex:1 1 auto;height:auto;min-height:0}.notes-dock{order:4}
 /* ⋯ sheet: the toolbar slides up over the board. */
 .notes-board.is-more:after{content:'';position:absolute;inset:0;z-index:40;background:#46324755}

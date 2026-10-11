@@ -31,6 +31,8 @@ try {
     assert.deepEqual(await evaluate(`[document.querySelector('[data-note-id="${first}"] .note-view').textContent,document.querySelector('[data-action=note-visibility] option[value=""]').textContent]`), ['Hai đứa mình', 'Theo bảng (Hai đứa mình)']);
     await choose('[data-action=note-visibility]', 'minhle'); await wait(`document.querySelector('[data-note-id="${first}"] .note-view')?.textContent==='Chỉ mình tôi' && ${saved}`);
     await evaluate("document.querySelector('[data-action=label-memory]').click()"); await wait(`document.querySelector('[data-note-id="${first}"] .note-label.is-memory') && ${saved}`);
+    // Narrow windows fold the inspector to one row; ⌃ shows the label field.
+    await evaluate("document.querySelector('.notes-inspector:not(.is-open) [data-action=inspector-expand]')?.click()");
     await evaluate("{const i=document.querySelector('.notes-inspector [name=label]');i.focus();i.value='  Du   lịch ';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))}");
     await wait(`[...document.querySelectorAll('[data-note-id="${first}"] .note-label:not(.is-memory-date)')].map(l=>l.textContent).join()==='Kỷ niệm,Du lịch' && ${saved}`);
     assert.equal(await evaluate("document.activeElement?.name"), 'label', 'Typing labels keeps focus in the label input');
