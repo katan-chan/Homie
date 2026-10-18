@@ -27,7 +27,7 @@ export function monthGrid(month) {
 export const vnDate = date => { const [y, m, d] = date.split('-'); return `${+d}/${+m}/${y}`; };
 export const monthTitle = month => { const [y, m] = month.split('-'); return `Tháng ${+m}, ${y}`; };
 
-const emptyDay = () => ({ kiss: 0, sorry: 0, mood: { minhle: null, haiyen: null }, moods: { minhle: [], haiyen: [] },
+const emptyDay = () => ({ kiss: 0, sorry: 0, thanks: 0, mood: { minhle: null, haiyen: null }, moods: { minhle: [], haiyen: [] },
   events: [], memories: [], activities: [], cycle: false });
 
 /**
@@ -46,7 +46,7 @@ export function aggregateDays({ viewerId, today, from, to, jar = [], events = []
     if (item.archivedAt) continue;
     const date = item.localDate ?? localDate(item.occurredAt);
     if (item.kind === 'kiss') at(date).kiss++;
-    else if (item.kind === 'sorry') at(date).sorry++;
+    else if (item.kind === 'sorry') at(date)[item.tone === 'thanks' ? 'thanks' : 'sorry']++;
     else if (item.kind === 'mood' && MEMBERS.includes(item.ownerId) && Number.isFinite(item.valence)
       && (item.ownerId === viewerId || item.visibility === 'shared')) {
       const list = valences[item.ownerId].get(date) ?? [];
@@ -76,6 +76,7 @@ export function dayLabel(date, day) {
   const parts = [
     day.kiss && `${day.kiss} nụ hôn`,
     day.sorry && `${day.sorry} lời xin lỗi`,
+    day.thanks && `${day.thanks} lời cảm ơn`,
     day.mood.minhle !== null && 'có cảm xúc của Minh',
     day.mood.haiyen !== null && 'có cảm xúc của Yến',
     day.events.length && `${day.events.length} dịp`,

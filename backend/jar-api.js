@@ -5,6 +5,8 @@ import { localDate, localTime, parseRange } from './dates.js';
 import { jarMessage, partnerOf } from './push.js';
 
 export const KINDS = ['kiss', 'sorry', 'mood'];
+// The apology jar holds apologies and thanks; records from before tones existed have no tone and are apologies.
+const TONES = ['sorry', 'thanks'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const emptyJar = () => ({ records: [], requests: [] });
@@ -48,6 +50,13 @@ function moodFields(body, base) {
   return out;
 }
 
+function sorryFields(body) {
+  const tone = body.tone ?? 'sorry', note = body.note ?? '';
+  if (!TONES.includes(tone)) throw invalid('invalid_tone', 'tone must be sorry or thanks');
+  if (typeof note !== 'string' || note.length > 500) throw invalid('invalid_note', 'note must be text up to 500 characters');
+  return { tone, note };
+}
+
 /** Creates a ball owned by ownerId. The requestId becomes the id, so a retry returns the original record. */
 export function createRecord(doc, ownerId, body, now = new Date().toISOString()) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw invalid('invalid_body', 'Expected an object');
@@ -61,6 +70,7 @@ export function createRecord(doc, ownerId, body, now = new Date().toISOString())
   if (!KINDS.includes(body.kind)) throw invalid('invalid_kind', 'kind must be kiss, sorry or mood');
   const record = { id, kind: body.kind, ownerId, occurredAt: now, visibility: 'shared', version: 1 };
   if (body.kind === 'mood') Object.assign(record, moodFields(body, null));
+  if (body.kind === 'sorry') Object.assign(record, sorryFields(body));
   doc.records.push(record);
   return record;
 }

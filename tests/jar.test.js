@@ -58,6 +58,24 @@ test('kisses and apologies: one tap, shared, retried requestId returns the same 
   assert.deepEqual(list.body.items.map(item => [item.kind, item.ownerId]), [['kiss', 'minhle'], ['sorry', 'haiyen']]);
 });
 
+test('the apology jar takes thanks too, each with an optional note; old apologies keep working', async t => {
+  const { call, minh, yen } = await fixture(t);
+  const thanks = await call('POST', '/api/jar', { requestId: randomUUID(), kind: 'sorry', tone: 'thanks', note: 'Vì đã đón mình lúc mưa' }, minh);
+  assert.equal(thanks.status, 201);
+  assert.deepEqual([thanks.body.record.tone, thanks.body.record.note], ['thanks', 'Vì đã đón mình lúc mưa']);
+  const plain = await call('POST', '/api/jar', { requestId: randomUUID(), kind: 'sorry' }, yen);
+  assert.deepEqual([plain.body.record.tone, plain.body.record.note], ['sorry', '']);
+  const kiss = await call('POST', '/api/jar', { requestId: randomUUID(), kind: 'kiss', tone: 'thanks', note: 'x' }, minh);
+  assert.deepEqual([kiss.body.record.tone, kiss.body.record.note], [undefined, undefined]);
+  for (const [bad, code] of [[{ tone: 'hug' }, 'invalid_tone'], [{ note: 5 }, 'invalid_note'], [{ note: 'a'.repeat(501) }, 'invalid_note']]) {
+    const response = await call('POST', '/api/jar', { requestId: randomUUID(), kind: 'sorry', ...bad }, minh);
+    assert.deepEqual([response.status, response.body.code], [400, code]);
+  }
+  assert.equal((await call('POST', '/api/jar', { requestId: randomUUID(), kind: 'sorry', note: 'a'.repeat(500) }, minh)).status, 201);
+  const list = await call('GET', '/api/jar?kind=sorry', undefined, yen);
+  assert.deepEqual(list.body.items.map(item => item.tone), ['thanks', 'sorry', 'sorry']);
+});
+
 test('writes need Origin, X-Requested-With and a session; reads need a session', async t => {
   const { call, minh } = await fixture(t);
   const body = { requestId: randomUUID(), kind: 'kiss' };

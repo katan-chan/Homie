@@ -1,9 +1,9 @@
 // Hũ page: three jars on a shelf (desktop) or one jar at a time (phone, ≤640px), a list for the chosen jar,
 // the drop-into-jar animation, the feeling form and the ball sheet. Data goes in with textContent only.
 import { apiRequest, authEvents, getUser } from '../../auth.js';
-import { ballColor, mini, moodColor, SAMPLE } from './colors.js';
+import { ballColor, mini, moodColor, SAMPLE, skinOf } from './colors.js';
 import {
-  CAP, JAR_NAME, KIND_NAME, KINDS, NAME, RANGES, RANGE_NAME, SHAPES, SUGG, TAG, ballLabel, byTime, dayHeading,
+  CAP, JAR_NAME, KIND_NAME, KINDS, NAME, RANGES, RANGE_NAME, SHAPES, SUGG, TAG, TONE_SUGG, VERB, ballLabel, byTime, dayHeading,
   energyWord, jarPath, localDate, localTime, moodName, other, pack, quadrant, radius, rangeQuery, valenceWord, vnDate,
 } from './model.js';
 
@@ -70,12 +70,20 @@ export function mountJar(container, { signal, api = jarApi }) {
     chips.append(chip);
   }
   for (const k of KINDS) shelf.append(buildStage(k));
+  const thanksAct = button('jar-act thanks');
+  thanksAct.append(mini('thanks', SAMPLE.thanks), `Cảm ơn ${NAME[partner]}`);
+  thanksAct.addEventListener('click', () => openSorry({ tone: 'thanks', opener: thanksAct }));
   const plank = el('div', 'jar-plank'); plank.setAttribute('aria-hidden', 'true'); shelf.append(plank);
   for (const k of KINDS) {
     const act = button(`jar-act ${k}`);
     act.append(mini(k, SAMPLE[k]), k === 'kiss' ? `Hôn ${NAME[partner]}` : k === 'sorry' ? `Xin lỗi ${NAME[partner]}` : 'Thêm cảm xúc');
-    act.addEventListener('click', () => k === 'mood' ? openMood({ opener: act }) : send(k, act.getBoundingClientRect()));
-    shelf.append(act); acts[k] = act;
+    act.addEventListener('click', () => k === 'mood' ? openMood({ opener: act }) : k === 'sorry' ? openSorry({ tone: 'sorry', opener: act }) : send(k, act.getBoundingClientRect()));
+    acts[k] = act;
+    if (k !== 'sorry') { shelf.append(act); continue; }
+    // The apology jar has two doors: an apology or a thank-you, both opening the same form.
+    const pair = el('div', 'jar-act-pair');
+    pair.append(act, thanksAct);
+    shelf.append(pair);
   }
   // Phones: the list and the time range open in a sheet, so the page fits one screen.
   const listBtn = button('jar-btn jar-list-btn', 'Xem danh sách');
@@ -84,6 +92,7 @@ export function mountJar(container, { signal, api = jarApi }) {
 
   function buildStage(k) {
     const s = SHAPES[k], path = jarPath(s), [rib, ribDark] = RIBBON[k], lx = s.nl - 8, lw = s.nr - s.nl + 16, bx = s.nr - 18;
+    const lines = k === 'sorry' ? ['Xin lỗi', '& cảm ơn'] : [TAG[k]], tagW = k === 'sorry' ? 74 : 66;
     const stage = el('div', 'jar-stage'); stage.dataset.jar = k; stage.setAttribute('role', 'group');
     const back = svg('jar-back', `<ellipse cx="160" cy="388" rx="${(s.R - s.L) / 2 + 8}" ry="8" fill="#5d3c4c" opacity=".12"/><path d="${path}" fill="url(#jar-glass)"/>`);
     const front = svg('jar-front', `<path d="${path}" fill="none" stroke="#c99aac" stroke-width="2.5"/>
@@ -91,8 +100,8 @@ export function mountJar(container, { signal, api = jarApi }) {
       <path d="M${s.R - 14} ${s.sh + 30} C${s.R - 10} ${s.sh + 76} ${s.R - 10} ${s.sh + 124} ${s.R - 14} ${s.sh + 164}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/>
       <rect x="${s.nl - 6}" y="46" width="${s.nr - s.nl + 12}" height="10" rx="5" fill="#f7e8ee" stroke="#c99aac" stroke-width="2"/>
       <path d="M${s.nr + 2} 53 C${s.nr + 12} 60 ${s.nr + 18} 66 ${s.nr + 24} 76" fill="none" stroke="#a8765a" stroke-width="1.2"/>
-      <g transform="rotate(9 ${s.nr + 52} 88)"><rect x="${s.nr + 20}" y="73" width="66" height="30" rx="5" fill="#fff8ee" stroke="#d9b6c1" stroke-width="1.5"/><circle cx="${s.nr + 27}" cy="88" r="3" fill="none" stroke="#d9b6c1" stroke-width="1.5"/>
-        <text x="${s.nr + 56}" y="93" text-anchor="middle" font-family="Patrick Hand, Comic Sans MS, cursive" font-size="15" fill="#5d3c4c">${TAG[k]}</text></g>
+      <g transform="rotate(9 ${s.nr + 52} 88)"><rect x="${s.nr + 20}" y="73" width="${tagW}" height="${14 + 16 * lines.length}" rx="5" fill="#fff8ee" stroke="#d9b6c1" stroke-width="1.5"/><circle cx="${s.nr + 27}" cy="88" r="3" fill="none" stroke="#d9b6c1" stroke-width="1.5"/>
+        ${lines.map((line, i) => `<text x="${s.nr + 23 + tagW / 2}" y="${93 + 16 * i}" text-anchor="middle" font-family="Patrick Hand, Comic Sans MS, cursive" font-size="15" fill="#5d3c4c">${line}</text>`).join('')}</g>
       <g class="jar-lid"><rect x="${lx}" y="14" width="${lw}" height="34" rx="9" fill="#d8a47c" stroke="#a8765a" stroke-width="2"/>
         <path d="M${lx + 10} 22 H${lx + lw - 10} M${lx + 10} 28 H${lx + lw - 10}" stroke="#a8765a" stroke-width="1" opacity=".35"/>
         <rect x="${lx}" y="34" width="${lw}" height="8" fill="${rib}"/>
@@ -126,7 +135,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     if (!seen.has(st.focusId)) st.focusId = list.at(-1)?.id ?? null;
     list.forEach((item, i) => {
       let b = st.buttons.get(item.id);
-      if (!b) { b = button(`jar-ball jar-skin k-${item.kind}`); b.dataset.id = item.id; st.buttons.set(item.id, b); st.balls.append(b); }
+      if (!b) { b = button(`jar-ball jar-skin k-${skinOf(item)}`); b.dataset.id = item.id; st.buttons.set(item.id, b); st.balls.append(b); }
       const p = pos[i];
       b.style.cssText = `left:${(p.x / 3.2).toFixed(2)}%;top:${(p.y / 4).toFixed(2)}%;width:${(p.r / 1.6).toFixed(2)}%;--c:${ballColor(item)};--fall:${((p.y - 24) / 3.2).toFixed(1)}cqw;--dx:${((160 - p.x) / 3.2).toFixed(1)}cqw`;
       b.classList.toggle('pending', !!item.pending);
@@ -142,7 +151,11 @@ export function mountJar(container, { signal, api = jarApi }) {
 
   function rowText(item) {
     const text = el('span', 't'), who = el('b', '', NAME[item.ownerId]);
-    if (item.kind !== 'mood') { text.append(who, ` ${item.kind === 'kiss' ? 'hôn' : 'xin lỗi'} ${NAME[other(item.ownerId)]}`); return text; }
+    if (item.kind !== 'mood') {
+      text.append(who, ` ${VERB[skinOf(item)]} ${NAME[other(item.ownerId)]}`);
+      if (item.note) text.append(el('small', 'jar-clip', item.note));
+      return text;
+    }
     text.append(who, ` · ${moodName(item)}`);
     if (item.ownerId === viewer && item.visibility !== 'shared') text.append(' ', el('span', 'jar-badge', 'Chỉ mình bạn'));
     text.append(el('small', '', `${valenceWord(item.valence)}, năng lượng ${energyWord(item.energy).toLowerCase()}`));
@@ -151,7 +164,7 @@ export function mountJar(container, { signal, api = jarApi }) {
   function buildRow(item) {
     const row = button(`jar-row${item.pending ? ' pending' : ''}`);
     row.dataset.id = item.id;
-    row.append(mini(item.kind, ballColor(item)), rowText(item), el('time', '', item.pending ? 'Đang gửi…' : item.time));
+    row.append(mini(skinOf(item), ballColor(item)), rowText(item), el('time', '', item.pending ? 'Đang gửi…' : item.time));
     row.addEventListener('click', () => openBall(item.id, row));
     return row;
   }
@@ -180,7 +193,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     const retry = button('jar-btn', 'Thử lại'); retry.addEventListener('click', load);
     statusLine.append(el('span', '', 'Chưa mở được bình. '), retry);
   }
-  function syncAll() { KINDS.forEach(syncStage); renderList(); renderStatus(); for (const k of KINDS) acts[k].disabled = status !== 'ready'; }
+  function syncAll() { KINDS.forEach(syncStage); renderList(); renderStatus(); for (const act of [...Object.values(acts), thanksAct]) act.disabled = status !== 'ready'; }
 
   function setKind(k, focusTab = false) {
     kind = k;
@@ -188,6 +201,7 @@ export function mountJar(container, { signal, api = jarApi }) {
       tabs[x].setAttribute('aria-selected', String(x === k)); tabs[x].tabIndex = x === k ? 0 : -1;
       stages[x].el.classList.toggle('is-current', x === k); acts[x].classList.toggle('is-current', x === k);
     }
+    thanksAct.classList.toggle('is-current', k === 'sorry');
     if (focusTab) tabs[k].focus();
     renderList();
   }
@@ -234,7 +248,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     const x0 = from.left + from.width / 2, y0 = from.top + from.height / 2 - 16, x1 = sr.left + sr.width / 2, y1 = sr.top + sr.height * 24 / 400;
     const cx = (x0 + x1) / 2, cy = Math.min(y0, y1) - Math.max(50, Math.abs(x1 - x0) * 0.4);
     const g = Math.max(size, 24), end = size / g, h = g / 2;
-    const ghost = mini(item.kind, ballColor(item), 'jar-fly');
+    const ghost = mini(skinOf(item), ballColor(item), 'jar-fly');
     ghost.style.width = ghost.style.height = `${g}px`;
     fx.append(ghost);
     const frames = [{ transform: `translate(${x0 - h}px,${y0 + 16 - h}px) scale(.2)`, offset: 0 }, { transform: `translate(${x0 - h}px,${y0 - h}px) scale(1.15)`, offset: 0.16 }];
@@ -247,15 +261,15 @@ export function mountJar(container, { signal, api = jarApi }) {
     return ghost.animate(frames, { duration: item.kind === 'sorry' ? 820 : 580, easing: 'ease-in-out', fill: 'forwards' }).finished.catch(() => {}).then(() => ghost.remove());
   }
   function burst(k, ball) {
-    const r = ball.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top, count = k === 'kiss' ? 3 : k === 'sorry' ? 1 : 0;
+    const r = ball.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top, count = k === 'kiss' ? 3 : k === 'mood' ? 0 : 1;
     for (let i = 0; i < count; i++) {
       const spark = el('i', `jar-spark k-${k}`);
-      spark.style.setProperty('--c', k === 'kiss' ? `hsl(${338 + i * 7} 75% 66%)` : 'hsl(160 45% 52%)');
+      spark.style.setProperty('--c', k === 'kiss' ? `hsl(${338 + i * 7} 75% 66%)` : k === 'thanks' ? 'hsl(22 80% 62%)' : 'hsl(160 45% 52%)');
       fx.append(spark);
       const dx = k === 'kiss' ? (i - 1) * 14 : 18;
       spark.animate([{ transform: `translate(${x - 6}px,${y - 2}px) scale(.3)`, opacity: 0 }, { transform: `translate(${x - 6 + dx * 0.4}px,${y - 22}px) scale(1)`, opacity: 1, offset: 0.3 },
-        { transform: `translate(${x - 6 + dx}px,${y - 62}px) scale(.8) rotate(${k === 'sorry' ? 60 : (i - 1) * 15}deg)`, opacity: 0 }],
-      { duration: k === 'sorry' ? 1200 : 900, delay: i * 110, easing: 'ease-out', fill: 'both' }).finished.catch(() => {}).then(() => spark.remove());
+        { transform: `translate(${x - 6 + dx}px,${y - 62}px) scale(.8) rotate(${k === 'kiss' ? (i - 1) * 15 : 60}deg)`, opacity: 0 }],
+      { duration: k === 'kiss' ? 900 : 1200, delay: i * 110, easing: 'ease-out', fill: 'both' }).finished.catch(() => {}).then(() => spark.remove());
     }
   }
   function restartClass(node, name) { node.classList.remove(name); void node.offsetWidth; node.classList.add(name); }
@@ -281,7 +295,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     ball.classList.remove('drop');
     restartClass(st.el, 'wobble');
     ball.classList.add('glow');
-    burst(k, ball);
+    burst(skinOf(item), ball);
   }
 
   async function send(k, from, draft = {}, requestId = crypto.randomUUID()) {
@@ -296,7 +310,7 @@ export function mountJar(container, { signal, api = jarApi }) {
     if (record) {
       Object.assign(item, record, { pending: false });
       refreshItem(item);
-      toast(k === 'kiss' ? `Đã thả một nụ hôn vào bình cho ${NAME[partner]}.` : k === 'sorry' ? `Đã thả một lời xin lỗi vào bình cho ${NAME[partner]}.` : 'Đã thả cảm xúc vào bình.', { label: 'Hoàn tác', fn: () => takeOut(item) });
+      toast(k === 'kiss' ? `Đã thả một nụ hôn vào bình cho ${NAME[partner]}.` : k === 'sorry' ? `Đã thả một lời ${VERB[skinOf(item)]} vào bình cho ${NAME[partner]}.` : 'Đã thả cảm xúc vào bình.', { label: 'Hoàn tác', fn: () => takeOut(item) });
       return;
     }
     ballOf(item)?.classList.add('failed');
@@ -304,8 +318,10 @@ export function mountJar(container, { signal, api = jarApi }) {
     items = items.filter(x => x !== item);
     syncStage(k); renderList();
     // A retry keeps the requestId, so a request that did reach the server is not stored twice.
-    if (k === 'mood') openMood({ draft, requestId, opener: acts.mood, error: 'Chưa lưu được vì mất kết nối. Nội dung bạn viết vẫn còn đây, bấm “Thả vào bình” để thử lại.' });
-    else toast(`Chưa gửi được ${k === 'kiss' ? 'nụ hôn' : 'lời xin lỗi'}. Kiểm tra mạng rồi thử lại.`, { label: 'Thử lại', fn: () => send(k, acts[k].getBoundingClientRect(), {}, requestId) }, true);
+    const error = 'Chưa lưu được vì mất kết nối. Nội dung bạn viết vẫn còn đây, bấm “Thả vào bình” để thử lại.';
+    if (k === 'mood') openMood({ draft, requestId, opener: acts.mood, error });
+    else if (k === 'sorry') openSorry({ tone: draft.tone, draft, requestId, opener: draft.tone === 'thanks' ? thanksAct : acts.sorry, error });
+    else toast('Chưa gửi được nụ hôn. Kiểm tra mạng rồi thử lại.', { label: 'Thử lại', fn: () => send(k, acts[k].getBoundingClientRect(), {}, requestId) }, true);
   }
 
   async function takeOut(item) {
@@ -388,11 +404,12 @@ export function mountJar(container, { signal, api = jarApi }) {
     if (!item || item.pending) return;
     selectedId = id; syncStage(item.kind);
     const mine = item.ownerId === viewer;
-    const s = sheet(item.kind === 'mood' ? moodName(item) : KIND_NAME[item.kind], opener, { onClose: () => { selectedId = null; if (alive()) syncStage(item.kind); } });
+    const s = sheet(item.kind === 'mood' ? moodName(item) : KIND_NAME[skinOf(item)], opener, { onClose: () => { selectedId = null; if (alive()) syncStage(item.kind); } });
     const headRow = el('div', 'jar-ball-head'), who = el('span', '', item.kind === 'mood' ? `Cảm xúc của ${NAME[item.ownerId]}` : `${NAME[item.ownerId]} gửi ${NAME[other(item.ownerId)]}`);
     who.append(el('br'), el('small', '', `${vnDate(item.localDate)}, ${item.time}`));
-    headRow.append(mini(item.kind, ballColor(item), 'big'), who);
+    headRow.append(mini(skinOf(item), ballColor(item), 'big'), who);
     s.box.append(headRow);
+    if (item.kind === 'sorry' && item.note) s.box.append(el('p', 'jar-hand', item.note));
     if (item.kind === 'mood') {
       const dims = el('dl', 'jar-dims');
       for (const [label, cls, left, word] of [['Dễ chịu', 'val', (item.valence + 1) * 50, valenceWord(item.valence)], ['Năng lượng', 'en', item.energy * 100, energyWord(item.energy)]]) {
@@ -421,7 +438,7 @@ export function mountJar(container, { signal, api = jarApi }) {
       back.addEventListener('click', () => { const from = back.getBoundingClientRect(); s.opener = acts.kiss; s.dialog.close(); setKind('kiss'); send('kiss', from); });
       actions.push(back);
     }
-    // Receiving an apology has no button: it does not mean it was forgiven.
+    // Receiving an apology or a thank-you has no button: it does not mean it was forgiven.
     if (actions.length) s.box.append(actionsRow(...actions));
     s.dialog.showModal();
   }
@@ -441,6 +458,49 @@ export function mountJar(container, { signal, api = jarApi }) {
       if (error.status === 409 || error.status === 404) { openSheet?.dialog.close(); load(); }
       toast(error.status === 409 ? 'Cảm xúc này vừa được sửa ở nơi khác. Đã tải bản mới.' : 'Chưa đổi được. Kiểm tra mạng rồi thử lại.', error.status === 409 || error.status === 404 ? null : { label: 'Thử lại', fn: () => toggleShare(item, control) }, true);
     }
+  }
+
+  // Apology or thank-you, with an optional note on what for. A failed send comes back here with the draft.
+  function openSorry({ tone = 'sorry', draft = {}, requestId, error = '', opener }) {
+    const s = sheet('', opener, { form: true }), heading = s.box.querySelector('h2');
+    const alert = el('div', 'jar-alert', error); alert.setAttribute('role', 'alert'); alert.hidden = !error;
+    const pick = el('div', 'jar-tone'); pick.setAttribute('role', 'group'); pick.setAttribute('aria-label', 'Loại lời nhắn');
+    const options = {};
+    for (const t of ['sorry', 'thanks']) {
+      const option = button(`jar-tone-opt ${t}`); option.append(mini(t, SAMPLE[t]), t === 'sorry' ? 'Xin lỗi' : 'Cảm ơn');
+      option.addEventListener('click', () => set(t));
+      pick.append(option); options[t] = option;
+    }
+    const wrap = el('label', 'jar-field'), caption = el('span');
+    const note = Object.assign(el('textarea', 'jar-hand-input'), { name: 'note', maxLength: 500, value: draft.note ?? '', autofocus: true });
+    const count = el('small', 'jar-count');
+    const updateCount = () => { count.textContent = `${note.value.length}/500`; };
+    note.addEventListener('input', updateCount); updateCount();
+    wrap.append(caption, note, count);
+    const sugg = el('div', 'jar-sugg'); sugg.setAttribute('role', 'group'); sugg.setAttribute('aria-label', 'Gợi ý');
+    const cancel = button('jar-btn', 'Hủy'); cancel.addEventListener('click', () => s.dialog.close());
+    const submit = el('button', 'jar-btn primary', 'Thả vào bình'); submit.type = 'submit';
+    s.box.append(alert, pick, wrap, sugg, actionsRow(cancel, submit));
+    function set(t) {
+      tone = t;
+      for (const [key, option] of Object.entries(options)) option.setAttribute('aria-pressed', String(key === t));
+      heading.textContent = `${t === 'sorry' ? 'Xin lỗi' : 'Cảm ơn'} ${NAME[partner]}`;
+      caption.textContent = `${t === 'sorry' ? 'Xin lỗi' : 'Cảm ơn'} vì điều gì? (không bắt buộc)`;
+      note.placeholder = t === 'sorry' ? 'Ví dụ: vì tối qua về muộn mà quên nhắn tin' : 'Ví dụ: vì đã đón mình lúc trời mưa';
+      sugg.replaceChildren(...TONE_SUGG[t].map(word => {
+        const chip = button('jar-chip', word);
+        chip.addEventListener('click', () => { note.value = (note.value.trim() ? `${note.value.trim()}, ` : 'Vì ') + word.toLowerCase(); updateCount(); note.focus(); });
+        return chip;
+      }));
+    }
+    set(tone);
+    s.box.addEventListener('submit', event => {
+      event.preventDefault();
+      const act = tone === 'thanks' ? thanksAct : acts.sorry;
+      s.opener = act; s.dialog.close(); setKind('sorry');
+      send('sorry', act.getBoundingClientRect(), { tone, note: note.value.trim().slice(0, 500) }, requestId);
+    });
+    s.dialog.showModal();
   }
 
   function openMood({ item = null, draft = {}, requestId, error = '', opener }) {

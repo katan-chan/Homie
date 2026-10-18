@@ -8,7 +8,7 @@ Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầ
 | --- | --- | --- |
 | Vườn hoa | `garden` | Homepage gardening: vườn hoa nhiều loài, Loopy hải ly hồng trong Pororo và các element vườn. Nền dịu, hoa là điểm nhấn nhiều màu. |
 | Góc ghi chép | `dashboard` | Nhiều bảng ghi chú; mỗi bảng chọn ai xem được. minhle và haiyen sửa chung realtime và offline. Tab Nội quy nằm cuối dải bảng. Chi tiết bên dưới. |
-| Hũ | `jar` | Ba bình: nụ hôn, lời xin lỗi, cảm xúc. Chi tiết bên dưới. |
+| Hũ | `jar` | Ba bình: nụ hôn, xin lỗi & cảm ơn, cảm xúc. Chi tiết bên dưới. |
 | Lịch | `calendar` | Lịch tháng gom viên trong bình, dịp, kỷ niệm, hoạt động; kỳ riêng của Hải Yến. Chi tiết bên dưới. |
 | Gợi ý chủ đề seminar | `seminar` | Kho chủ đề và lượt bốc chung để hai đứa tìm hiểu rồi kể cho nhau nghe. Chi tiết bên dưới. |
 | Hoạt động chung | `activity` | Kho ý tưởng theo bảy loại và lượt bốc chung. Chi tiết bên dưới. |
@@ -38,11 +38,11 @@ Hoàn tác chỉ trong phiên tab hiện tại. Thùng rác, cột và di chuy�
 
 ## Hũ
 
-Ba bình trên kệ (điện thoại: một bình mỗi lần, vuốt ngang để đổi): nụ hôn, lời xin lỗi gửi người kia và cảm xúc. Một chạm thả viên vào bình kèm Hoàn tác. Cảm xúc chọn trên ô dễ chịu × năng lượng (hoặc hai thanh trượt), tên gợi ý theo góc, ghi chú tùy chọn, mặc định Chỉ mình tôi; chủ viên sửa hoặc chia sẻ được. Nụ hôn và lời xin lỗi hai đứa cùng thấy; cảm xúc riêng của người kia không bao giờ hiện. Lọc 7 ngày, 30 ngày, Mọi lúc; danh sách theo ngày; chủ viên lấy viên ra khỏi bình (có Hoàn tác). Màu viên dùng chung với Lịch.
+Ba bình trên kệ (điện thoại: một bình mỗi lần, vuốt ngang để đổi): nụ hôn, lời xin lỗi hoặc cảm ơn gửi người kia và cảm xúc. Nụ hôn một chạm thả viên vào bình kèm Hoàn tác. Bình xin lỗi có hai nút Xin lỗi và Cảm ơn, cùng mở khung viết đổi qua lại được, ô "vì điều gì" tùy chọn (≤500 ký tự, có gợi ý); viên xin lỗi bạc hà, viên cảm ơn màu đào; mở viên hoặc xem danh sách thấy ghi chú; người nhận không có nút trả lời; gửi lỗi thì khung viết mở lại với chữ còn nguyên. Cảm xúc chọn trên ô dễ chịu × năng lượng (hoặc hai thanh trượt), tên gợi ý theo góc, ghi chú tùy chọn, mặc định Chỉ mình tôi; chủ viên sửa hoặc chia sẻ được. Nụ hôn, lời xin lỗi và lời cảm ơn hai đứa cùng thấy; cảm xúc riêng của người kia không bao giờ hiện. Lọc 7 ngày, 30 ngày, Mọi lúc; danh sách theo ngày; chủ viên lấy viên ra khỏi bình (có Hoàn tác). Màu viên dùng chung với Lịch.
 
 ## Lịch
 
-Lưới tháng (tháng trước/sau, Hôm nay) và bảng chi tiết ngày: số nụ hôn và lời xin lỗi, chấm màu cảm xúc trung bình trong ngày của từng người (không gồm cảm xúc riêng của người kia), dịp, kỷ niệm có ngày từ Góc ghi chép và các lần seminar/hoạt động đã làm. Dịp có ba loại (Dịp đặc biệt, Kỷ niệm ngày, Cột mốc), hai đứa cùng thấy, chỉ người tạo sửa hoặc lưu trữ. Chu kỳ chỉ Hải Yến thấy và ghi (bắt đầu, kết thúc hoặc đang diễn ra, ghi chú, kết thúc hôm nay, lưu trữ); Minh không thấy gì về chu kỳ. Không dự đoán, không lời khuyên y tế, không thông báo. Trên điện thoại cả tháng nằm gọn một màn hình, không cuộn trang; chạm một ngày mở bảng chi tiết dạng popup. Để trang mở qua nửa đêm thì "hôm nay" tự chuyển sang ngày mới.
+Lưới tháng (tháng trước/sau, Hôm nay) và bảng chi tiết ngày: số nụ hôn, lời xin lỗi và lời cảm ơn, chấm màu cảm xúc trung bình trong ngày của từng người (không gồm cảm xúc riêng của người kia), dịp, kỷ niệm có ngày từ Góc ghi chép và các lần seminar/hoạt động đã làm. Dịp có ba loại (Dịp đặc biệt, Kỷ niệm ngày, Cột mốc), hai đứa cùng thấy, chỉ người tạo sửa hoặc lưu trữ. Chu kỳ chỉ Hải Yến thấy và ghi (bắt đầu, kết thúc hoặc đang diễn ra, ghi chú, kết thúc hôm nay, lưu trữ); Minh không thấy gì về chu kỳ. Không dự đoán, không lời khuyên y tế, không thông báo. Trên điện thoại cả tháng nằm gọn một màn hình, không cuộn trang; chạm một ngày mở bảng chi tiết dạng popup. Để trang mở qua nửa đêm thì "hôm nay" tự chuyển sang ngày mới.
 
 ## Gợi ý chủ đề seminar và Hoạt động chung
 
@@ -50,7 +50,7 @@ Hai trang cùng một kiểu: kho ý tưởng (mặt bảng giấy kéo đổi c
 
 ## Thông báo trên điện thoại
 
-Chỉ trong app Android: sau khi đăng nhập app xin quyền thông báo một lần. Người kia nhận thông báo khi có nụ hôn, lời xin lỗi hoặc cảm xúc được chia sẻ trong Hũ (sau vài giây, Hoàn tác thì không báo), và khi có note mới hoặc bảng vừa được chia sẻ trong Góc ghi chép mà người kia xem được (gom trong một phút thành một thông báo, kèm dòng đầu của note). Không báo cảm xúc riêng, trang nhật ký riêng, bảng riêng hay note đã xóa. Chạm thông báo mở Hũ hoặc đúng note. Không có thông báo trên web; tắt bằng cài đặt thông báo của Android.
+Chỉ trong app Android: sau khi đăng nhập app xin quyền thông báo một lần. Người kia nhận thông báo khi có nụ hôn, lời xin lỗi, lời cảm ơn (không kèm ghi chú) hoặc cảm xúc được chia sẻ trong Hũ (sau vài giây, Hoàn tác thì không báo), và khi có note mới hoặc bảng vừa được chia sẻ trong Góc ghi chép mà người kia xem được (gom trong một phút thành một thông báo, kèm dòng đầu của note). Không báo cảm xúc riêng, trang nhật ký riêng, bảng riêng hay note đã xóa. Chạm thông báo mở Hũ hoặc đúng note. Không có thông báo trên web; tắt bằng cài đặt thông báo của Android.
 
 ## Giao diện và triển khai
 

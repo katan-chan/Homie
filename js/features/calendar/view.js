@@ -40,7 +40,8 @@ const dot = value => {
 function counts(day) {
   const marks = el('span', 'cal-marks');
   if (day.kiss) marks.append(mini('kiss', SAMPLE.kiss), `${day.kiss} `);
-  if (day.sorry) marks.append(mini('sorry', SAMPLE.sorry), String(day.sorry));
+  if (day.sorry) marks.append(mini('sorry', SAMPLE.sorry), `${day.sorry} `);
+  if (day.thanks) marks.append(mini('thanks', SAMPLE.thanks), String(day.thanks));
   return marks;
 }
 
@@ -70,7 +71,7 @@ export function renderGrid({ month, selected, today, day, on }) {
     const signs = [info.events.length && '📌', info.memories.length && '🌸',
       info.activities.some(a => a.kind === 'seminar') && '📚', info.activities.some(a => a.kind === 'activity') && '🎲'].filter(Boolean).join('');
     cell.append(el('span', 'cal-n', String(+date.slice(8))), dots);
-    if (info.kiss || info.sorry) cell.append(counts(info));
+    if (info.kiss || info.sorry || info.thanks) cell.append(counts(info));
     if (signs) cell.append(el('span', 'cal-marks', signs));
     for (const child of cell.children) child.setAttribute('aria-hidden', 'true');
     grid.append(cell);
@@ -100,7 +101,7 @@ export function renderPanel({ date, day, viewerId, on }) {
     panel.append(row);
   }
   const totals = el('p', 'cal-totals');
-  totals.append(mini('kiss', SAMPLE.kiss), ` ${day.kiss} nụ hôn · `, mini('sorry', SAMPLE.sorry), ` ${day.sorry} lời xin lỗi`);
+  totals.append(mini('kiss', SAMPLE.kiss), ` ${day.kiss} nụ hôn · `, mini('sorry', SAMPLE.sorry), ` ${day.sorry} lời xin lỗi · `, mini('thanks', SAMPLE.thanks), ` ${day.thanks} lời cảm ơn`);
   panel.append(totals);
 
   const list = el('div', 'cal-list');
@@ -125,7 +126,7 @@ export function renderPanel({ date, day, viewerId, on }) {
 }
 
 export function renderLegend(viewerId) {
-  return el('p', 'cal-note cal-legend', 'Viên hồng: nụ hôn · viên bạc hà: lời xin lỗi · 📌 dịp · 🌸 kỷ niệm · 📚 seminar · 🎲 hoạt động. '
+  return el('p', 'cal-note cal-legend', 'Viên hồng: nụ hôn · viên bạc hà: lời xin lỗi · viên đào: lời cảm ơn · 📌 dịp · 🌸 kỷ niệm · 📚 seminar · 🎲 hoạt động. '
     + 'Chấm màu: cảm xúc trung bình trong ngày, Minh trước, Yến sau. Cảm xúc riêng tư của người kia không hiện.'
     + (viewerId === 'haiyen' ? ' Nền tím nhạt: ngày trong kỳ, chỉ Yến thấy.' : ''));
 }

@@ -97,7 +97,8 @@ export function jarMessage(record) {
   const from = NAME[record.ownerId], to = NAME[partnerOf(record.ownerId)];
   const data = { hash: 'jar', kind: record.kind }, tag = `jar-${record.kind}-${record.ownerId}`;
   if (record.kind === 'kiss') return { title: `${from} vừa hôn ${to} 💋`, body: 'Một nụ hôn mới trong bình.', data, tag };
-  if (record.kind === 'sorry') return { title: `${from} xin lỗi ${to}`, body: 'Một lời xin lỗi mới trong bình.', data, tag };
+  // The note stays off the lock screen.
+  if (record.kind === 'sorry') { const word = record.tone === 'thanks' ? 'cảm ơn' : 'xin lỗi'; return { title: `${from} ${word} ${to}`, body: `Một lời ${word} mới trong bình.`, data, tag }; }
   const body = [record.label, record.note].filter(Boolean).join(' · ');
   return { title: `${from} chia sẻ cảm xúc`, body: body || 'Một cảm xúc mới trong bình.', data, tag };
 }

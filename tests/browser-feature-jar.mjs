@@ -60,17 +60,33 @@ try {
     await wait("document.querySelector('.jar-stage[data-jar=kiss] .jar-ball')");
     assert.deepEqual(await server(''), [['kiss', 'minhle', 'shared']]);
 
-    // Failure: the ball shakes away, a red toast retries with the same requestId (no duplicate).
+    // Apology jar: two buttons; each opens a form to say sorry or thank you, with a note on what for.
     await clickText('.jar-tab', 'Xin lỗi'); await wait(`${shown('.jar-stage[data-jar=sorry]')}===1`);
-    await evaluate('__failJar=true');
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('.jar-act-pair .jar-act')].filter(e=>e.getClientRects().length).map(e=>e.textContent)"), ['Xin lỗi Yến', 'Cảm ơn Yến']);
+    assert.deepEqual(await layout(), { overflow: false, small: [] }, '390 apology jar: no sideways scroll, 44px targets');
     await click('.jar-act.sorry');
-    await wait("document.querySelector('.jar-toast.err')");
-    assert.equal(await evaluate("document.querySelector('.jar-toast.err span').textContent"), 'Chưa gửi được lời xin lỗi. Kiểm tra mạng rồi thử lại.');
+    await wait("document.querySelector('dialog.jar-sheet[open] textarea')");
+    assert.equal(await evaluate("document.querySelector('.jar-sheet h2').textContent"), 'Xin lỗi Yến');
+    assert.equal(await evaluate("document.activeElement.name"), 'note', 'Focus starts on the note');
+    await click('.jar-tone-opt.thanks');
+    assert.deepEqual(await evaluate("[document.querySelector('.jar-sheet h2').textContent,document.querySelector('.jar-tone-opt.thanks').getAttribute('aria-pressed')]"), ['Cảm ơn Yến', 'true']);
+    await evaluate("(()=>{const t=document.querySelector('.jar-sheet textarea');t.value='  Vì đã đón mình lúc mưa  ';t.dispatchEvent(new Event('input',{bubbles:true}));})()");
+    // Failure: the ball shakes away and the form comes back with the words kept; the retry keeps the requestId.
+    await evaluate('__failJar=true');
+    await click('.jar-sheet button[type=submit]');
+    await wait("document.querySelector('dialog.jar-sheet[open] .jar-alert:not([hidden])')");
+    assert.deepEqual(await evaluate("[document.querySelector('.jar-sheet textarea').value,document.querySelector('.jar-sheet h2').textContent]"), ['Vì đã đón mình lúc mưa', 'Cảm ơn Yến']);
     assert.equal(await evaluate("document.querySelectorAll('.jar-stage[data-jar=sorry] .jar-ball').length"), 0);
     await evaluate('__failJar=false');
-    await click('.jar-toast.err button');
-    await wait("document.querySelector('.jar-stage[data-jar=sorry] .jar-ball:not(.pending)') && !document.querySelector('.jar-toast.err')");
-    assert.equal((await server('?kind=sorry')).length, 1);
+    await click('.jar-sheet button[type=submit]');
+    await wait("document.querySelector('.jar-stage[data-jar=sorry] .jar-ball.k-thanks:not(.pending)') && document.querySelector('.jar-toast')");
+    assert.equal(await evaluate("document.querySelector('.jar-toast span').textContent"), 'Đã thả một lời cảm ơn vào bình cho Yến.');
+    assert.deepEqual(await evaluate("fetch('/api/jar?kind=sorry',{credentials:'include'}).then(r=>r.json()).then(d=>d.items.map(i=>[i.tone,i.note]))"), [['thanks', 'Vì đã đón mình lúc mưa']]);
+    await click('.jar-list-btn'); await wait("document.querySelector('dialog.jar-list-sheet[open] .jar-row')");
+    assert.equal(await evaluate("document.querySelector('dialog.jar-list-sheet h2').textContent"), 'Trong bình xin lỗi & cảm ơn');
+    assert.equal(await evaluate("document.querySelector('.jar-list-sheet .jar-row .t').textContent"), 'Minh cảm ơn YếnVì đã đón mình lúc mưa');
+    await evaluate("document.querySelector('dialog.jar-list-sheet').close()");
+    await wait("!document.querySelector('dialog.jar-sheet')");
 
     // Feeling form: sliders with words, suggestions follow the quadrant, private by default.
     await clickText('.jar-tab', 'Cảm xúc'); await click('.jar-act.mood');
@@ -124,9 +140,10 @@ try {
     assert.deepEqual(await evaluate("[...document.querySelectorAll('.jar-sheet .jar-actions button')].map(e=>e.textContent)"), ['Hôn lại Minh']);
     await clickText('.jar-sheet button', 'Hôn lại Minh');
     await wait("document.querySelectorAll('.jar-stage[data-jar=kiss] .jar-ball:not(.pending)').length===2 && document.querySelector('.jar-toast')?.textContent.includes('cho Minh')");
-    // An apology received has no button.
+    // A thank-you received shows its note and has no button.
     await clickText('.jar-tab', 'Xin lỗi');
     await click('.jar-stage[data-jar=sorry] .jar-ball'); await wait("document.querySelector('dialog.jar-sheet[open]')");
+    assert.deepEqual(await evaluate("[document.querySelector('.jar-sheet h2').textContent,document.querySelector('.jar-sheet .jar-hand').textContent]"), ['Lời cảm ơn', 'Vì đã đón mình lúc mưa']);
     assert.equal(await evaluate("document.querySelectorAll('.jar-sheet .jar-actions').length"), 0);
     await evaluate("document.querySelector('dialog.jar-sheet').close()");
     // Swipe on the jar changes jars (sorry -> mood).
@@ -156,10 +173,10 @@ try {
     // Desktop 1440: three jars on the shelf; the tabs only pick the list.
     await size(1440, 1000);
     await open();
-    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')},${shown('.jar-list-btn')}]`), [3, 3, 0], '1440: three jars and buttons, list on the page');
+    assert.deepEqual(await evaluate(`[${shown('.jar-stage')},${shown('.jar-act')},${shown('.jar-list-btn')}]`), [3, 4, 0], '1440: three jars, four buttons, list on the page');
     assert.equal(await evaluate("document.querySelector('.jar-tabs').getAttribute('aria-label')"), 'Danh sách của bình');
     await clickText('.jar-tab', 'Xin lỗi');
-    assert.equal(await evaluate("document.querySelector('.jar-list h2').textContent"), 'Trong bình xin lỗi');
+    assert.equal(await evaluate("document.querySelector('.jar-list h2').textContent"), 'Trong bình xin lỗi & cảm ơn');
     assert.equal(await evaluate(shown('.jar-stage')), 3);
     assert.deepEqual(await layout(), { overflow: false, small: [] }, '1440: no sideways scroll, 44px targets');
     // Range chips reload: "7 ngày" still holds today's balls.
@@ -167,9 +184,11 @@ try {
     assert.equal(await evaluate("document.querySelectorAll('.jar-stage[data-jar=kiss] .jar-ball').length"), 3);
     await size(320, 740); await wait(ready);
     assert.deepEqual(await layout(), { overflow: false, small: [] }, '320: no sideways scroll');
+    await clickText('.jar-tab', 'Xin lỗi');
+    assert.deepEqual(await layout(), { overflow: false, small: [] }, '320 apology jar: no sideways scroll, 44px targets');
 
     errors.push(...await evaluate('__errors'));
     assert.deepEqual(errors, [], 'No page errors');
   }, undefined, { origin: fixture.origin });
 } finally { await fixture.close(); }
-console.log('Hũ: phone one jar, desktop three, drop and undo, failure retry, feeling form, ball sheet, kiss back, privacy, keyboard, reduced motion and layout passed.');
+console.log('Hũ: phone one jar, desktop three, drop and undo, apology or thanks with a note, failure keeps the draft, feeling form, ball sheet, kiss back, privacy, keyboard, reduced motion and layout passed.');

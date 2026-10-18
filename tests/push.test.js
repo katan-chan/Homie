@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import * as Y from 'yjs';
 import { createBackend } from '../backend/server.js';
 import { createNotesStore } from '../backend/notes-store.js';
-import { createPush, watchNotes } from '../backend/push.js';
+import { createPush, jarMessage, watchNotes } from '../backend/push.js';
 
 const origin = 'http://localhost:8000';
 const passwords = { minhle: 'push-only-minh-fixture', haiyen: 'push-only-yen-fixture' };
@@ -112,6 +112,12 @@ function textUpdate(text) {
   value.insert(0, text); paragraph.insert(0, [value]); doc.getXmlFragment('body').insert(0, [paragraph]);
   const update = Y.encodeStateAsUpdate(doc); doc.destroy(); return update;
 }
+
+test('jar message: thanks say thank you, and no note ever reaches the lock screen', () => {
+  const base = { kind: 'sorry', ownerId: 'haiyen', visibility: 'shared', note: 'Vì một điều riêng tư' };
+  assert.deepEqual([jarMessage({ ...base, tone: 'thanks' }).title, jarMessage({ ...base, tone: 'thanks' }).body], ['Yến cảm ơn Minh', 'Một lời cảm ơn mới trong bình.']);
+  assert.deepEqual([jarMessage(base).title, jarMessage(base).body], ['Yến xin lỗi Minh', 'Một lời xin lỗi mới trong bình.']);
+});
 
 test('notes: new notes and newly shared boards reach the partner only when the partner can see them', async t => {
   const dataDir = await mkdtemp(join(tmpdir(), 'homie-push-notes-'));

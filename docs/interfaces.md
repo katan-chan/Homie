@@ -153,16 +153,16 @@ Hợp đồng chung cho mọi feature API:
 
 ### Hũ: /api/jar
 
-Document `jar`: `{ records, requests }`. Record `{ id, kind: "kiss"|"sorry"|"mood", ownerId, occurredAt, visibility: "shared"|"private", version, archivedAt? }`; mood thêm `valence` (−1…1), `energy` (0…1), `label` (trim, ≤80 ký tự) và `note` (≤1000). Response luôn thêm `localDate` và `time` (`HH:MM`) theo giờ Việt Nam.
+Document `jar`: `{ records, requests }`. Record `{ id, kind: "kiss"|"sorry"|"mood", ownerId, occurredAt, visibility: "shared"|"private", version, archivedAt? }`; mood thêm `valence` (−1…1), `energy` (0…1), `label` (trim, ≤80 ký tự) và `note` (≤1000); sorry (bình xin lỗi & cảm ơn) thêm `tone: "sorry"|"thanks"` và `note` (≤500), record cũ không có `tone` là lời xin lỗi. Response luôn thêm `localDate` và `time` (`HH:MM`) theo giờ Việt Nam.
 
 | Request | Kết quả |
 | --- | --- |
 | GET /api/jar[?from=&to=][&kind=] | `{ items }` viên còn trong bình mà người xem được thấy, tăng dần theo `occurredAt` rồi `id`. Không có from/to là "Mọi lúc"; có thì cần cả hai (`parseRange`, lọc theo `localDate`). `kind` lạ 400 `invalid_kind` |
-| POST /api/jar | `{ requestId, kind, valence?, energy?, label?, note?, visibility? }` → 201 `{ record }`. requestId (chữ thường) chính là `id`: gửi lại trả 200 bản đã lưu, trùng nhưng khác chủ hoặc kind 409 `request_conflict`. Nụ hôn/xin lỗi luôn `shared`, field mood bị bỏ qua; mood cần `valence` và `energy`, `visibility` mặc định `private` |
+| POST /api/jar | `{ requestId, kind, tone?, valence?, energy?, label?, note?, visibility? }` → 201 `{ record }`. requestId (chữ thường) chính là `id`: gửi lại trả 200 bản đã lưu, trùng nhưng khác chủ hoặc kind 409 `request_conflict`. Nụ hôn/xin lỗi luôn `shared`, field mood bị bỏ qua; sorry nhận `tone` (mặc định `sorry`) và `note` (mặc định `""`), nụ hôn bỏ qua cả hai; mood cần `valence` và `energy`, `visibility` mặc định `private` |
 | PUT /api/jar/:id | Chỉ chủ một viên cảm xúc: `{ version, valence?, energy?, label?, note?, visibility? }` → `{ record }`. Thiếu version 400 `invalid_version`; viên không phải mood 400 `not_editable`; viên đã lấy ra 404 |
 | POST /api/jar/:id/archive, /restore | Chủ viên lấy ra khỏi bình (`archivedAt`) hoặc thả lại → `{ record }`. Idempotent; `version` tùy chọn (có thì phải khớp) để Hoàn tác không xung đột |
 
-Nụ hôn và lời xin lỗi luôn chung. Cảm xúc `private` chỉ chủ thấy: GET không bao giờ trả cảm xúc riêng của người kia, kể cả khi Lịch đọc /api/jar. Viên của người kia, chung hay riêng, trả 404 với PUT/archive/restore như không tồn tại. Viên đã lấy ra không còn trong GET. Mã khác: 400 `invalid_body`, `invalid_request_id`, `invalid_mood`, `invalid_visibility`, `invalid_range`; 409 `version_conflict`.
+Nụ hôn và lời xin lỗi luôn chung. Cảm xúc `private` chỉ chủ thấy: GET không bao giờ trả cảm xúc riêng của người kia, kể cả khi Lịch đọc /api/jar. Viên của người kia, chung hay riêng, trả 404 với PUT/archive/restore như không tồn tại. Viên đã lấy ra không còn trong GET. Mã khác: 400 `invalid_body`, `invalid_request_id`, `invalid_mood`, `invalid_tone`, `invalid_note`, `invalid_visibility`, `invalid_range`; 409 `version_conflict`.
 
 ### Lịch: /api/calendar và /api/cycles
 
@@ -214,7 +214,7 @@ Chỉ app Android (Capacitor + `@capacitor/push-notifications`) dùng. `POST /ap
 
 Gửi (backend/push.js) qua Firebase Cloud Messaging HTTP v1 với service account trong `FIREBASE_SERVICE_ACCOUNT` (JSON hoặc base64 JSON, chỉ ở server); thiếu biến thì không gửi gì. Token Firebase trả 404 bị gỡ. Chỉ báo cho người kia, không bao giờ cho chính người làm:
 
-- Hũ: 8 giây sau khi thả (qua cửa sổ Hoàn tác) nếu viên còn trong bình và `visibility: 'shared'` (nụ hôn, lời xin lỗi, cảm xúc đã chia sẻ); cảm xúc riêng đổi sang chia sẻ cũng báo một lần. Data `{ hash: 'jar', kind }`.
+- Hũ: 8 giây sau khi thả (qua cửa sổ Hoàn tác) nếu viên còn trong bình và `visibility: 'shared'` (nụ hôn, lời xin lỗi/cảm ơn không kèm ghi chú, cảm xúc đã chia sẻ); cảm xúc riêng đổi sang chia sẻ cũng báo một lần. Data `{ hash: 'jar', kind }`.
 - Ghi chép: `watchNotes(store, push)` nghe commit notes (event `metadata` có `accountId`, `entityId`). `note.create`, và `board.create`/`board.share` làm bảng vừa hiện với người kia, được gom theo (người làm, bảng) và gửi sau 60 giây; lúc gửi kiểm tra lại bằng `publicBoard(boardId, người kia)` nên note riêng tư, trang nhật ký riêng hay note đã vào thùng rác không được nhắc. Data `{ hash: 'dashboard', boardId, noteId }`; app ghi `homie-notes:focus` rồi mở dashboard.
 
 Hẹn giờ nằm trong bộ nhớ: backend khởi động lại giữa chừng thì thông báo đang chờ bị mất (dữ liệu không ảnh hưởng).
@@ -256,7 +256,7 @@ Helper dùng chung (giữ signature; cần đổi thì báo F0/phiên chính):
 Frontend dùng chung:
 
 - `js/notes/rules-panel.js` re-export `mountRulesPanel(container, { signal } = {}) -> cleanup` từ `js/features/rules/panel.js`. Dashboard import nó lúc cần và mount thay mặt bảng khi chọn tab giả `rules` ("Nội quy"); bảng vẫn chạy nếu module lỗi.
-- `js/features/jar/colors.js` (màu viên dùng chung Hũ và Lịch): `hash(id) -> number`; `moodColor(valence) -> string` CSS `hsl()` từ tím oải hương (−1) qua cát tới vàng mật ong (1); `ballColor({ id, kind, valence? })` (nụ hôn hồng, xin lỗi bạc hà, sắc độ cố định theo id; cảm xúc theo `moodColor`); `SAMPLE = { kiss, sorry, mood }`; `mini(kind, color, cls = '') -> <i>` viên kẹo trang trí `aria-hidden`, class `jar-skin k-<kind>`, màu qua biến `--c`, style trong `styles/jar.css`.
+- `js/features/jar/colors.js` (màu viên dùng chung Hũ và Lịch): `hash(id) -> number`; `moodColor(valence) -> string` CSS `hsl()` từ tím oải hương (−1) qua cát tới vàng mật ong (1); `skinOf({ kind, tone? }) -> 'kiss'|'sorry'|'thanks'|'mood'`; `ballColor({ id, kind, tone?, valence? })` (nụ hôn hồng, xin lỗi bạc hà, cảm ơn đào, sắc độ cố định theo id; cảm xúc theo `moodColor`); `SAMPLE = { kiss, sorry, thanks, mood }`; `mini(skin, color, cls = '') -> <i>` viên kẹo trang trí `aria-hidden`, class `jar-skin k-<skin>`, màu qua biến `--c`, style trong `styles/jar.css`.
 - Mở một note từ tab khác: ghi `sessionStorage['homie-notes:focus'] = JSON.stringify({ boardId, noteId })` rồi đặt `location.hash = 'dashboard'` (Lịch làm vậy khi mở kỷ niệm). Dashboard đọc giá trị một lần khi render rồi xoá, bỏ qua nếu không phải hai chuỗi; chọn bảng đó thay bảng xem gần nhất và truyền `focusNoteId` cho `mountBoard`, bảng căn note vào giữa (chế độ danh sách thì cuộn tới) và highlight `is-focused` 4 giây khi note xuất hiện.
 - CSS có phạm vi theo phần: `styles/jar.css`, `styles/calendar.css`, `styles/roulette.css`, `styles/rules.css`, `styles/garden-flowers.css`, đã link trong `index.html`.
 - Browser test của từng phần đặt tên `tests/browser-feature-<phần>.mjs` (hiện có jar, calendar, garden, roulette, rules); `npm run test:features` chạy lần lượt và bỏ qua khi chưa có file nào.

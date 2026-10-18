@@ -24,6 +24,7 @@ const jar = [
   { id: 'k2', kind: 'kiss', ownerId: 'haiyen', occurredAt: '2026-10-01T02:00:00Z', localDate: '2026-10-01', visibility: 'shared' },
   { id: 'k3', kind: 'kiss', ownerId: 'haiyen', occurredAt: '2026-10-01T03:00:00Z', localDate: '2026-10-01', visibility: 'shared', archivedAt: '2026-10-01T04:00:00Z' },
   { id: 's1', kind: 'sorry', ownerId: 'minhle', occurredAt: '2026-09-30T16:59:00Z', visibility: 'shared' },
+  { id: 't1', kind: 'sorry', tone: 'thanks', ownerId: 'haiyen', occurredAt: '2026-10-01T05:00:00Z', visibility: 'shared' },
   { id: 'm1', kind: 'mood', ownerId: 'minhle', occurredAt: '2026-10-01T01:00:00Z', valence: 0.8, label: 'Vui', visibility: 'private' },
   { id: 'm2', kind: 'mood', ownerId: 'minhle', occurredAt: '2026-10-01T02:00:00Z', valence: 0.2, visibility: 'private' },
   { id: 'm3', kind: 'mood', ownerId: 'haiyen', occurredAt: '2026-10-01T03:00:00Z', valence: -0.5, label: 'Mệt', visibility: 'private' },
@@ -32,7 +33,7 @@ const jar = [
 
 test('days count kisses and apologies by local day; partner private moods never colour a dot', () => {
   const day = aggregateDays({ viewerId: 'minhle', today: '2026-10-06', from: '2026-09-28', to: '2026-11-08', jar });
-  assert.deepEqual([day('2026-10-01').kiss, day('2026-10-01').sorry, day('2026-09-30').sorry], [2, 0, 1]);
+  assert.deepEqual([day('2026-10-01').kiss, day('2026-10-01').sorry, day('2026-10-01').thanks, day('2026-09-30').sorry], [2, 0, 1, 1]);
   assert.ok(Math.abs(day('2026-10-01').mood.minhle - 0.5) < 1e-9);
   assert.equal(day('2026-10-01').mood.haiyen, 0.5); // only her shared mood
   assert.deepEqual(day('2026-10-01').moods, { minhle: ['Vui', 'cảm xúc'], haiyen: ['Ấm áp'] });

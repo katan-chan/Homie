@@ -1,12 +1,15 @@
 // Pure parts of Hũ: words, dates, jar shapes and ball packing. No DOM, so node:test covers them.
-import { hash } from './colors.js';
+import { hash, skinOf } from './colors.js';
 
 export const KINDS = ['kiss', 'sorry', 'mood'];
 export const NAME = { minhle: 'Minh', haiyen: 'Yến' };
 export const other = id => id === 'minhle' ? 'haiyen' : 'minhle';
-export const JAR_NAME = { kiss: 'Bình nụ hôn', sorry: 'Bình xin lỗi', mood: 'Bình cảm xúc' };
-export const TAG = { kiss: 'Nụ hôn', sorry: 'Xin lỗi', mood: 'Cảm xúc' };
-export const KIND_NAME = { kiss: 'Nụ hôn', sorry: 'Lời xin lỗi', mood: 'Cảm xúc' };
+export const JAR_NAME = { kiss: 'Bình nụ hôn', sorry: 'Bình xin lỗi & cảm ơn', mood: 'Bình cảm xúc' };
+export const TAG = { kiss: 'Nụ hôn', sorry: 'Xin lỗi · Cảm ơn', mood: 'Cảm xúc' };
+/** Keyed by skinOf(item), so thanks in the apology jar have their own name. */
+export const KIND_NAME = { kiss: 'Nụ hôn', sorry: 'Lời xin lỗi', thanks: 'Lời cảm ơn', mood: 'Cảm xúc' };
+export const VERB = { kiss: 'hôn', sorry: 'xin lỗi', thanks: 'cảm ơn' };
+export const TONE_SUGG = { sorry: ['Về muộn', 'Lỡ lời', 'Quên nhắn tin', 'Cáu gắt'], thanks: ['Bữa tối', 'Đón mình', 'Lắng nghe', 'Chăm mình lúc ốm'] };
 export const RANGES = [[7, '7 ngày'], [30, '30 ngày'], [0, 'Mọi lúc']];
 export const RANGE_NAME = { 7: '7 ngày qua', 30: '30 ngày qua', 0: 'mọi lúc' };
 export const CAP = 160;
@@ -33,7 +36,7 @@ export function rangeQuery(days, today = localDate()) {
 export function ballLabel(item) {
   const when = `${vnDate(item.localDate)} lúc ${item.time}`;
   if (item.kind === 'mood') return `Cảm xúc của ${NAME[item.ownerId]}: ${moodName(item)}, ${valenceWord(item.valence).toLowerCase()}, năng lượng ${energyWord(item.energy).toLowerCase()}, ${when}${item.pending ? ', đang gửi' : ''}`;
-  return `${KIND_NAME[item.kind]}, ${NAME[item.ownerId]} gửi ${NAME[other(item.ownerId)]}, ${when}${item.pending ? ', đang gửi' : ''}`;
+  return `${KIND_NAME[skinOf(item)]}, ${NAME[item.ownerId]} gửi ${NAME[other(item.ownerId)]}, ${when}${item.pending ? ', đang gửi' : ''}`;
 }
 
 export const byTime = (a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id);
