@@ -1,6 +1,6 @@
 # Phạm vi hiện tại
 
-Đã triển khai local: vườn hoa, hai hồ sơ công khai, bảng ghi chú dùng chung trong Góc ghi chép (kèm tab Nội quy), Hũ, Lịch, Gợi ý chủ đề seminar và Hoạt động chung. Garden và hồ sơ xem công khai; bảng ghi chú chọn ai xem được (chỉ mình tôi, hai đứa mình hoặc công khai); Hũ, Lịch, Seminar, Hoạt động chung và Nội quy chỉ dành cho hai thành viên đã đăng nhập; mọi thao tác ghi cần đăng nhập. Chỉ minhle sửa chữ hồ sơ Minh Lê, haiyen sửa chữ hồ sơ Hải Yến; bố cục/ảnh chỉnh code trong module riêng. Xem [tài khoản](authentication.md). Không có đăng ký công khai.
+Đã triển khai local: vườn hoa, hai hồ sơ công khai, bảng ghi chú dùng chung trong Góc ghi chép (kèm tab Nội quy), Hũ, Lịch, Khoảnh khắc, Gợi ý chủ đề seminar và Hoạt động chung. Garden và hồ sơ xem công khai; bảng ghi chú chọn ai xem được (chỉ mình tôi, hai đứa mình hoặc công khai); Hũ, Lịch, Khoảnh khắc, Seminar, Hoạt động chung và Nội quy chỉ dành cho hai thành viên đã đăng nhập; mọi thao tác ghi cần đăng nhập. Chỉ minhle sửa chữ hồ sơ Minh Lê, haiyen sửa chữ hồ sơ Hải Yến; bố cục/ảnh chỉnh code trong module riêng. Xem [tài khoản](authentication.md). Không có đăng ký công khai.
 
 Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầu.
 
@@ -10,6 +10,7 @@ Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầ
 | Góc ghi chép | `dashboard` | Nhiều bảng ghi chú; mỗi bảng chọn ai xem được. minhle và haiyen sửa chung realtime và offline. Tab Nội quy nằm cuối dải bảng. Chi tiết bên dưới. |
 | Hũ | `jar` | Ba bình: nụ hôn, xin lỗi & cảm ơn, cảm xúc. Chi tiết bên dưới. |
 | Lịch | `calendar` | Lịch tháng gom viên trong bình, dịp, kỷ niệm, hoạt động; kỳ riêng của Hải Yến. Chi tiết bên dưới. |
+| Khoảnh khắc | `moments` | Photobooth trên máy tính, chụp nhanh kiểu Locket trên điện thoại, một album chung. Chi tiết bên dưới. |
 | Gợi ý chủ đề seminar | `seminar` | Kho chủ đề và lượt bốc chung để hai đứa tìm hiểu rồi kể cho nhau nghe. Chi tiết bên dưới. |
 | Hoạt động chung | `activity` | Kho ý tưởng theo bảy loại và lượt bốc chung. Chi tiết bên dưới. |
 | Minh Lê | `minhle` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. Khi đã đăng nhập, dưới hồ sơ có tờ PSI (Minh nghĩ gì về Minh). |
@@ -42,7 +43,13 @@ Ba bình trên kệ (điện thoại: một bình mỗi lần, vuốt ngang đ�
 
 ## Lịch
 
-Lưới tháng (tháng trước/sau, Hôm nay) và bảng chi tiết ngày: số nụ hôn, lời xin lỗi và lời cảm ơn, chấm màu cảm xúc trung bình trong ngày của từng người (không gồm cảm xúc riêng của người kia), dịp, kỷ niệm có ngày từ Góc ghi chép và các lần seminar/hoạt động đã làm. Dịp có ba loại (Dịp đặc biệt, Kỷ niệm ngày, Cột mốc), hai đứa cùng thấy, chỉ người tạo sửa hoặc lưu trữ. Chu kỳ chỉ Hải Yến thấy và ghi (bắt đầu, kết thúc hoặc đang diễn ra, ghi chú, kết thúc hôm nay, lưu trữ); Minh không thấy gì về chu kỳ. Không dự đoán, không lời khuyên y tế, không thông báo. Trên điện thoại cả tháng nằm gọn một màn hình, không cuộn trang; chạm một ngày mở bảng chi tiết dạng popup. Để trang mở qua nửa đêm thì "hôm nay" tự chuyển sang ngày mới.
+Lưới tháng (tháng trước/sau, Hôm nay) và bảng chi tiết ngày: số nụ hôn, lời xin lỗi và lời cảm ơn, chấm màu cảm xúc trung bình trong ngày của từng người (không gồm cảm xúc riêng của người kia), dịp, kỷ niệm có ngày từ Góc ghi chép, các lần seminar/hoạt động đã làm và ảnh Khoảnh khắc (dấu 📷; chạm ảnh nhỏ mở đúng tấm đó). Dịp có ba loại (Dịp đặc biệt, Kỷ niệm ngày, Cột mốc), hai đứa cùng thấy, chỉ người tạo sửa hoặc lưu trữ. Chu kỳ chỉ Hải Yến thấy và ghi (bắt đầu, kết thúc hoặc đang diễn ra, ghi chú, kết thúc hôm nay, lưu trữ); Minh không thấy gì về chu kỳ. Không dự đoán, không lời khuyên y tế, không thông báo. Trên điện thoại cả tháng nằm gọn một màn hình, không cuộn trang; chạm một ngày mở bảng chi tiết dạng popup. Để trang mở qua nửa đêm thì "hôm nay" tự chuyển sang ngày mới.
+
+## Khoảnh khắc
+
+Một tab cho ảnh của hai đứa, mỗi tấm kèm một dòng chữ tùy chọn (tối đa 40 ký tự), không filter hay sticker. **Máy tính** (màn rộng, dùng chuột) mở photobooth: webcam soi gương, chọn 1–4 tấm và bố cục Dọc, Ngang hoặc Lưới 2×2 (lưới chỉ khi 4 tấm), đếm 3‑2‑1 trước mỗi tấm rồi ghép thành dải giấy có ngày ở chân. **Điện thoại** mở camera vuông như Locket: chụp, đổi camera trước/sau; vuốt lên hoặc "Đã lưu" để xem lại theo từng tấm hoặc dạng lưới. Ở cả hai đều chọn được ảnh có sẵn trong máy (JPG, PNG, WebP; giữ tỉ lệ). Xem lại trước khi lưu có Lưu, Chụp lại và Tải về; lưu lỗi thì ảnh và dòng chữ còn nguyên, bấm Thử lại không tạo ảnh trùng.
+
+Hai đứa cùng thấy mọi ảnh trong một album (lọc Tất cả / Của Minh / Của Yến); chỉ người chụp sửa dòng chữ hoặc xóa hẳn (có hỏi lại). Ngày của ảnh là ngày lưu, ảnh hiện trong Lịch đúng ngày đó. Tải về ghép dòng chữ vào ảnh JPEG; trong app Android ảnh vào thư viện ảnh (Pictures/Homie). Ảnh được nén ngay trên máy (WebP, khoảng 150–300 KB một tấm kèm ảnh nhỏ), mất EXIF/GPS; server chỉ kiểm tra và lưu. Không có thông báo, widget hay khách xem. Camera tắt khi rời tab, khi trang ẩn hoặc khi đang xem lại.
 
 ## Gợi ý chủ đề seminar và Hoạt động chung
 

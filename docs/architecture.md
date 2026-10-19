@@ -31,6 +31,7 @@ js/
     board.js              # DOM bảng, cột, note, camera, thùng rác
     editor.js             # Tiptap + Yjs, hàng định dạng, presence caret
     library.js            # thư viện hình, upload, trang trí note
+  features/moments/       # Khoảnh khắc: chụp (capture.js), nén ảnh (image.js), album (page.js), tải về (save.js)
 styles/                   # notes.css, notes-format.css có phạm vi ghi chú
 assets/
   flowers/                # WebP từ PNG đã duyệt, giữ alpha
@@ -46,6 +47,8 @@ backend/notes-store.js    # snapshot notes, Yjs text, dedupe operation
 backend/notes-api.js      # route /api/boards, /api/notes, /api/note-assets, SSE
 backend/note-media.js     # ffprobe/FFmpeg, preview, lưu media
 backend/supabase.js       # REST/Storage Supabase qua fetch
+backend/moments-api.js    # /api/moments: Khoảnh khắc, ảnh ở moments/ cạnh media note
+backend/image-info.js     # đọc loại và kích thước ảnh từ byte đầu file
 tests/                    # node:test, browser headless Chrome, live Supabase
 scripts/build.js          # build vendor rồi xuất frontend vào dist/
 scripts/build-notes.js    # esbuild assets/vendor/notes.js
@@ -90,7 +93,7 @@ Hai tab lấy nhãn từ registry, nằm trong sidebar bên trái trên cả des
 
 Hồ sơ: public GET, PUT chỉ owner, cookie HttpOnly. Ghi chú: server giữ metadata có thẩm quyền (tác giả, tombstone, revision, lease) và text Yjs từng note; ghi bền rồi mới ACK, phát cập nhật qua SSE. Client giữ bản offline trong IndexedDB. Khách nhận projection công khai, không nhận tài liệu cộng tác, thùng rác hay presence.
 
-Storage chọn khi khởi động: có `SUPABASE_URL` và `SUPABASE_SECRET_KEY` thì hồ sơ và snapshot notes là tài liệu JSON trong bảng `public.documents` (khóa `profiles`, `notes`), media trong bucket private `note-media`, luôn phục vụ qua backend. Thiếu hai biến thì dùng file trong PROFILE_DATA_DIR (mặc định `.data/`: profiles.json, notes.json, note-media/). Snapshot notes được ghi lại toàn bộ mỗi mutation qua một hàng đợi trong process: không hỗ trợ nhiều instance backend cùng ghi. Session RAM mất khi backend restart. Xem [authentication.md](authentication.md), [deployment.md](deployment.md).
+Storage chọn khi khởi động: có `SUPABASE_URL` và `SUPABASE_SECRET_KEY` thì hồ sơ và snapshot notes là tài liệu JSON trong bảng `public.documents` (khóa `profiles`, `notes`), media trong bucket private `note-media`, luôn phục vụ qua backend. Khoảnh khắc lưu bản ghi ở khóa `moments` và ảnh trong cùng bucket dưới `moments/` (local: `.data/moments.json`, `.data/moments/`). Thiếu hai biến thì dùng file trong PROFILE_DATA_DIR (mặc định `.data/`: profiles.json, notes.json, note-media/). Snapshot notes được ghi lại toàn bộ mỗi mutation qua một hàng đợi trong process: không hỗ trợ nhiều instance backend cùng ghi. Session RAM mất khi backend restart. Xem [authentication.md](authentication.md), [deployment.md](deployment.md).
 
 GitHub Pages phục vụ tệp tĩnh; project site thường có đường dẫn `https://<owner>.github.io/<repository>/`. Dùng asset tương đối như `./assets/flowers/example.png`, tránh đường dẫn bắt đầu bằng `/`. Không đưa secret vào tệp tải về trình duyệt. Ẩn tab không tạo quyền truy cập riêng tư. [GitHub Docs: What is GitHub Pages?](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [GitHub Docs: Creating a site](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 

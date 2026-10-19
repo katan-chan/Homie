@@ -70,7 +70,8 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
 | js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
 | js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
-| js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules,psi}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar và /api/ideas/sessions) |
+| js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules,psi}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar, /api/ideas/sessions và /api/moments) |
+| js/tabs/moments.js, js/features/moments/*, styles/moments.css | Trang Khoảnh khắc; chỉ gọi /api/moments. `FOCUS_KEY` (sessionStorage `homie.moments.focus`, giá trị id) để Lịch mở đúng tấm |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
 | scripts/build.js | Tạo dist/ và thay cấu hình API public |
@@ -138,6 +139,7 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/garden | backend/garden-api.js | G Hoa kỷ niệm |
 | /api/push | backend/push-api.js | Thông báo điện thoại |
 | /api/psi | backend/psi-api.js | Tờ PSI của Minh Lê |
+| /api/moments | backend/moments-api.js | Khoảnh khắc |
 
 Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Prefix không có module thật thì trả 404 `{ error: "Not implemented", code: "not_implemented" }`.
 
@@ -234,6 +236,18 @@ Document `rules`: `{ rules, requests }`. Rule `{ id, revisions: [{ n, title (1�
 | POST /api/rules/:id/archive-cancel | `{ requestId, version }`; ai cũng rút hoặc từ chối được; chưa có đề nghị 409 `archive_not_requested` |
 
 Hai thành viên thấy mọi rule. Mọi POST cần requestId (400 `invalid_request_id`); lặp requestId (theo account) không chạy lại mà trả trạng thái hiện tại của rule đã ghi. Lệnh trên rule cần `version` nguyên (400 `invalid_version`) và khớp (409 `version_conflict`); rule đã lưu trữ 409 `archived`; mỗi lệnh thành công tăng version. `:id` không phải UUID, action lạ, method hoặc path khác 404. Chữ sai 400 `invalid_title`, `invalid_text`, `invalid_reason` với message tiếng Việt.
+
+### Khoảnh khắc: /api/moments
+
+Chỉ hai thành viên (khách 401); ghi cần Origin allowlist và `X-Requested-With: Homie`. Bản ghi ở tài liệu `moments` `{ records, requests }`; ảnh ở `moments/<id>.<webp|jpg>` và `moments/<id>-thumb.<webp|jpg>` trong bucket `note-media` (local `<dataDir>/moments/`).
+
+| Route | Hợp đồng |
+| --- | --- |
+| GET /api/moments[?from=&to=] | `{ moments }` mới nhất trước. Có from/to thì cần cả hai (`parseRange`, lọc `localDate`). Mỗi mục: `{ id, ownerId, kind: booth\|snap\|upload, takenAt, localDate, time, caption, photo, thumb, version, createdAt, updatedAt, fileUrl, thumbUrl }`, `photo`/`thumb` = `{ mime, width, height, bytes }` |
+| POST /api/moments | `{ requestId, kind, caption?, photo: { data }, thumb: { data } }` (base64, body ≤ 640 KiB) → 201 `{ moment }`. Server đọc loại/kích thước từ byte file (chỉ WebP/JPEG, sai 400 `invalid_image`); ảnh ≤ 400 KB, rộng ≤ 1920, cao ≤ 2400, ảnh nhỏ ≤ 40 KB và cạnh ≤ 400, vượt 400 `image_too_large`. Dòng chữ một dòng ≤ 40 ký tự (400 `invalid_caption`). `takenAt` = giờ server. Cùng người gửi lại cùng requestId trả bản đầu |
+| PUT /api/moments/:id | Chỉ người chụp: `{ caption, version }` → `{ moment }`; người khác 403 `not_owner`; version cũ 409 `version_conflict` |
+| DELETE /api/moments/:id | Chỉ người chụp → 204, xóa bản ghi rồi xóa file |
+| GET/HEAD /api/moments/:id/file, /thumb | Byte ảnh, `Cache-Control: private, max-age=31536000, immutable`, `nosniff`; id lạ 404 |
 
 ### Tờ PSI: /api/psi
 
