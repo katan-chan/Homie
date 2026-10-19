@@ -9,5 +9,6 @@ import * as rules from './rules-api.js';
 import * as garden from './garden-api.js';
 import * as pushDevices from './push-api.js';
 import * as psi from './psi-api.js';
+import * as moments from './moments-api.js';
 
-export const features = [jar, calendar, ideas, rules, garden, pushDevices, psi];
+export const features = [jar, calendar, ideas, rules, garden, pushDevices, psi, moments];
