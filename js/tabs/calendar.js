@@ -5,11 +5,12 @@ import { aggregateDays, addDays, monthGrid, shiftMonth, todayLocal } from '../fe
 import { el, button, renderHead, renderGrid, renderPanel, renderLegend } from '../features/calendar/view.js';
 import { openSheet, eventForm, eventView, cycleForm, cycleList } from '../features/calendar/sheets.js';
 import { vnDate } from '../features/calendar/model.js';
+import { FOCUS_KEY as MOMENT_FOCUS_KEY } from '../features/moments/page.js';
 
 const FOCUS_KEY = 'homie-notes:focus';
 // On phones the day panel opens as a popup sheet instead of sitting under the grid.
 const phone = matchMedia('(max-width:600px)');
-const emptyData = () => ({ events: [], memories: [], jar: [], activities: [], cycles: [] });
+const emptyData = () => ({ events: [], memories: [], jar: [], activities: [], cycles: [], moments: [] });
 
 async function sessions(kind, query, options) {
   const items = [];
@@ -65,16 +66,17 @@ export function render(container, { signal }) {
     state = 'loading';
     draw();
     try {
-      const [calendar, jar, seminars, activities, cycles] = await Promise.all([
+      const [calendar, jar, seminars, activities, cycles, moments] = await Promise.all([
         apiRequest(`/api/calendar?${query}`, options),
         optional(apiRequest(`/api/jar?${query}`, options)),
         optional(sessions('seminar', query, options)),
         optional(sessions('activity', query, options)),
         viewerId === 'haiyen' ? optional(apiRequest(`/api/cycles?${query}`, options)) : null,
+        optional(apiRequest(`/api/moments?${query}`, options)),
       ]);
       if (disposed || request !== generation) return;
       data = { events: calendar.events, memories: calendar.memories, jar: jar?.items ?? [],
-        activities: [...seminars ?? [], ...activities ?? []], cycles: cycles?.cycles ?? [] };
+        activities: [...seminars ?? [], ...activities ?? []], cycles: cycles?.cycles ?? [], moments: moments?.moments ?? [] };
       state = 'ready';
       partial = missing;
     } catch (error) {
@@ -109,6 +111,10 @@ export function render(container, { signal }) {
       location.hash = 'dashboard';
     },
     openActivity: activity => { location.hash = activity.kind; },
+    openMoment: moment => {
+      try { sessionStorage.setItem(MOMENT_FOCUS_KEY, moment.id); } catch {}
+      location.hash = 'moments';
+    },
     addCycle: () => cycleForm(root, { today, signal, save: saveCycle(crypto.randomUUID()) }),
     openCycles: () => openCycles(),
   };

@@ -68,3 +68,15 @@ test('cycle shading is Hải Yến only, inclusive, clipped to the range and to 
 });
 
 function now() { return '2026-10-06T00:00:00Z'; }
+
+test('aggregateDays puts moments on their localDate', () => {
+  const moments = [
+    { id: 'a', ownerId: 'minhle', localDate: '2026-10-05', time: '10:00' },
+    { id: 'b', ownerId: 'haiyen', localDate: '2026-10-05', time: '21:30' },
+    { id: 'c', ownerId: 'haiyen', localDate: '2026-10-06', time: '08:00' },
+  ];
+  const day = aggregateDays({ viewerId: 'minhle', today: '2026-10-06', from: '2026-09-28', to: '2026-11-08', moments });
+  assert.deepEqual(day('2026-10-05').moments.map(m => m.id), ['a', 'b']);
+  assert.equal(day('2026-10-07').moments.length, 0);
+  assert.equal(dayLabel('2026-10-05', day('2026-10-05')), '5/10/2026: 2 khoảnh khắc');
+});

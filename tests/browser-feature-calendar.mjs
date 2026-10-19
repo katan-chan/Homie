@@ -14,6 +14,9 @@ const jar = [
   // Contract says the server never sends this; the page must still ignore a partner's private mood.
   { id: 'm2', kind: 'mood', ownerId: 'haiyen', occurredAt: at, localDate: today, time: '10:00', valence: -0.6, energy: 0.2, label: 'Bí mật', visibility: 'private' },
 ];
+const moment = { id: 'mo1', ownerId: 'haiyen', kind: 'snap', takenAt: at, localDate: today, time: '10:00', caption: 'Trà sữa', version: 1,
+  photo: { mime: 'image/webp', width: 1080, height: 1080, bytes: 1000 }, thumb: { mime: 'image/webp', width: 320, height: 320, bytes: 100 },
+  fileUrl: '/api/moments/mo1/file', thumbUrl: '/api/moments/mo1/thumb' };
 const stub = `(() => {
   const real = window.fetch.bind(window);
   window.__calls = [];
@@ -22,6 +25,7 @@ const stub = `(() => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     window.__calls.push(url.pathname);
     if (url.pathname === '/api/jar') return json({ items: ${JSON.stringify(jar)} });
+    if (url.pathname === '/api/moments') return json({ moments: [${JSON.stringify(moment)}] });
     if (url.pathname === '/api/ideas/sessions') return json({ items: url.searchParams.get('kind') === 'seminar'
       ? [{ id: 'x1', ideaId: 'i2', byId: 'minhle', date: '${today}', text: '', ratings: {} }] : [], nextCursor: null });
     if (url.pathname === '/api/ideas') return json({ ideas: [{ id: 'i2', kind: 'seminar', title: 'Cách cây quang hợp' }], pick: null, eligibleCount: 1, exhausted: { recent: false, skipped: false } });
@@ -48,7 +52,9 @@ try {
 
     // Minh: counts, his own mood dot only, the seminar title from /api/ideas, and no trace of cycles.
     const label = await evaluate(`${cell}.getAttribute('aria-label')`);
-    assert.match(label, /2 nụ hôn, 1 lời xin lỗi, có cảm xúc của Minh, 1 hoạt động$/);
+    assert.match(label, /2 nụ hôn, 1 lời xin lỗi, có cảm xúc của Minh, 1 hoạt động, 1 khoảnh khắc$/);
+    assert.match(await evaluate(`${cell}.textContent`), /📷/);
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('.cal-panel .cal-moments button')].map(b=>b.getAttribute('aria-label'))"), ['Mở ảnh của Yến lúc 10:00']);
     assert.equal(await evaluate(`${cell}.querySelectorAll('.cal-dots i').length`), 1, 'Partner private mood has no dot');
     assert.deepEqual(await text('.cal-panel .cal-who'), ['Minh: Vui', 'Yến: chưa có cảm xúc được chia sẻ']);
     assert.deepEqual(await text('.cal-panel .cal-item .cal-t'), ['Cách cây quang hợp']);
@@ -142,6 +148,10 @@ try {
     assert.equal(await evaluate("document.querySelector('.cal-page').textContent.includes('Trong kỳ')"), false);
     const direct = await evaluate(`(async()=>{const r=await fetch('/api/cycles?from=${today}&to=${today}',{credentials:'include'});return [r.status,(await r.json()).code];})()`);
     assert.deepEqual(direct, [404, 'not_found'], 'Minh gets 404 from the cycles API');
+
+    // A moment's thumbnail opens that moment in Khoảnh khắc.
+    await evaluate("document.querySelector('.cal-panel .cal-moments button').click()");
+    await wait("location.hash==='#moments' && document.querySelector('.moments-viewer')?.dataset.id==='mo1'");
   }, undefined, { origin: fixture.origin });
 } finally { await fixture.close(); }
-console.log('Calendar: grid, day panel, occasions, Yến-only cycles, identity switch, 390 and 1440 layout passed.');
+console.log('Calendar: grid, day panel, occasions, moments, Yến-only cycles, identity switch, 390 and 1440 layout passed.');

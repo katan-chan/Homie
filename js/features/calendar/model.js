@@ -28,16 +28,16 @@ export const vnDate = date => { const [y, m, d] = date.split('-'); return `${+d}
 export const monthTitle = month => { const [y, m] = month.split('-'); return `Tháng ${+m}, ${y}`; };
 
 const emptyDay = () => ({ kiss: 0, sorry: 0, thanks: 0, mood: { minhle: null, haiyen: null }, moods: { minhle: [], haiyen: [] },
-  events: [], memories: [], activities: [], cycle: false });
+  events: [], memories: [], activities: [], moments: [], cycle: false });
 
 /**
  * Groups sources by local day for viewerId. Partner moods count only when shared, archived items never;
  * cycles count only for Hải Yến and are shaded from start to end (or today while ongoing), within [from, to].
  * jar: /api/jar items; events: occasions; memories: {noteId, boardId, title, memoryDate};
- * activities: {id, kind: 'seminar'|'activity', title, date}; cycles: /api/cycles records.
+ * activities: {id, kind: 'seminar'|'activity', title, date}; cycles: /api/cycles records; moments: /api/moments items.
  * Returns day(date) -> summary (an empty summary for quiet days).
  */
-export function aggregateDays({ viewerId, today, from, to, jar = [], events = [], memories = [], activities = [], cycles = [] }) {
+export function aggregateDays({ viewerId, today, from, to, jar = [], events = [], memories = [], activities = [], cycles = [], moments = [] }) {
   const days = new Map();
   const at = date => { if (!days.has(date)) days.set(date, emptyDay()); return days.get(date); };
   const valences = { minhle: new Map(), haiyen: new Map() };
@@ -61,6 +61,7 @@ export function aggregateDays({ viewerId, today, from, to, jar = [], events = []
   for (const event of events) if (!event.archivedAt) at(event.date).events.push(event);
   for (const memory of memories) at(memory.memoryDate).memories.push(memory);
   for (const activity of activities) at(activity.date).activities.push(activity);
+  for (const moment of moments) at(moment.localDate).moments.push(moment);
   if (viewerId === 'haiyen') {
     for (const cycle of cycles) {
       if (cycle.archivedAt) continue;
@@ -82,6 +83,7 @@ export function dayLabel(date, day) {
     day.events.length && `${day.events.length} dịp`,
     day.memories.length && `${day.memories.length} kỷ niệm`,
     day.activities.length && `${day.activities.length} hoạt động`,
+    day.moments.length && `${day.moments.length} khoảnh khắc`,
     day.cycle && 'trong kỳ',
   ].filter(Boolean);
   return `${vnDate(date)}: ${parts.join(', ') || 'không có mục'}`;

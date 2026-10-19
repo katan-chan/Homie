@@ -1,6 +1,7 @@
 // DOM for the calendar month grid, the selected-day panel and the legend. Data always goes in via textContent.
 import { monthGrid, monthTitle, vnDate, dayLabel, addDays, MEMBERS, SHORT_NAME } from './model.js';
 import { moodColor, SAMPLE, mini } from '../jar/colors.js';
+import { API_BASE_URL } from '../../config.js';
 
 export function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -69,7 +70,7 @@ export function renderGrid({ month, selected, today, day, on }) {
     const dots = el('span', 'cal-dots');
     for (const member of MEMBERS) if (info.mood[member] !== null) dots.append(dot(info.mood[member]));
     const signs = [info.events.length && '📌', info.memories.length && '🌸',
-      info.activities.some(a => a.kind === 'seminar') && '📚', info.activities.some(a => a.kind === 'activity') && '🎲'].filter(Boolean).join('');
+      info.activities.some(a => a.kind === 'seminar') && '📚', info.activities.some(a => a.kind === 'activity') && '🎲', info.moments.length && '📷'].filter(Boolean).join('');
     cell.append(el('span', 'cal-n', String(+date.slice(8))), dots);
     if (info.kiss || info.sorry || info.thanks) cell.append(counts(info));
     if (signs) cell.append(el('span', 'cal-marks', signs));
@@ -115,12 +116,26 @@ export function renderPanel({ date, day, viewerId, on }) {
   for (const activity of day.activities) {
     list.append(item(activity.kind === 'seminar' ? 'Seminar' : 'Hoạt động', 'activity', activity.title, () => on.openActivity(activity)));
   }
+  if (day.moments.length) {
+    const row = el('div', 'cal-item cal-moments');
+    const thumbs = el('div', 'cal-thumbs');
+    for (const moment of day.moments.slice(0, 6)) {
+      const open = button('', '', () => on.openMoment(moment));
+      open.setAttribute('aria-label', `Mở ảnh của ${SHORT_NAME[moment.ownerId]} lúc ${moment.time}`);
+      const img = el('img');
+      img.src = API_BASE_URL + moment.thumbUrl; img.alt = ''; img.loading = 'lazy';
+      open.append(img);
+      thumbs.append(open);
+    }
+    row.append(el('span', 'cal-type moment', 'Khoảnh khắc'), thumbs);
+    list.append(row);
+  }
   if (day.cycle) {
     const row = item('Chu kỳ', 'cycle', 'Trong kỳ (chỉ Yến thấy)');
     row.append(button('Xem các kỳ', 'cal-btn small', on.openCycles));
     list.append(row);
   }
-  if (!list.children.length) list.append(el('p', 'cal-note', 'Ngày này chưa có dịp, kỷ niệm hay hoạt động.'));
+  if (!list.children.length) list.append(el('p', 'cal-note', 'Ngày này chưa có dịp, kỷ niệm, hoạt động hay khoảnh khắc.'));
   panel.append(list);
   return panel;
 }
