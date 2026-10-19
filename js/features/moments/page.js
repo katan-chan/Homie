@@ -37,7 +37,7 @@ function caption(text) {
 
 export function mountMoments(container, { signal, api = momentsApi }) {
   const me = getUser()?.id;
-  let items = [], status = 'loading', filter = 'all', phoneView = 'camera', albumMode = 'feed', viewer = null, capture = null, disposed = false, toastTimer = 0, opener = null;
+  let items = [], status = 'loading', filter = 'all', phoneView = 'camera', reviewing = false, albumMode = 'feed', viewer = null, capture = null, disposed = false, toastTimer = 0, opener = null;
   let desktop = desktopQuery.matches;
   const alive = () => !disposed && !signal.aborted;
 
@@ -80,8 +80,11 @@ export function mountMoments(container, { signal, api = momentsApi }) {
     capture?.destroy();
     capture = null;
     if (!desktop && phoneView !== 'camera') return;
+    reviewing = false;
     capture = createCapture({
       host: captureHost, desktop, toast, onDownload: download,
+      // A photo waiting to be saved must not be thrown away by the album shortcuts.
+      onReview: open => { reviewing = open; renderHead(); },
       onSave: async body => {
         const { moment } = await api.create(body);
         if (!alive()) return;
@@ -91,7 +94,7 @@ export function mountMoments(container, { signal, api = momentsApi }) {
     });
   }
   function showPhone(view) {
-    if (desktop || phoneView === view) return;
+    if (desktop || phoneView === view || reviewing) return;
     phoneView = view;
     root.classList.toggle('album-open', view === 'album');
     mountCapture(); renderAlbum(); renderHead();
@@ -103,8 +106,8 @@ export function mountMoments(container, { signal, api = momentsApi }) {
     root.classList.toggle('desktop', desktop);
     head.replaceChildren(title);
     if (desktop) { head.append(sub); swipe.hidden = true; return; }
-    swipe.hidden = phoneView !== 'camera';
-    if (phoneView === 'camera') { count.textContent = `Đã lưu · ${items.length}`; head.append(count); }
+    swipe.hidden = phoneView !== 'camera' || reviewing;
+    if (phoneView === 'camera') { if (!reviewing) { count.textContent = `Đã lưu · ${items.length}`; head.append(count); } }
     else head.append(button('‹ Camera', 'moments-btn', () => showPhone('camera')));
   }
 
@@ -310,13 +313,10 @@ export function mountMoments(container, { signal, api = momentsApi }) {
       status = 'error';
     }
     renderHead(); renderAlbum();
-    let focus = null;
-    try { focus = sessionStorage.getItem(FOCUS_KEY); sessionStorage.removeItem(FOCUS_KEY); } catch {}
-    if (focus && items.some(item => item.id === focus)) {
-      filter = 'all';
-      if (!desktop) { phoneView = 'album'; root.classList.add('album-open'); mountCapture(); renderHead(); renderAlbum(); }
-      openViewer(focus);
-    }
+    const wanted = focus;
+    focus = null;
+    if (wanted && items.some(item => item.id === wanted)) { filter = 'all'; renderAlbum(); openViewer(wanted); }
+    else if (wanted && !desktop) showPhone('camera');
   }
   let touchY = null;
   const onTouchStart = event => { touchY = event.touches[0].clientY; };
@@ -329,6 +329,10 @@ export function mountMoments(container, { signal, api = momentsApi }) {
     desktop = desktopQuery.matches; phoneView = 'camera'; root.classList.remove('album-open');
     mountCapture(); renderHead(); renderAlbum();
   };
+  // Opened from Lịch: on a phone go straight to the album, so the camera never starts for a photo being viewed.
+  let focus = null;
+  try { focus = sessionStorage.getItem(FOCUS_KEY); sessionStorage.removeItem(FOCUS_KEY); } catch {}
+  if (focus && !desktop) { phoneView = 'album'; root.classList.add('album-open'); }
   captureHost.addEventListener('touchstart', onTouchStart, { passive: true });
   captureHost.addEventListener('touchend', onTouchEnd, { passive: true });
   desktopQuery.addEventListener('change', onMode);

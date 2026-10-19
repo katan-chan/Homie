@@ -32,9 +32,13 @@ const body = (extra = {}) => ({ requestId: randomUUID(), kind: 'snap', caption: 
 function fakeRemote() {
   const docs = new Map(), files = new Map(), calls = { put: [], removed: [] };
   return {
-    calls, files, failPut: false,
+    calls, files, failPut: false, loseResponse: false,
     async getDocument(name) { return docs.has(name) ? structuredClone(docs.get(name)) : null; },
-    async putDocument(name, value) { if (name === 'moments' && this.failPut) throw new Error('down'); docs.set(name, structuredClone(value)); },
+    async putDocument(name, value) {
+      if (name === 'moments' && this.failPut) throw new Error('down');
+      docs.set(name, structuredClone(value));
+      if (name === 'moments' && this.loseResponse) { this.loseResponse = false; throw new Error('response lost'); }
+    },
     async deleteDocument(name) { docs.delete(name); },
     async putFile(path, buffer, type) { calls.put.push([path, type]); files.set(path, Buffer.from(buffer)); },
     async getFile(path) { const b = files.get(path); return b ? new Response(b, { headers: { 'content-length': String(b.length) } }) : null; },
@@ -161,4 +165,16 @@ test('moments: remote storage keeps files in the bucket under moments/', async t
   assert.equal(failed.status, 503);
   assert.equal(remote.calls.removed.length, 2);
   assert.equal(remote.files.size, 0);
+});
+
+test('moments: a save whose response was lost keeps its files for the retry', async t => {
+  const remote = fakeRemote();
+  const { call, minh } = await fixture(t, { remote });
+  const request = body();
+  remote.loseResponse = true;
+  assert.equal((await call('POST', '/api/moments', request, minh)).status, 503);
+  const retry = await call('POST', '/api/moments', request, minh);
+  assert.equal(retry.status, 200);
+  assert.equal((await call('GET', retry.body.moment.fileUrl, undefined, minh)).status, 200);
+  assert.equal((await call('GET', retry.body.moment.thumbUrl, undefined, minh)).status, 200);
 });

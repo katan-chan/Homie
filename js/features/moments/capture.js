@@ -31,10 +31,10 @@ function readPrefs() {
 const fits = (frames, layout) => (frames === 1 ? layout === 'column' : layout !== 'grid' || frames === 4);
 
 /**
- * Mounts into host. onSave(body) -> Promise (POST /api/moments body without requestId handling), onDownload(blob),
- * toast(text, { error }). Returns { destroy }.
+ * Mounts into host. onSave(body) -> Promise (the POST /api/moments body), onDownload(blob), toast(text, { error }),
+ * onReview(open) when a photo starts or stops waiting to be saved. Returns { destroy }.
  */
-export function createCapture({ host, desktop, onSave, onDownload, toast }) {
+export function createCapture({ host, desktop, onSave, onDownload, toast, onReview = () => {} }) {
   let stream = null, facing = 'user', noCamera = false, destroyed = false, run = 0, shooting = null, review = null, opening = 0;
   let prefs = readPrefs();
   const timers = new Set();
@@ -115,6 +115,7 @@ export function createCapture({ host, desktop, onSave, onDownload, toast }) {
     review = { canvas, kind, caption: '', requestId: crypto.randomUUID(), saving: false, failed: false, prepared: prepare(canvas, kind) };
     review.prepared.catch(() => {});
     render();
+    onReview(true);
     host.querySelector('#moments-caption')?.focus();
   }
   async function closeReview(restart = true) {
@@ -122,6 +123,7 @@ export function createCapture({ host, desktop, onSave, onDownload, toast }) {
     review = null;
     old?.prepared.then(p => URL.revokeObjectURL(p.previewUrl), () => {});
     render();
+    if (old) onReview(false);
     if (restart && !destroyed) await startCamera();
   }
   async function save() {
@@ -149,7 +151,8 @@ export function createCapture({ host, desktop, onSave, onDownload, toast }) {
   }
   function again() {
     const kind = review?.kind;
-    closeReview(kind !== 'upload');
+    // The camera comes back even for "Chọn ảnh khác": a closed file picker must not leave a dead viewfinder.
+    closeReview();
     if (kind === 'upload') picker.click();
   }
 

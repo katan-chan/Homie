@@ -108,8 +108,24 @@ try {
     await open("document.querySelector('.moments-finder video') && document.querySelector('.moments-finder video').readyState>=2");
     assert.equal(await evaluate("document.querySelector('.moments-booth')"), null, 'no photobooth on the phone');
     assert.deepEqual(await layout(), { overflow: false, small: [] }, '390: no sideways scroll, 44px targets');
+
+    // A picked photo keeps its ratio; "Chọn lại" with no new file brings the camera back.
+    await evaluate(`(async()=>{const c=document.createElement('canvas');c.width=400;c.height=300;c.getContext('2d').fillRect(0,0,400,300);
+      const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'a.png',{type:'image/png'}));
+      const input=document.querySelector('.moments-capture input[type=file]');input.files=dt.files;input.dispatchEvent(new Event('change'));})()`);
+    await wait("document.querySelector('.moments-review canvas')?.width===400");
+    assert.equal(await evaluate("document.querySelector('.moments-review canvas').height"), 300);
+    await click('.moments-round[aria-label="Chọn lại"]');
+    await wait("document.querySelector('.moments-finder video')?.srcObject?.active", 5000);
+
     await click('.moments-shutter');
     await wait("document.querySelector('.moments-review canvas')");
+    // While a photo waits to be saved, nothing on the page can throw it away.
+    assert.deepEqual(await evaluate(`[${shown('.moments-count')},${shown('.moments-swipe')}]`), [0, 0], 'review hides the album shortcuts');
+    await evaluate(`(()=>{const t=document.querySelector('.moments-capture');const at=y=>new Touch({identifier:1,target:t,clientX:100,clientY:y});
+      t.dispatchEvent(new TouchEvent('touchstart',{touches:[at(600)],changedTouches:[at(600)],bubbles:true}));
+      t.dispatchEvent(new TouchEvent('touchend',{touches:[],changedTouches:[at(300)],bubbles:true}));})()`);
+    assert.ok(await evaluate("!!document.querySelector('.moments-review canvas')"), 'swipe up keeps the review');
     assert.deepEqual(await evaluate("(({width,height})=>[width,height])(document.querySelector('.moments-review canvas'))"), [1080, 1080]);
     await type('#moments-caption', 'Trà sữa nè');
     assert.equal(await evaluate("document.querySelector('.moments-savebtn').getAttribute('aria-label')"), 'Lưu');
@@ -135,7 +151,9 @@ try {
     // Lịch deep link: the key opens that moment's viewer.
     const id = await evaluate("fetch('/api/moments',{credentials:'include'}).then(r=>r.json()).then(d=>d.moments[0].id)");
     await evaluate(`sessionStorage.setItem('homie.moments.focus',${JSON.stringify(id)})`);
+    const tracksBefore = await evaluate('__tracks.length');
     await open(`document.querySelector('.moments-viewer')?.dataset.id===${JSON.stringify(id)}`);
+    assert.equal(await evaluate('__tracks.length'), tracksBefore, 'opening a moment from Lịch does not start the camera');
     assert.equal(await evaluate("sessionStorage.getItem('homie.moments.focus')"), null);
 
     // Leaving the tab turns every camera track off.

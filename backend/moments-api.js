@@ -119,7 +119,9 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
       if (result.raced) { await files.remove(names).catch(() => {}); return [200, result.raced]; }
       return [201, record];
     } catch (error) {
-      await files.remove(names).catch(() => {});
+      // A failed write may still have landed (lost response): keep the files when the record is there or unknown.
+      const landed = await store.read().then(doc => Boolean(recalled(doc, key)), () => true);
+      if (!landed) await files.remove(names).catch(() => {});
       throw error.status ? error : httpError(503, 'storage_unavailable', 'Storage is unavailable');
     }
   }
