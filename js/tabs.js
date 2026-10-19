@@ -14,6 +14,7 @@ export const tabs = [
   },
   { id: 'jar', label: 'Hũ', enabled: true, requiresAuth: true, load: () => import('./tabs/jar.js') },
   { id: 'calendar', label: 'Lịch', enabled: true, requiresAuth: true, load: () => import('./tabs/calendar.js') },
+  { id: 'moments', label: 'Khoảnh khắc', enabled: true, requiresAuth: true, load: () => import('./tabs/moments.js') },
   { id: 'seminar', label: 'Gợi ý chủ đề seminar', enabled: true, requiresAuth: true, load: () => import('./tabs/seminar.js') },
   { id: 'activity', label: 'Hoạt động chung', enabled: true, requiresAuth: true, load: () => import('./tabs/activity.js') },
   { id: 'minhle', label: 'Minh Lê', enabled: true, load: () => import('./tabs/minhle.js') },
