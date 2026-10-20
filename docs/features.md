@@ -53,7 +53,7 @@ Hai đứa cùng thấy mọi ảnh trong một album (lọc Tất cả / Của 
 
 ## Gợi ý chủ đề seminar và Hoạt động chung
 
-Hai trang cùng một kiểu: kho ý tưởng (mặt bảng giấy kéo đổi chỗ hoặc danh sách), lượt bốc chung cho cả hai máy, lịch sử đã làm. Seminar là chủ đề để hai đứa tìm hiểu rồi kể cho nhau nghe; Hoạt động chung có bảy loại (Trò chuyện, Sáng tạo, Khám phá, Chơi, Tự làm, Tụi mình, Nhảm nhí) và lọc theo loại. Bốc ngẫu nhiên đều trong các mục chưa bỏ qua và chưa làm trong 14 ngày; có thể bỏ qua, đặt lại các mục đã bỏ qua hoặc cho bốc cả mục vừa làm. "Xong rồi" ghi ngày, vài dòng và điểm 1–5 cho niềm vui của chính mình; người kia tự chấm phần mình. Chỉ người tạo sửa hoặc lưu trữ ý tưởng; lưu trữ giữ lịch sử.
+Hai trang cùng một kiểu: kho ý tưởng (mặt bảng giấy kéo đổi chỗ hoặc danh sách), lượt bốc chung cho cả hai máy, lịch sử đã làm. Seminar là chủ đề để hai đứa tìm hiểu rồi kể cho nhau nghe; Hoạt động chung có bảy loại (Trò chuyện, Sáng tạo, Khám phá, Chơi, Tự làm, Tụi mình, Nhảm nhí) và lọc theo loại. Mỗi tờ có nút "Cho vào pool"/"Bỏ khỏi pool" (tờ mới và tờ cũ mặc định trong pool); bốc ngẫu nhiên đều trong pool, bốc, bỏ qua hay "Xong rồi" đều không đưa tờ ra khỏi pool. Tờ làm trong 14 ngày gần nhất chỉ được gắn nhãn "Vừa làm". "Xong rồi" ghi ngày, vài dòng và điểm 1–5 cho niềm vui của chính mình; người kia tự chấm phần mình. Cả hai sửa được mọi ý tưởng; chỉ người tạo lưu trữ; lưu trữ giữ lịch sử.
 
 ## Thông báo trên điện thoại
 

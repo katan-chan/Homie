@@ -4,9 +4,9 @@ import { NAME, button, el } from './ui.js';
 const WORLD = { width: 1180, height: 900, paper: 270 };
 
 /** Renders the papers. The board grows to fit the furthest paper. */
-export function renderPool(host, { ideas, mode, pickedId, me, onEdit, onArchive }) {
+export function renderPool(host, { ideas, mode, pickedId, me, onEdit, onPool, onArchive }) {
   const papers = ideas.map(idea => {
-    const paper = el('article', `roulette-paper${idea.id === pickedId ? ' is-picked' : ''}`);
+    const paper = el('article', `roulette-paper${idea.id === pickedId ? ' is-picked' : ''}${idea.inPool ? '' : ' is-out'}`);
     paper.dataset.id = idea.id;
     paper.style.background = idea.color;
     if (mode === 'board') Object.assign(paper.style, { left: `${idea.x}px`, top: `${idea.y}px` });
@@ -15,17 +15,24 @@ export function renderPool(host, { ideas, mode, pickedId, me, onEdit, onArchive 
     head.append(el('b', '', NAME[idea.authorId] ?? ''), el('span', 'roulette-badge', idea.category));
     if (idea.minutes) head.append(el('span', '', `${idea.minutes} phút`));
     if (idea.recent) head.append(el('span', 'roulette-badge recent', 'Vừa làm'));
+    if (!idea.inPool) head.append(el('span', 'roulette-badge', 'Ngoài pool'));
     paper.append(head, el('h3', '', idea.title));
     if (idea.desc) paper.append(el('p', 'roulette-hand', idea.desc));
+    // Both members edit and pool any paper; only the author archives it.
+    const actions = el('div', 'roulette-actions'), edit = button('Sửa', 'roulette-btn small');
+    const pool = button(idea.inPool ? 'Bỏ khỏi pool' : 'Cho vào pool', 'roulette-btn small');
+    edit.setAttribute('aria-label', `Sửa: ${idea.title}`);
+    pool.setAttribute('aria-label', `${pool.textContent}: ${idea.title}`);
+    edit.addEventListener('click', () => onEdit(idea));
+    pool.addEventListener('click', () => { pool.disabled = true; onPool(idea); });
+    actions.append(edit, pool);
     if (idea.authorId === me) {
-      const actions = el('div', 'roulette-actions'), edit = button('Sửa', 'roulette-btn small'), archive = button('Lưu trữ', 'roulette-btn small danger');
-      edit.setAttribute('aria-label', `Sửa: ${idea.title}`);
+      const archive = button('Lưu trữ', 'roulette-btn small danger');
       archive.setAttribute('aria-label', `Lưu trữ: ${idea.title}`);
-      edit.addEventListener('click', () => onEdit(idea));
       archive.addEventListener('click', () => onArchive(idea));
-      actions.append(edit, archive);
-      paper.append(actions);
+      actions.append(archive);
     }
+    paper.append(actions);
     return paper;
   });
   if (mode === 'list') {

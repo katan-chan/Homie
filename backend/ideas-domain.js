@@ -1,6 +1,6 @@
 // Seminar topics and shared activities (part C): pure state transitions over the `ideas` document.
-// Each kind ('seminar' | 'activity') has one shared round: the current pick, the ideas skipped this round,
-// and `relax` (recently done ideas may be picked until the next Xong). Callers pass
+// Each kind ('seminar' | 'activity') has one shared round: the current pick. Picking draws from the ideas that are
+// in the pool (`inPool`, absent means in); picking, skipping and Xong never take an idea out of it. Callers pass
 // ctx = { now: ISO instant, today: local 'YYYY-MM-DD', random?: () => [0, 1), id?: () => string }.
 import { randomUUID } from 'node:crypto';
 import { httpError as fail } from './http.js';
@@ -13,7 +13,7 @@ export const RECENT_DAYS = 14;
 const PAPER = ['#fff0b8', '#f9dbe5', '#deead9', '#dce9f5', '#e8ddf1', '#fffaf0'];
 const MAX_XY = 4000, PAGE = 10, MAX_PAGE = 100;
 
-const freshRound = () => ({ pick: null, skipped: [], relax: false });
+const freshRound = () => ({ pick: null });
 export const emptyIdeas = () => ({ ideas: [], sessions: [], rounds: { seminar: freshRound(), activity: freshRound() }, requests: [] });
 export function validateIdeas(doc) {
   if (!Array.isArray(doc?.ideas) || !Array.isArray(doc.sessions) || !KINDS.every(kind => doc.rounds?.[kind])) throw new Error('Invalid ideas document');
@@ -73,9 +73,14 @@ function activeIdea(doc, id) {
   if (!idea) throw fail(404, 'not_found', 'Not found');
   return idea;
 }
+function versionedIdea(doc, id, version) {
+  const idea = activeIdea(doc, id);
+  checkVersion(idea, version);
+  return idea;
+}
 function ownIdea(doc, actor, id, version) {
   const idea = activeIdea(doc, id);
-  if (idea.authorId !== actor) throw fail(403, 'not_author', 'Only the author can change this idea');
+  if (idea.authorId !== actor) throw fail(403, 'not_author', 'Only the author can archive this idea');
   checkVersion(idea, version);
   return idea;
 }
@@ -86,23 +91,16 @@ const recentIds = (doc, today) => {
   const after = addDays(today, -RECENT_DAYS);
   return new Set(doc.sessions.filter(s => s.date > after).map(s => s.ideaId));
 };
-function standing(doc, kind, cat, today) {
-  const round = doc.rounds[kind], recent = recentIds(doc, today), skipped = new Set(round.skipped), pool = poolOf(doc, kind, cat);
-  return {
-    recent,
-    eligible: pool.filter(idea => (round.relax || !recent.has(idea.id)) && !skipped.has(idea.id)),
-    exhausted: { recent: pool.filter(idea => recent.has(idea.id)).length, skipped: pool.filter(idea => skipped.has(idea.id)).length },
-  };
-}
+const inPool = idea => idea.inPool !== false;
+const eligibleOf = (doc, kind, cat) => poolOf(doc, kind, filterCategory(kind, cat)).filter(inPool);
 
-/** GET /api/ideas: the pool of one kind (all categories), the shared pick and why nothing may be pickable. */
+/** GET /api/ideas: every idea of one kind (all categories, with inPool and recent), the shared pick and how many can be picked. */
 export function viewIdeas(doc, { kind, category: cat } = {}, { today }) {
   requireKind(kind);
-  const { recent, eligible, exhausted } = standing(doc, kind, filterCategory(kind, cat), today);
-  const round = doc.rounds[kind];
+  const recent = recentIds(doc, today);
   return {
-    ideas: poolOf(doc, kind).map(idea => ({ ...idea, recent: recent.has(idea.id) })),
-    pick: round.pick, eligibleCount: eligible.length, exhausted, relax: round.relax,
+    ideas: poolOf(doc, kind).map(idea => ({ ...idea, inPool: inPool(idea), recent: recent.has(idea.id) })),
+    pick: doc.rounds[kind].pick, eligibleCount: eligibleOf(doc, kind, cat).length,
   };
 }
 
@@ -112,13 +110,14 @@ export function createIdea(doc, actor, body, { now, id = randomUUID }) {
   const slot = k => ({ x: 30 + (k % 3) * 310, y: 30 + Math.floor(k / 3) * 290 });
   let k = 0;
   while (taken.some(idea => Math.abs(idea.x - slot(k).x) < 220 && Math.abs(idea.y - slot(k).y) < 220)) k++;
-  const idea = { id: id(), kind, authorId: actor, ...fields, ...slot(k), color: PAPER[doc.ideas.length % PAPER.length], createdAt: now, updatedAt: now, version: 1 };
+  const idea = { id: id(), kind, authorId: actor, ...fields, ...slot(k), inPool: true, color: PAPER[doc.ideas.length % PAPER.length], createdAt: now, updatedAt: now, version: 1 };
   doc.ideas.push(idea);
   return idea;
 }
 
-export function updateIdea(doc, actor, ideaId, body, { now }) {
-  const idea = ownIdea(doc, actor, ideaId, body.version);
+/** Either member may edit any idea; archiving stays with the author. */
+export function updateIdea(doc, ideaId, body, { now }) {
+  const idea = versionedIdea(doc, ideaId, body.version);
   Object.assign(idea, ideaFields(idea.kind, body), { updatedAt: now, version: idea.version + 1 });
   return idea;
 }
@@ -129,7 +128,6 @@ export function archiveIdea(doc, actor, ideaId, body, { now }) {
   Object.assign(idea, { archivedAt: now, updatedAt: now, version: idea.version + 1 });
   const round = doc.rounds[idea.kind];
   if (round.pick?.ideaId === idea.id) round.pick = null;
-  round.skipped = round.skipped.filter(id => id !== idea.id);
   return idea;
 }
 
@@ -144,11 +142,19 @@ export function moveIdea(doc, ideaId, body) {
   return idea;
 }
 
-/** Uniform pick among eligible ideas. An existing shared pick is returned instead, so both devices agree. */
-export function pick(doc, actor, body, { now, today, random = Math.random, id = randomUUID }) {
+/** Either member may put any idea into the pool or take it out. Like moving, it does not bump the version. */
+export function setInPool(doc, ideaId, body) {
+  const idea = activeIdea(doc, ideaId);
+  if (typeof body.inPool !== 'boolean') throw fail(400, 'invalid_in_pool');
+  idea.inPool = body.inPool;
+  return idea;
+}
+
+/** Uniform pick among ideas in the pool. An existing shared pick is returned instead, so both devices agree. */
+export function pick(doc, actor, body, { now, random = Math.random, id = randomUUID }) {
   const kind = requireKind(body.kind), round = doc.rounds[kind];
   if (round.pick) return round.pick;
-  const { eligible } = standing(doc, kind, filterCategory(kind, body.category), today);
+  const eligible = eligibleOf(doc, kind, body.category);
   if (!eligible.length) throw fail(409, 'nothing_to_pick', 'Nothing left to pick');
   const chosen = eligible[Math.min(eligible.length - 1, Math.floor(random() * eligible.length))];
   round.pick = { id: id(), ideaId: chosen.id, byId: actor, at: now };
@@ -162,21 +168,12 @@ function currentPick(doc, body) {
   return round;
 }
 
+/** Clears the pick; the idea stays in the pool and may come up again. */
 export function skip(doc, body) {
-  const round = currentPick(doc, body);
-  round.skipped.push(round.pick.ideaId);
-  round.pick = null;
+  currentPick(doc, body).pick = null;
 }
 
-export function resetSkips(doc, body) {
-  doc.rounds[requireKind(body.kind)].skipped = [];
-}
-
-export function relax(doc, body) {
-  doc.rounds[requireKind(body.kind)].relax = true;
-}
-
-/** Records the occurrence and starts a new round (skips and relax end with it). */
+/** Records the occurrence and clears the pick; the idea stays in the pool. */
 export function done(doc, actor, body, { now, today, id = randomUUID }) {
   const round = currentPick(doc, body);
   if (!isDate(body.date) || body.date > today) throw fail(400, 'invalid_date');

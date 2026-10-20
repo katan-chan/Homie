@@ -42,16 +42,15 @@ test('new papers land on free slots of the board', () => {
   assert.deepEqual([add(doc, 'minhle', { title: 'D' }).x, doc.ideas.at(-1).y], [340, 30]);
 });
 
-test('only the author edits or archives, with version checks', () => {
+test('either member edits, only the author archives, with version checks', () => {
   const { doc, ideas: [a] } = sample();
-  assert.throws(() => d.updateIdea(doc, 'haiyen', a.id, { version: 1, title: 'X', category: 'Chơi' }, ctx()), { status: 403, code: 'not_author' });
-  assert.throws(() => d.updateIdea(doc, 'minhle', a.id, { version: 2, title: 'X', category: 'Chơi' }, ctx()), { status: 409, code: 'version_conflict' });
-  assert.throws(() => d.updateIdea(doc, 'minhle', a.id, { title: 'X', category: 'Chơi' }, ctx()), { status: 400, code: 'invalid_version' });
-  const updated = d.updateIdea(doc, 'minhle', a.id, { version: 1, title: 'X', category: 'Khám phá', minutes: 30 }, ctx());
-  assert.deepEqual([updated.title, updated.category, updated.minutes, updated.version], ['X', 'Khám phá', 30, 2]);
-  assert.throws(() => d.archiveIdea(doc, 'haiyen', a.id, { version: 2 }, ctx()), { status: 403 });
+  assert.throws(() => d.updateIdea(doc, a.id, { version: 2, title: 'X', category: 'Chơi' }, ctx()), { status: 409, code: 'version_conflict' });
+  assert.throws(() => d.updateIdea(doc, a.id, { title: 'X', category: 'Chơi' }, ctx()), { status: 400, code: 'invalid_version' });
+  const updated = d.updateIdea(doc, a.id, { version: 1, title: 'X', category: 'Khám phá', minutes: 30 }, ctx());
+  assert.deepEqual([updated.title, updated.category, updated.minutes, updated.version, updated.authorId], ['X', 'Khám phá', 30, 2, 'minhle']);
+  assert.throws(() => d.archiveIdea(doc, 'haiyen', a.id, { version: 2 }, ctx()), { status: 403, code: 'not_author' });
   d.archiveIdea(doc, 'minhle', a.id, { version: 2 }, ctx());
-  assert.throws(() => d.updateIdea(doc, 'minhle', a.id, { version: 3, title: 'Y', category: 'Chơi' }, ctx()), { status: 404 });
+  assert.throws(() => d.updateIdea(doc, a.id, { version: 3, title: 'Y', category: 'Chơi' }, ctx()), { status: 404 });
   assert.throws(() => d.moveIdea(doc, a.id, { x: 1, y: 1 }), { status: 404 });
   assert.equal(d.viewIdeas(doc, { kind: 'activity' }, ctx()).ideas.length, 2);
 });
@@ -99,40 +98,43 @@ test('done records the occurrence, the actor rating only, and starts a new round
   const { doc, ideas } = sample();
   let p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0 }));
   d.skip(doc, { kind: 'activity', pickId: p.id });
-  d.relax(doc, { kind: 'activity' });
-  p = d.pick(doc, 'haiyen', { kind: 'activity' }, ctx({ random: () => 0 }));
+  p = d.pick(doc, 'haiyen', { kind: 'activity' }, ctx({ random: () => 0.5 }));
   for (const [body, code] of [[{ date: '2026-10-07' }, 'invalid_date'], [{ date: '2026-02-30' }, 'invalid_date'], [{ date: '2026-10-06', text: 'x'.repeat(1001) }, 'invalid_text'], [{ date: '2026-10-06', rating: 6 }, 'invalid_rating']]) {
     assert.throws(() => d.done(doc, 'haiyen', { kind: 'activity', pickId: p.id, ...body }, ctx()), { status: 400, code });
   }
   const session = d.done(doc, 'haiyen', { kind: 'activity', pickId: p.id, date: '2026-10-05', text: 'Vui', rating: 5 }, ctx());
   assert.deepEqual([session.ideaId, session.byId, session.ratings, session.title, session.archived], [ideas[1].id, 'haiyen', { haiyen: 5 }, 'B', false]);
-  assert.deepEqual(doc.rounds.activity, { pick: null, skipped: [], relax: false });
+  assert.deepEqual(doc.rounds.activity, { pick: null });
+  assert.equal(d.viewIdeas(doc, { kind: 'activity' }, ctx()).eligibleCount, 3);
 });
 
-test('ideas done in the last 14 local days are not picked unless relaxed; exhausted explains why', () => {
+test('only ideas in the pool are picked; skip and Xong leave them in it', () => {
   const doc = d.emptyIdeas();
   const [a, b] = ['A', 'B'].map(title => add(doc, 'minhle', { title }));
-  doc.sessions.push({ id: 's-old', kind: 'activity', ideaId: a.id, byId: 'minhle', date: '2026-09-22', text: '', ratings: {}, at: '2026-09-22T01:00:00.000Z' });
-  doc.sessions.push({ id: 's-new', kind: 'activity', ideaId: b.id, byId: 'minhle', date: '2026-09-23', text: '', ratings: {}, at: '2026-09-23T01:00:00.000Z' });
-  // 2026-09-22 is 14 days before today (eligible again); 2026-09-23 is 13 days before (still recent).
-  let view = d.viewIdeas(doc, { kind: 'activity' }, ctx());
-  assert.deepEqual(view.ideas.map(i => i.recent), [false, true]);
-  assert.equal(view.eligibleCount, 1);
-  const p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0.9 }));
-  assert.equal(p.ideaId, a.id);
-  d.skip(doc, { kind: 'activity', pickId: p.id });
-  view = d.viewIdeas(doc, { kind: 'activity' }, ctx());
-  assert.deepEqual([view.eligibleCount, view.exhausted, view.relax], [0, { recent: 1, skipped: 1 }, false]);
-  assert.throws(() => d.pick(doc, 'minhle', { kind: 'activity' }, ctx()), { status: 409, code: 'nothing_to_pick' });
-  d.relax(doc, { kind: 'activity' });
+  // Ideas saved before the pool existed have no inPool and count as in it.
+  delete b.inPool;
+  assert.deepEqual(d.viewIdeas(doc, { kind: 'activity' }, ctx()).ideas.map(i => i.inPool), [true, true]);
+  const out = d.setInPool(doc, a.id, { inPool: false });
+  assert.deepEqual([out.inPool, out.version], [false, 1]);
+  assert.throws(() => d.setInPool(doc, a.id, { inPool: 'no' }), { status: 400, code: 'invalid_in_pool' });
   assert.equal(d.viewIdeas(doc, { kind: 'activity' }, ctx()).eligibleCount, 1);
-  d.resetSkips(doc, { kind: 'activity' });
-  assert.equal(d.viewIdeas(doc, { kind: 'activity' }, ctx()).eligibleCount, 2);
+  let p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0 }));
+  assert.equal(p.ideaId, b.id);
+  d.skip(doc, { kind: 'activity', pickId: p.id });
+  p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0 }));
+  assert.equal(p.ideaId, b.id);
+  d.done(doc, 'minhle', { kind: 'activity', pickId: p.id, date: '2026-10-06' }, ctx());
+  const view = d.viewIdeas(doc, { kind: 'activity' }, ctx());
+  assert.deepEqual([view.eligibleCount, view.ideas[1].recent], [1, true]);
+  d.setInPool(doc, b.id, { inPool: false });
+  assert.throws(() => d.pick(doc, 'minhle', { kind: 'activity' }, ctx()), { status: 409, code: 'nothing_to_pick' });
+  d.setInPool(doc, a.id, { inPool: true });
+  assert.equal(d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0.9 })).ideaId, a.id);
 });
 
 test('empty pool has nothing to pick', () => {
   const doc = d.emptyIdeas();
-  assert.deepEqual(d.viewIdeas(doc, { kind: 'seminar' }, ctx()), { ideas: [], pick: null, eligibleCount: 0, exhausted: { recent: 0, skipped: 0 }, relax: false });
+  assert.deepEqual(d.viewIdeas(doc, { kind: 'seminar' }, ctx()), { ideas: [], pick: null, eligibleCount: 0 });
   assert.throws(() => d.pick(doc, 'minhle', { kind: 'seminar' }, ctx()), { code: 'nothing_to_pick' });
 });
 
@@ -140,7 +142,6 @@ test('archiving the current pick clears it; history keeps a neutral reference', 
   const { doc, ideas: [a] } = sample();
   let p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0 }));
   d.done(doc, 'minhle', { kind: 'activity', pickId: p.id, date: '2026-10-01' }, ctx());
-  d.relax(doc, { kind: 'activity' });
   p = d.pick(doc, 'minhle', { kind: 'activity' }, ctx({ random: () => 0 }));
   assert.equal(p.ideaId, a.id);
   d.archiveIdea(doc, 'minhle', a.id, { version: 1 }, ctx());

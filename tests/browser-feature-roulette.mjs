@@ -27,7 +27,6 @@ await idea('haiyen', 'activity', 'Viết thư tay cho nhau', 'Tụi mình');
 // Three finished activities by Yến, so the history needs "Xem thêm"; then Yến leaves a pick for both to see.
 const yen = await idea('haiyen', 'activity', 'Nấu một món mới', 'Tự làm');
 for (let i = 0; i < 3; i++) {
-  await api('haiyen', '/api/ideas/relax', 'POST', { kind: 'activity' });
   const { pick } = await api('haiyen', '/api/ideas/pick', 'POST', { kind: 'activity', category: 'Tự làm', requestId: randomUUID() });
   await api('haiyen', '/api/ideas/done', 'POST', { kind: 'activity', pickId: pick.id, date: `2026-0${i + 1}-15`, text: `Lần ${i + 1}`, requestId: randomUUID() });
 }
@@ -69,9 +68,18 @@ try {
     await ev('location.hash="seminar"');
     await signIn('minhle');
     await open('seminar');
-    await check('seminar page title and copy', `${text('.roulette-title')}==="Gợi ý chủ đề seminar"&&${text(pickNote)}==="2 mục có thể bốc"&&${hasButton('🌱 Gieo một hạt')}`);
+    await check('seminar page title and copy', `${text('.roulette-title')}==="Gợi ý chủ đề seminar"&&${text(pickNote)}==="2 mục trong pool"&&${hasButton('🌱 Gieo một hạt')}`);
     await check('desktop pool opens as a board with both papers', 'document.querySelectorAll(".roulette-world .roulette-paper").length===2&&document.querySelector(".roulette-seg [aria-pressed=true]").textContent==="Mặt bảng"');
-    await check('only the author can edit or archive a paper', '[...document.querySelectorAll(".roulette-paper")].every(p=>!!p.querySelector(".roulette-actions")===(p.querySelector("b").textContent==="Minh"))');
+    const labels = 'p=>[...p.querySelectorAll(".roulette-actions button")].map(b=>b.textContent).join()';
+    await check('both edit and pool any paper; only the author archives', `[...document.querySelectorAll(".roulette-paper")].every(p=>(${labels})(p)===(p.querySelector("b").textContent==="Minh"?"Sửa,Bỏ khỏi pool,Lưu trữ":"Sửa,Bỏ khỏi pool"))`);
+
+    // Minh edits Yến's topic: the edit sheet opens filled and the paper shows the new title.
+    await ev('[...document.querySelectorAll(".roulette-paper")].find(p=>p.querySelector("b").textContent==="Yến").querySelector(".roulette-actions button").click()');
+    await until('!!document.querySelector("dialog.roulette-sheet[open] [name=title]")');
+    await check('edit sheet opens with the current title', `document.querySelector("dialog [name=title]").value==="Nếu con người sống 500 năm?"`);
+    await ev('document.querySelector("dialog [name=title]").value="Nếu con người sống 500 năm thì sao?";document.querySelector("dialog form").requestSubmit()');
+    await until(`!document.querySelector("dialog.roulette-sheet")&&[...document.querySelectorAll(".roulette-paper h3")].some(h=>h.textContent==="Nếu con người sống 500 năm thì sao?")`);
+    checks++;
 
     // Pick: the server chooses; Yến sees the same shared pick.
     await clickText('🌱 Gieo một hạt');
@@ -84,11 +92,10 @@ try {
     await check('picked paper is highlighted', `document.querySelector(".roulette-paper.is-picked h3").textContent===${JSON.stringify(shown)}`);
 
     await clickText('Bỏ qua');
-    await until(`${text(pickNote)}==="1 mục có thể bốc"`);
+    await until(`${text(pickNote)}==="2 mục trong pool"`);
     await check('focus stays in the pick panel after skip', '!!document.activeElement.closest(".roulette-pick")');
     await clickText('🌱 Gieo một hạt');
     await until(`${text(pickNote)}==="Bạn đã chọn cho tụi mình"`);
-    await check('a skipped idea is not picked again this round', `${text('.roulette-pick-title')}!==${JSON.stringify(shown)}`);
     const doneTitle = await ev(text('.roulette-pick-title'));
 
     await clickText('Xong rồi');
@@ -99,18 +106,14 @@ try {
     await check('history shows note and per-person ratings', `${text('.roulette-session')}.includes("Minh: Yến vẽ lá đẹp hơn")&&${text('.roulette-session')}.includes("Minh thích mức 4/5 · Yến chưa chấm")`);
     await check('done toast', `${text('.roulette-toast')}==="Đã ghi lại, có trong lịch. Vui quá!"`);
 
-    // Exhausted: one done recently, the other skipped.
-    await until(`${text(pickNote)}==="1 mục có thể bốc"`);
-    await clickText('🌱 Gieo một hạt'); await until(hasButton('Bỏ qua'));
-    await clickText('Bỏ qua');
-    await until(`${text('.roulette-pick')}.startsWith("Chưa còn gì để bốc: 1 mục vừa làm trong 14 ngày qua, 1 mục đã bỏ qua lượt này.")`);
-    await check('exhausted state offers both ways out', `${hasButton('Đặt lại các mục đã bỏ qua')}&&${hasButton('Cho bốc cả mục vừa làm')}`);
-    await clickText('Đặt lại các mục đã bỏ qua');
-    await until(`${text(pickNote)}==="1 mục có thể bốc"`);
-    await clickText('🌱 Gieo một hạt'); await until(hasButton('Bỏ qua'));
-    await clickText('Bỏ qua'); await until(hasButton('Cho bốc cả mục vừa làm'));
-    await clickText('Cho bốc cả mục vừa làm');
-    await until(`${text(pickNote)}==="1 mục có thể bốc (gồm cả mục vừa làm)"`);
+    // Pool: skip and Xong keep both papers in it; only "Bỏ khỏi pool" takes one out.
+    await until(`${text(pickNote)}==="2 mục trong pool"`);
+    await clickText('Bỏ khỏi pool', '.roulette-pool'); await until(`${text(pickNote)}==="1 mục trong pool"`);
+    await clickText('Bỏ khỏi pool', '.roulette-pool');
+    await until(`${text(pickNote)}.startsWith("Pool đang trống.")`);
+    await check('papers out of the pool are marked', `document.querySelectorAll(".roulette-paper.is-out").length===2&&${text('.roulette-toast')}==="Đã bỏ khỏi pool"`);
+    await clickText('Cho vào pool', '.roulette-pool'); await until(`${text(pickNote)}==="1 mục trong pool"`);
+    await clickText('Cho vào pool', '.roulette-pool'); await until(`${text(pickNote)}==="2 mục trong pool"`);
     checks++;
 
     // Rate: each person rates their own enjoyment.
@@ -183,6 +186,6 @@ try {
     await open('seminar');
     await check('Yến sees the shared pick by Minh', `${text(pickNote)}==="Minh đã chọn cho tụi mình"`);
     await check('Yến rates only her own enjoyment', `${text('.roulette-session')}.includes("Minh thích mức 5/5 · Yến chưa chấm")`);
-    console.log(`PASS browser roulette: ${checks} checks (shared pick, skip, done, exhausted, rate, history, idea sheet, board/list, drag, chips, 390/1440, two accounts)`);
+    console.log(`PASS browser roulette: ${checks} checks (shared pick, skip, done, pool, rate, history, idea sheet, board/list, drag, chips, 390/1440, two accounts)`);
   }, undefined, { origin: fixture.origin });
 } finally { await fixture.close(); }

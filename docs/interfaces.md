@@ -186,22 +186,22 @@ Dịp cả hai cùng thấy; chỉ tác giả sửa hoặc lưu trữ (403 `not_
 
 ### Seminar và Hoạt động chung: /api/ideas
 
-Document `ideas`: `{ ideas, sessions, rounds: { seminar, activity }, requests }`. Idea `{ id, kind: "seminar"|"activity", authorId, title (trim, 1–120), desc (≤2000), category, minutes (1–1440 hoặc null), x, y, color, createdAt, updatedAt, version, archivedAt? }`. Seminar luôn có category `Học - Seminar`; activity chọn một trong `Trò chuyện`, `Sáng tạo`, `Khám phá`, `Chơi`, `Tự làm`, `Tụi mình`, `Nhảm nhí`. Mỗi kind có một lượt chung `{ pick: { id, ideaId, byId, at } | null, skipped, relax }`. Session (lần đã làm) `{ id, kind, ideaId, byId, date, text (≤1000), ratings: { <account>: 1–5 }, at }`, response thêm `title` và `archived` của idea.
+Document `ideas`: `{ ideas, sessions, rounds: { seminar, activity }, requests }`. Idea `{ id, kind: "seminar"|"activity", authorId, title (trim, 1–120), desc (≤2000), category, minutes (1–1440 hoặc null), x, y, inPool, color, createdAt, updatedAt, version, archivedAt? }`; thiếu `inPool` (dữ liệu cũ) tính là trong pool. Seminar luôn có category `Học - Seminar`; activity chọn một trong `Trò chuyện`, `Sáng tạo`, `Khám phá`, `Chơi`, `Tự làm`, `Tụi mình`, `Nhảm nhí`. Mỗi kind có một lượt chung `{ pick: { id, ideaId, byId, at } | null }` (document cũ có thể còn `skipped`/`relax`, server bỏ qua). Session (lần đã làm) `{ id, kind, ideaId, byId, date, text (≤1000), ratings: { <account>: 1–5 }, at }`, response thêm `title` và `archived` của idea.
 
-View trả về bởi GET và các lệnh lượt: `{ ideas, pick, eligibleCount, exhausted: { recent, skipped }, relax }`. `ideas` là mọi idea chưa lưu trữ của kind (mọi category) kèm `recent` (có session trong 14 ngày gần nhất tính cả hôm nay, hoặc ngày sau hôm nay). Có thể bốc: chưa lưu trữ, chưa bỏ qua trong lượt, không `recent` trừ khi `relax`; `category` tùy chọn thu hẹp `eligibleCount`/`exhausted` và lượt bốc.
+View trả về bởi GET và các lệnh lượt: `{ ideas, pick, eligibleCount }`. `ideas` là mọi idea chưa lưu trữ của kind (mọi category) kèm `inPool` và `recent` (có session trong 14 ngày gần nhất tính cả hôm nay, hoặc ngày sau hôm nay; chỉ để hiển thị). Có thể bốc: chưa lưu trữ và `inPool`; bốc, bỏ qua, xong không đổi `inPool`. `category` tùy chọn thu hẹp `eligibleCount` và lượt bốc.
 
 | Request | Kết quả |
 | --- | --- |
 | GET /api/ideas?kind=[&category=] | View; thiếu/sai kind 400 `invalid_kind` |
 | GET /api/ideas/sessions[?kind=][&from=&to=][&cursor=][&limit=] | `{ items, nextCursor }` mới nhất trước (`date`, `at`, `id`); limit 1–100, mặc định 10; `cursor` là id cuối trang trước (lạ 400 `invalid_cursor`) |
 | POST /api/ideas | `{ requestId, kind, title, desc?, category?, minutes? }` → 201 `{ idea }`; server đặt x/y vào ô trống đầu tiên của lưới 3 cột và màu giấy |
-| PUT /api/ideas/:id | Tác giả: `{ version, title, desc?, category?, minutes? }` → `{ idea }`; thay toàn bộ field, thiếu `desc`/`minutes` là xoá |
+| PUT /api/ideas/:id | Ai cũng được: `{ version, title, desc?, category?, minutes? }` → `{ idea }`; thay toàn bộ field, thiếu `desc`/`minutes` là xoá |
 | POST /api/ideas/:id/archive | Tác giả: `{ version }` → `{ idea }`; ra khỏi kho và lượt (pick đang là nó thì bỏ pick), lịch sử giữ |
 | PUT /api/ideas/:id/position | Ai cũng được: `{ x, y }` → `{ idea }`; kẹp 0–4000, làm tròn, không đổi version |
-| POST /api/ideas/pick | `{ requestId, kind, category? }` → View. Đã có pick chung thì giữ nguyên; không thì bốc đều ngẫu nhiên, hết 409 `nothing_to_pick`. requestId lặp không bốc lại |
-| POST /api/ideas/skip | `{ kind, pickId, category? }` → View; `pickId` khác pick hiện tại 409 `pick_changed` |
-| POST /api/ideas/reset-skips, /relax | `{ kind, category? }` → View; xoá danh sách bỏ qua / cho bốc cả mục vừa làm tới hết lượt |
-| POST /api/ideas/done | `{ requestId, kind, pickId, date, text?, rating? }` → 201 `{ session }`; `date` không sau hôm nay (400 `invalid_date`); mở lượt mới (hết skip và relax) |
+| PUT /api/ideas/:id/pool | Ai cũng được: `{ inPool: boolean }` → `{ idea }`; sai kiểu 400 `invalid_in_pool`; không đổi version |
+| POST /api/ideas/pick | `{ requestId, kind, category? }` → View. Đã có pick chung thì giữ nguyên; không thì bốc đều ngẫu nhiên trong pool, pool trống 409 `nothing_to_pick`. requestId lặp không bốc lại |
+| POST /api/ideas/skip | `{ kind, pickId, category? }` → View; bỏ pick, tờ vẫn trong pool; `pickId` khác pick hiện tại 409 `pick_changed` |
+| POST /api/ideas/done | `{ requestId, kind, pickId, date, text?, rating? }` → 201 `{ session }`; `date` không sau hôm nay (400 `invalid_date`); bỏ pick, tờ vẫn trong pool |
 | PUT /api/ideas/sessions/:id/rating | `{ rating }` (1–5) → `{ session }`; chỉ ghi điểm của chính người gọi |
 
 Hai thành viên thấy mọi idea và session; chỉ tác giả sửa hoặc lưu trữ idea (403 `not_author`); idea không có hoặc đã lưu trữ 404. Di chuyển, skip, reset-skips, relax và chấm điểm không nhận version. Mã khác: 400 `invalid_body`, `invalid_request_id`, `invalid_title`, `invalid_desc`, `invalid_category`, `invalid_minutes`, `invalid_rating`, `invalid_version`, `invalid_position`, `invalid_text`, `invalid_limit`, `invalid_range`; 409 `version_conflict`.

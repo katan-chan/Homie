@@ -59,8 +59,6 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
             return view(doc, body);
           });
         case 'skip': return send(200, doc => { domain.skip(doc, body); return view(doc, body); });
-        case 'reset-skips': return send(200, doc => { domain.resetSkips(doc, body); return view(doc, body); });
-        case 'relax': return send(200, doc => { domain.relax(doc, body); return view(doc, body); });
         case 'done': return sendJson(res, 201, { session: await once(actor, body, doc => domain.done(doc, actor, body, context())) });
       }
     }
@@ -68,10 +66,13 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
       return send(200, doc => ({ idea: domain.archiveIdea(doc, actor, first, body, context()) }));
     }
     if (method === 'PUT' && size === 1 && first !== 'sessions') {
-      return send(200, doc => ({ idea: domain.updateIdea(doc, actor, first, body, context()) }));
+      return send(200, doc => ({ idea: domain.updateIdea(doc, first, body, context()) }));
     }
     if (method === 'PUT' && size === 2 && second === 'position') {
       return send(200, doc => ({ idea: domain.moveIdea(doc, first, body) }));
+    }
+    if (method === 'PUT' && size === 2 && second === 'pool') {
+      return send(200, doc => ({ idea: domain.setInPool(doc, first, body) }));
     }
     if (method === 'PUT' && size === 3 && first === 'sessions' && third === 'rating') {
       return send(200, doc => ({ session: domain.rateSession(doc, actor, second, body) }));

@@ -112,23 +112,12 @@ export function mountRoulette(container, { kind, signal }) {
     } else if (!visibleIdeas().length) {
       nodes.push(note('Chưa có ý tưởng nào thuộc loại này.'));
     } else if (!v.eligibleCount) {
-      nodes.push(el('p', '', `Chưa còn gì để bốc: ${v.exhausted.recent} mục vừa làm trong 14 ngày qua, ${v.exhausted.skipped} mục đã bỏ qua lượt này.`));
-      const reset = button('Đặt lại các mục đã bỏ qua');
-      reset.disabled = state.busy;
-      reset.addEventListener('click', () => act('reset-skips', { kind }));
-      const row = actionRow(reset);
-      if (!v.relax) {
-        const relax = button('Cho bốc cả mục vừa làm');
-        relax.disabled = state.busy;
-        relax.addEventListener('click', () => act('relax', { kind }));
-        row.append(relax);
-      }
-      nodes.push(row);
+      nodes.push(note('Pool đang trống. Bấm "Cho vào pool" trên tờ giấy để bốc được tờ đó.'));
     } else {
-      nodes.push(note(`${v.eligibleCount} mục có thể bốc${v.relax ? ' (gồm cả mục vừa làm)' : ''}`));
+      nodes.push(note(`${v.eligibleCount} mục trong pool`));
       const go = button(state.busy ? 'Đang chọn…' : K.pick, 'roulette-btn primary roulette-go');
       go.disabled = state.busy;
-      go.addEventListener('click', () => act('pick', { kind, category: state.category || undefined, requestId: crypto.randomUUID() }, { conflict: 'Chưa còn gì để bốc.', reveal: true }));
+      go.addEventListener('click', () => act('pick', { kind, category: state.category || undefined, requestId: crypto.randomUUID() }, { conflict: 'Pool đang trống.', reveal: true }));
       nodes.push(go);
     }
     pickPanel.replaceChildren(...nodes);
@@ -189,6 +178,16 @@ export function mountRoulette(container, { kind, signal }) {
     renderPool(poolHost, {
       ideas, mode: state.mode, pickedId: state.view.pick?.ideaId, me,
       onEdit: idea => openIdea(idea),
+      onPool: async idea => {
+        try {
+          await call(`/api/ideas/${encodeURIComponent(idea.id)}/pool`, 'PUT', { inPool: !idea.inPool });
+          toast(idea.inPool ? 'Đã bỏ khỏi pool' : 'Đã cho vào pool');
+        } catch (error) {
+          if (!alive()) return;
+          toast(problem(error));
+        }
+        await loadView();
+      },
       onArchive: idea => confirmArchive(root, {
         signal: controller.signal,
         save: async () => {

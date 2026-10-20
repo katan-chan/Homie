@@ -50,7 +50,7 @@ test('ideas API: auth, shared pick, retries, done, rating, history and persisten
   assert.deepEqual([forbidden.status, forbidden.body.code], [403, 'forbidden']);
   const empty = await call('minhle', '/api/ideas?kind=seminar');
   assert.equal(empty.cache, 'no-store');
-  assert.deepEqual(empty.body, { ideas: [], pick: null, eligibleCount: 0, exhausted: { recent: 0, skipped: 0 }, relax: false });
+  assert.deepEqual(empty.body, { ideas: [], pick: null, eligibleCount: 0 });
 
   const requestId = randomUUID();
   const created = await call('minhle', '/api/ideas', { method: 'POST', body: { requestId, kind: 'seminar', title: 'Cách cây quang hợp', minutes: 45 } });
@@ -59,10 +59,16 @@ test('ideas API: auth, shared pick, retries, done, rating, history and persisten
   assert.equal(retried.body.idea.id, created.body.idea.id);
   assert.equal((await call('minhle', '/api/ideas', { method: 'POST', body: { kind: 'seminar', title: 'x' } })).body.code, 'invalid_request_id');
   const idea = created.body.idea;
-  assert.equal((await call('haiyen', `/api/ideas/${idea.id}`, { method: 'PUT', body: { version: 1, title: 'Y' } })).status, 403);
   assert.equal((await call('minhle', `/api/ideas/${idea.id}`, { method: 'PUT', body: { version: 9, title: 'Y' } })).body.code, 'version_conflict');
+  const edited = await call('haiyen', `/api/ideas/${idea.id}`, { method: 'PUT', body: { version: 1, title: 'Cách cây quang hợp ban đêm', minutes: 45 } });
+  assert.deepEqual([edited.status, edited.body.idea.version, edited.body.idea.authorId], [200, 2, 'minhle']);
+  assert.equal((await call('haiyen', `/api/ideas/${idea.id}/archive`, { method: 'POST', body: { version: 2 } })).status, 403);
   const moved = await call('haiyen', `/api/ideas/${idea.id}/position`, { method: 'PUT', body: { x: 120, y: 80 } });
-  assert.deepEqual([moved.body.idea.x, moved.body.idea.y, moved.body.idea.version], [120, 80, 1]);
+  assert.deepEqual([moved.body.idea.x, moved.body.idea.y, moved.body.idea.version], [120, 80, 2]);
+  const outOfPool = await call('haiyen', `/api/ideas/${idea.id}/pool`, { method: 'PUT', body: { inPool: false } });
+  assert.deepEqual([outOfPool.body.idea.inPool, outOfPool.body.idea.version], [false, 2]);
+  assert.equal((await call('haiyen', '/api/ideas/pick', { method: 'POST', body: { kind: 'seminar', requestId: randomUUID() } })).body.code, 'nothing_to_pick');
+  assert.equal((await call('minhle', `/api/ideas/${idea.id}/pool`, { method: 'PUT', body: { inPool: true } })).body.idea.inPool, true);
 
   const pickId = randomUUID();
   const picked = await call('haiyen', '/api/ideas/pick', { method: 'POST', body: { kind: 'seminar', requestId: pickId } });
@@ -71,11 +77,10 @@ test('ideas API: auth, shared pick, retries, done, rating, history and persisten
   assert.deepEqual(seen.body.pick, picked.body.pick);
 
   const skipped = await call('minhle', '/api/ideas/skip', { method: 'POST', body: { kind: 'seminar', pickId: picked.body.pick.id } });
-  assert.deepEqual([skipped.body.pick, skipped.body.eligibleCount, skipped.body.exhausted.skipped], [null, 0, 1]);
+  assert.deepEqual([skipped.body.pick, skipped.body.eligibleCount], [null, 1]);
   // A late retry of the first pick does not draw again.
   assert.equal((await call('haiyen', '/api/ideas/pick', { method: 'POST', body: { kind: 'seminar', requestId: pickId } })).body.pick, null);
-  assert.equal((await call('haiyen', '/api/ideas/pick', { method: 'POST', body: { kind: 'seminar', requestId: randomUUID() } })).body.code, 'nothing_to_pick');
-  assert.equal((await call('haiyen', '/api/ideas/reset-skips', { method: 'POST', body: { kind: 'seminar' } })).body.eligibleCount, 1);
+  assert.equal((await call('haiyen', '/api/ideas/reset-skips', { method: 'POST', body: { kind: 'seminar' } })).status, 404);
 
   const again = (await call('minhle', '/api/ideas/pick', { method: 'POST', body: { kind: 'seminar', requestId: randomUUID() } })).body.pick;
   const today = localDate(new Date().toISOString());
@@ -85,8 +90,7 @@ test('ideas API: auth, shared pick, retries, done, rating, history and persisten
   assert.equal((await call('minhle', '/api/ideas/done', { method: 'POST', body: doneBody })).body.session.id, done.body.session.id);
   assert.equal((await call('haiyen', '/api/ideas/done', { method: 'POST', body: { ...doneBody, requestId: randomUUID() } })).body.code, 'pick_changed');
   const after = await call('haiyen', '/api/ideas?kind=seminar');
-  assert.deepEqual([after.body.ideas[0].recent, after.body.eligibleCount, after.body.exhausted.recent], [true, 0, 1]);
-  assert.equal((await call('haiyen', '/api/ideas/relax', { method: 'POST', body: { kind: 'seminar' } })).body.eligibleCount, 1);
+  assert.deepEqual([after.body.ideas[0].recent, after.body.eligibleCount], [true, 1]);
 
   const rated = await call('haiyen', `/api/ideas/sessions/${done.body.session.id}/rating`, { method: 'PUT', body: { rating: 5 } });
   assert.deepEqual(rated.body.session.ratings, { minhle: 4, haiyen: 5 });
@@ -94,7 +98,7 @@ test('ideas API: auth, shared pick, retries, done, rating, history and persisten
   await stop();
   ({ call, stop } = await start(t, dataDir));
   const history = await call('haiyen', `/api/ideas/sessions?kind=seminar&from=${today}&to=${today}`);
-  assert.deepEqual(history.body.items.map(s => [s.title, s.ratings]), [['Cách cây quang hợp', { minhle: 4, haiyen: 5 }]]);
+  assert.deepEqual(history.body.items.map(s => [s.title, s.ratings]), [['Cách cây quang hợp ban đêm', { minhle: 4, haiyen: 5 }]]);
   assert.equal(history.body.nextCursor, null);
   assert.equal((await call('haiyen', '/api/ideas/sessions?from=2026-01-01')).body.code, 'invalid_range');
   assert.equal((await call('haiyen', '/api/ideas/nope')).status, 404);

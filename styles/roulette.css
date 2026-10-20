@@ -43,6 +43,7 @@
 .roulette-world{position:relative}
 .roulette-paper{position:absolute;width:270px;border:1px solid #d6b7a6;border-radius:4px 6px 10px 4px;box-shadow:2px 5px 10px #7957441a;display:grid;gap:6px;padding:0 12px 12px;min-width:0}
 .roulette-paper.is-dragging{z-index:2;box-shadow:4px 12px 24px #79574433}
+.roulette-paper.is-out{border-style:dashed;filter:grayscale(.7)}
 .roulette-paper.is-picked{outline:4px solid #d2a12c;outline-offset:3px}
 .roulette-paper h3{font:600 17px var(--r-serif);margin:0;overflow-wrap:anywhere}
 .roulette-paper-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:44px;font-size:13px;color:#6f4e5a}
