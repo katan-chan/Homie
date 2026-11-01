@@ -1,14 +1,12 @@
 // Khoảnh khắc: photobooth strips, snaps and uploads both members share. Records live in the "moments" document; image
 // files live beside note media (bucket path moments/…, or <dataDir>/moments/ locally) and only ever leave through here.
-import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, open, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { handleErrors, httpError, readJson, requireMember, requireWrite, sendJson } from './http.js';
 import { createDocStore, recalled, rememberRequest } from './doc-store.js';
 import { localDate, localTime, parseRange } from './dates.js';
 import { imageInfo } from './image-info.js';
+import { createFiles } from './files.js';
 
 export const KINDS = ['booth', 'snap', 'upload'];
 export const LIMITS = Object.freeze({ photoBytes: 400 * 1024, thumbBytes: 40 * 1024, photoWidth: 1920, photoHeight: 2400, thumbSide: 400, caption: 40, body: 640 * 1024 });
@@ -53,38 +51,9 @@ const view = record => ({
   fileUrl: `/api/moments/${record.id}/file`, thumbUrl: `/api/moments/${record.id}/thumb`,
 });
 
-function localFiles(dataDir) {
-  const path = name => join(dataDir, name);
-  return {
-    async put(name, buffer) {
-      await mkdir(join(dataDir, 'moments'), { recursive: true, mode: 0o700 });
-      const temporary = `${path(name)}.${randomBytes(8).toString('hex')}.tmp`;
-      try { await writeFile(temporary, buffer, { mode: 0o600, flag: 'wx' }); await rename(temporary, path(name)); }
-      finally { await rm(temporary, { force: true }); }
-    },
-    async open(name) {
-      try { const handle = await open(path(name), 'r'); return { size: (await handle.stat()).size, stream: handle.createReadStream() }; }
-      catch { return null; }
-    },
-    async remove(names) { await Promise.all(names.map(name => rm(path(name), { force: true }))); },
-  };
-}
-
-function remoteFiles(remote) {
-  return {
-    put: (name, buffer, type) => remote.putFile(name, buffer, type),
-    async open(name) {
-      const response = await remote.getFile(name);
-      if (!response) return null;
-      return { size: Number(response.headers.get('content-length')) || null, stream: Readable.fromWeb(response.body), cancel: () => response.body?.cancel() };
-    },
-    remove: names => remote.removeFiles(names),
-  };
-}
-
 export function create({ auth, allowedOrigins, dataDir, remote }) {
   const store = createDocStore({ key: 'moments', dataDir, remote, empty: emptyMoments, validate: validateMoments });
-  const files = remote ? remoteFiles(remote) : localFiles(dataDir);
+  const files = createFiles({ dataDir, remote });
 
   async function body(req, limit) {
     const value = await readJson(req, { limit });
