@@ -13,6 +13,15 @@ export function validateProfile(body) {
   return { displayName, bio };
 }
 
+const AVATAR_TYPES = ['image/webp', 'image/jpeg'];
+
+/** { version, mime } of a stored avatar (set only through the avatar route), or null. */
+export function validateAvatar(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2) return null;
+  if (!Number.isInteger(value.version) || value.version < 1 || !AVATAR_TYPES.includes(value.mime)) return null;
+  return { version: value.version, mime: value.mime };
+}
+
 /** remote: optional Supabase storage (backend/supabase.js); otherwise profiles.json in dataDir. */
 export function createProfiles(dataDir, remote = null) {
   const path = join(dataDir, 'profiles.json');
@@ -28,11 +37,12 @@ export function createProfiles(dataDir, remote = null) {
       profiles = {};
       for (const id of accountIds) {
         const record = saved[id];
-        if (!record || Object.keys(record).length !== 3 || record.id !== id) throw new Error('Invalid profile');
-        const { id: ignored, ...fields } = record;
+        if (!record || record.id !== id) throw new Error('Invalid profile');
+        const { id: ignored, avatar, ...fields } = record;
         const text = validateProfile(fields);
-        if (!text) throw new Error('Invalid profile');
-        profiles[id] = { id, ...text };
+        const picture = avatar === undefined ? null : validateAvatar(avatar);
+        if (!text || (avatar !== undefined && !picture)) throw new Error('Invalid profile');
+        profiles[id] = picture ? { id, ...text, avatar: picture } : { id, ...text };
       }
     } catch (error) {
       if (error.code !== 'ENOENT') {
@@ -53,29 +63,35 @@ export function createProfiles(dataDir, remote = null) {
     if (loadError) throw new Error('Profile storage is unavailable');
   }
 
+  // Every write rewrites the whole document, one at a time.
+  function write(id, change) {
+    const operation = writes.then(async () => {
+      await ensureLoaded();
+      const next = { ...profiles, [id]: change(profiles[id]) };
+      if (remote) { await remote.putDocument('profiles', next); profiles = next; return { ...profiles[id] }; }
+      await mkdir(dataDir, { recursive: true, mode: 0o700 });
+      const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`;
+      try {
+        await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+        await rename(temporary, path);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      profiles = next;
+      return { ...profiles[id] };
+    });
+    writes = operation.catch(() => {});
+    return operation;
+  }
+
   return {
     async get(id) {
       await ensureLoaded();
       return { ...profiles[id] };
     },
-    async update(id, fields) {
-      const operation = writes.then(async () => {
-        await ensureLoaded();
-        const next = { ...profiles, [id]: { id, ...fields } };
-        if (remote) { await remote.putDocument('profiles', next); profiles = next; return { ...profiles[id] }; }
-        await mkdir(dataDir, { recursive: true, mode: 0o700 });
-        const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`;
-        try {
-          await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-          await rename(temporary, path);
-        } finally {
-          await rm(temporary, { force: true });
-        }
-        profiles = next;
-        return { ...profiles[id] };
-      });
-      writes = operation.catch(() => {});
-      return operation;
-    },
+    /** Text fields only; the avatar stays. */
+    update: (id, fields) => write(id, current => ({ ...current, ...fields, id })),
+    /** avatar { version, mime }, or null to remove it. */
+    setAvatar: (id, avatar) => write(id, ({ avatar: old, ...rest }) => (avatar ? { ...rest, avatar } : rest)),
   };
 }
