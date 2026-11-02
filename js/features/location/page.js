@@ -62,6 +62,15 @@ export function mountLocation(container, { signal }) {
   handle.type = 'button';
   handle.setAttribute('aria-controls', 'location-details');
   handle.append(el('span'));
+  const close = el('button', 'location-close', '×');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Ẩn hết, chỉ xem bản đồ');
+  const sheetTop = el('div', 'location-sheet-top');
+  sheetTop.append(handle, close);
+  // Shown instead of the head and the sheet when only the map is wanted.
+  const show = el('button', 'secondary-button location-show', 'Hiện thông tin');
+  show.type = 'button';
+  show.hidden = true;
   const sheetBody = el('div', 'location-sheet-body');
   const peek = el('div', 'location-peek');
   const status = el('p', 'location-status form-message');
@@ -71,8 +80,8 @@ export function mountLocation(container, { signal }) {
   const panel = el('div', 'location-panel');
   panel.id = 'location-details';
   sheetBody.append(peek, status, more, panel);
-  sheet.append(handle, sheetBody);
-  page.append(mapEl, mapNote, cross, head, sheet);
+  sheet.append(sheetTop, sheetBody);
+  page.append(mapEl, mapNote, cross, head, sheet, show);
   container.replaceChildren(page);
 
   let L = null, map = null, layer = null, open = false;
@@ -96,12 +105,21 @@ export function mountLocation(container, { signal }) {
   }
   handle.addEventListener('click', () => setOpen(!open), { signal: on });
   more.addEventListener('click', () => setOpen(true), { signal: on });
+  function setBare(bare) {
+    head.hidden = sheet.hidden = bare;
+    show.hidden = !bare;
+    // Drop the zoom buttons at once; the size observer catches up when the sheet comes back.
+    if (bare) page.style.setProperty('--sheet-h', '0px');
+    (bare ? show : close).focus();
+  }
+  close.addEventListener('click', () => setBare(true), { signal: on });
+  show.addEventListener('click', () => setBare(false), { signal: on });
 
   // Points are centred in the part of the map the sheet leaves free: left of the corner card on wide screens (matches
   // the 900 px break in location.css), above the bottom sheet otherwise. On a phone the sheet folds first.
   const narrow = () => matchMedia('(max-width: 600px)').matches;
   const cornerCard = () => matchMedia('(min-width: 901px)').matches;
-  const covered = () => (cornerCard() ? [page.clientWidth - sheet.getBoundingClientRect().left + page.getBoundingClientRect().left, 0] : [0, sheet.offsetHeight]);
+  const covered = () => (sheet.hidden ? [0, 0] : cornerCard() ? [page.clientWidth - sheet.getBoundingClientRect().left + page.getBoundingClientRect().left, 0] : [0, sheet.offsetHeight]);
   function centerOn(latlng, zoom) {
     if (!map) return;
     if (narrow() && open) setOpen(false);
@@ -411,6 +429,7 @@ export function mountLocation(container, { signal }) {
   function showAddPlace(latlng) {
     const host = panel.querySelector('.location-add');
     if (!host || !map) return;
+    if (sheet.hidden) setBare(false);
     setOpen(true);
     cross.hidden = Boolean(latlng);
     host.replaceChildren(el('p', 'location-hint', latlng ? 'Đặt tên cho chỗ bạn vừa giữ trên bản đồ:' : 'Kéo bản đồ để dấu + nằm đúng chỗ, rồi đặt tên:'));

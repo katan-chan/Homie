@@ -119,8 +119,11 @@ try {
     await until('fetch("/api/places",{credentials:"include"}).then(r=>r.json()).then(d=>d.places.some(p=>p.name==="Quán cà phê"))');
     checks++;
 
-    // Coming back to the app does not wipe a name being typed in the timeline.
+    // Coming back to the app does not wipe a name being typed in the timeline. Saving the place redraws the timeline
+    // first; wait for that, or the redraw takes the name box away.
+    await until('!document.querySelector(".location-add input")');
     await ev('[...document.querySelectorAll(".location-stop button")].find(b=>b.textContent==="Đổi tên").click()');
+    await until('document.querySelector(".location-stop input")');
     await type('.location-stop input', 'Nhà mình');
     await ev('document.dispatchEvent(new Event("visibilitychange"))');
     await new Promise(r => setTimeout(r, 600));
@@ -148,12 +151,23 @@ try {
     await check('focus stays on "Xem" across a refresh', 'document.activeElement?.getAttribute("aria-label")==="Xem Hải Yến trên bản đồ"');
     await ev(`${handle}.click()`);
     await check('folding hides the details again', `${handle}.getAttribute("aria-expanded")==="false"&&!${shown('.location-note')}`);
+    // × leaves only the map (and its zoom buttons); "Hiện thông tin" brings back the sheet as it was.
+    await ev('document.querySelector(".location-close").click()');
+    await until(`!${shown('.location-sheet')}&&!${shown('.location-head')}&&${shown('.location-show')}&&document.activeElement===document.querySelector(".location-show")`);
+    await check('with everything hidden the zoom buttons drop to the corner', '(()=>{const z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect();return innerHeight-z.bottom<=60&&innerWidth-z.right<=32})()');
+    await clickText('Hiện thông tin');
+    await until(`${shown('.location-sheet')}&&${shown('.location-head')}&&!${shown('.location-show')}&&${handle}.getAttribute("aria-expanded")==="false"`);
+    checks++;
     for (const [w, h] of [[320, 740], [390, 844], [768, 1024], [1440, 1000], [844, 390]]) {
       await viewport(w, h);
       await new Promise(r => setTimeout(r, 150));
       await check(`no sideways scroll and 44px targets at ${w}×${h}`, fits);
       await until(fullMap);
       checks++;
+      // Map only, at this size too: × hides, "Hiện thông tin" fits and brings everything back.
+      await ev('document.querySelector(".location-close").click()');
+      await check(`map only at ${w}×${h}`, `(()=>{const z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),s=document.querySelector(".location-show").getBoundingClientRect();return !${shown('.location-sheet')}&&${shown('.location-show')}&&innerHeight-z.bottom<=60&&s.right<=innerWidth&&s.height>=44})()`);
+      await ev('document.querySelector(".location-show").click()');
       // LOCATION_SHOTS=<dir> saves a screenshot per width for a visual check.
       if (process.env.LOCATION_SHOTS) {
         const { data } = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
