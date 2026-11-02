@@ -178,6 +178,8 @@ try {
     await evaluate("location.hash='garden'"); await wait(`${flowers}.length===6`);
     for (const [w, h] of [[320, 740], [768, 1024], [844, 390]]) {
       await size(w, h);
+      // The garden re-places flowers on the frame after a resize; measure once it has settled (or report the last state).
+      await wait(`JSON.stringify(${layout})===${JSON.stringify(JSON.stringify(clean))}`).catch(() => {});
       assert.deepEqual(await evaluate(layout), clean, `${w}x${h} layout`);
       await shot(`${w}x${h}`);
     }

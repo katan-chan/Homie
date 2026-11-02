@@ -59,7 +59,8 @@ try {
     }
     async function open(hash) {
       await ev(`location.hash=${JSON.stringify(hash)}`);
-      await until(`!!document.querySelector(".roulette--${hash}")&&!${text(pickNote)}.startsWith("Đang tải")`);
+      // The first open follows a sign-in (scrypt) and a cold page load: allow for a busy machine.
+      await until(`!!document.querySelector(".roulette--${hash}")&&!${text(pickNote)}.startsWith("Đang tải")`, 15000);
     }
     const noOverflow = 'document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".roulette button:not(.roulette-chip),.roulette h1,.roulette h2,.roulette-chips")].every(n=>(r=>r.width===0||(r.left>=-1&&r.right<=innerWidth+1))(n.getBoundingClientRect()))';
 
