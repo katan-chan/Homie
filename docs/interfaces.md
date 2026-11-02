@@ -128,7 +128,7 @@ Mã trạng thái chính: 400 dữ liệu sai (ví dụ `invalid_fields`, `inval
 
 Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi module xuất `route(path) -> boolean` và `create(deps) -> { handle(req, res), close?() }` (có thể trả Promise). `server.js` chạy kiểm tra Origin allowlist và CORS chung trước, rồi dispatch module đầu tiên có `route` khớp, trước các route lõi. OPTIONS trên route feature trả 204. Mỗi module được tạo lazily ở request đầu tiên của nó, chỉ một lần; `create` lỗi trả 503 `storage_unavailable` và được thử lại ở request sau. Khi server dừng, các module được `close()` trước notes. Không sửa `server.js` hay `features.js` để thêm route: phần sở hữu chỉ sửa file module của mình.
 
-`deps = { auth, allowedOrigins, dataDir, remote, push, notesStore }`: `allowedOrigins` là Set origin; `remote` là storage Supabase hoặc null; `notesStore()` trả Promise tới notes store đang chạy (khởi tạo notes nếu chưa, cùng cơ chế thử lại với Notes API).
+`deps = { auth, allowedOrigins, dataDir, remote, push, notesStore, profiles }`: `allowedOrigins` là Set origin; `remote` là storage Supabase hoặc null; `profiles` là kho hồ sơ (`get(id)`, `update(id, {displayName, bio})`, `setAvatar(id, avatar|null)`); file ảnh của feature dùng `createFiles({ dataDir, remote })` trong backend/files.js; `notesStore()` trả Promise tới notes store đang chạy (khởi tạo notes nếu chưa, cùng cơ chế thử lại với Notes API).
 
 | Prefix | Module | Phần sở hữu |
 | --- | --- | --- |
@@ -140,6 +140,7 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/push | backend/push-api.js | Thông báo điện thoại |
 | /api/psi | backend/psi-api.js | Tờ PSI của Minh Lê |
 | /api/moments | backend/moments-api.js | Khoảnh khắc |
+| /api/profiles/:id/avatar | backend/avatar-api.js | Ảnh đại diện |
 
 Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Prefix không có module thật thì trả 404 `{ error: "Not implemented", code: "not_implemented" }`.
 
@@ -248,6 +249,16 @@ Chỉ hai thành viên (khách 401); ghi cần Origin allowlist và `X-Requested
 | PUT /api/moments/:id | Chỉ người chụp: `{ caption, version }` → `{ moment }`; người khác 403 `not_owner`; version cũ 409 `version_conflict` |
 | DELETE /api/moments/:id | Chỉ người chụp → 204, xóa bản ghi rồi xóa file |
 | GET/HEAD /api/moments/:id/file, /thumb | Byte ảnh, `Cache-Control: private, max-age=31536000, immutable`, `nosniff`; id lạ 404 |
+
+### Ảnh đại diện: /api/profiles/:id/avatar
+
+Hồ sơ có thêm trường tùy chọn `avatar: { version, mime }` (version nguyên ≥ 1, mime `image/webp` hoặc `image/jpeg`); chỉ route này đổi nó, `PUT /api/profiles/:id` giữ nguyên ảnh. File ở `avatars/<id>-<version>.<webp|jpg>` trong bucket `note-media` (local `<dataDir>/avatars/`). Ảnh được cắt vuông và nén trong trình duyệt; server chỉ đọc loại/kích thước từ byte file.
+
+| Route | Hợp đồng |
+| --- | --- |
+| PUT | Chỉ owner (Origin allowlist, `X-Requested-With: Homie`, session): `{ data }` base64, body ≤ 112 KiB → 200 `{ profile }` với version tăng 1, file cũ bị xóa. Không vuông hoặc không phải WebP/JPEG 400 `invalid_image`; > 80 KB hoặc cạnh > 512 400 `image_too_large`; cạnh < 64 400 `image_too_small`; người khác 403 `not_owner`; chưa đăng nhập 401; lỗi lưu 503 `storage_unavailable` (ảnh cũ vẫn dùng được) |
+| DELETE | Chỉ owner → 200 `{ profile }` không còn `avatar`; chưa có ảnh vẫn 200 |
+| GET/HEAD | Công khai, không cần Origin. Byte ảnh, `Content-Type` = mime, `Cache-Control: public, max-age=31536000, immutable` (client thêm `?v=<version>` để đổi URL khi đổi ảnh), `nosniff`; chưa có ảnh 404 `not_found` |
 
 ### Tờ PSI: /api/psi
 

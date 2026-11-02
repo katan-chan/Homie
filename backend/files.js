@@ -28,11 +28,12 @@ function remoteFiles(remote) {
     async open(name) {
       const response = await remote.getFile(name);
       if (!response) return null;
-      return { size: Number(response.headers.get('content-length')) || null, stream: Readable.fromWeb(response.body), cancel: () => response.body?.cancel() };
+      // Destroying the stream cancels the body; cancelling the locked body directly would throw.
+      return { size: Number(response.headers.get('content-length')) || null, stream: Readable.fromWeb(response.body) };
     },
     remove: names => remote.removeFiles(names),
   };
 }
 
-/** { put(name, buffer, type), open(name) -> { size, stream, cancel? } | null, remove(names) } */
+/** { put(name, buffer, type), open(name) -> { size, stream } | null, remove(names) } */
 export const createFiles = ({ dataDir, remote }) => (remote ? remoteFiles(remote) : localFiles(dataDir));

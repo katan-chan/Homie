@@ -64,7 +64,7 @@ export function createBackend(frontendOrigins = process.env.FRONTEND_ORIGINS ?? 
     }
     return notesReady;
   };
-  const deps = { auth, allowedOrigins: allowed, dataDir, remote, push, notesStore: () => notes().then(({ store }) => store) };
+  const deps = { auth, allowedOrigins: allowed, dataDir, remote, push, profiles, notesStore: () => notes().then(({ store }) => store) };
   // Each feature module is created on its first request; a failed create is retried like notes.
   const featureModules = new Map();
   const featureModule = feature => {

@@ -31,14 +31,15 @@ Request POST/PUT yêu cầu Origin chính xác trong FRONTEND_ORIGINS và X-Requ
 | POST /api/auth/login | { accountId, password } → 200 { user: { id, displayName, bio } } và cookie; sai credential 401 chung |
 | GET /api/auth/session | 200 { user } nếu phiên hợp lệ; 401 nếu thiếu/hết hạn |
 | POST /api/auth/logout | 204, hủy session và cookie; chấp nhận không body hoặc {} |
-| GET /api/profiles/minhle | Công khai → 200 { profile: { id, displayName, bio } } |
+| GET /api/profiles/minhle | Công khai → 200 { profile: { id, displayName, bio, avatar? } } (`avatar: { version, mime }` khi có ảnh) |
 | GET /api/profiles/haiyen | Công khai → cùng schema |
-| PUT /api/profiles/:id | Chỉ owner → { displayName, bio }, trả { profile }; thiếu session 401, người khác 403 |
+| PUT /api/profiles/:id | Chỉ owner → { displayName, bio }, trả { profile }; thiếu session 401, người khác 403. Ảnh đại diện (nếu có) giữ nguyên |
+| PUT/DELETE /api/profiles/:id/avatar | Chỉ owner đổi/xóa ảnh đại diện; GET ảnh công khai. Xem [interfaces.md](interfaces.md#ảnh-đại-diện-apiprofilesidavatar) |
 | GET /api/health | Công khai → { status: "ok" } |
 
 Notes API (`/api/boards`, `/api/notes`, `/api/note-assets`) dùng cùng cookie/session: GET trả projection đã lọc theo người xem (quyền xem bảng/note); mọi mutation và route riêng cần session, `accountId` trong body phải trùng session. Khi logout hoặc session hết hạn, server hủy lease/presence và đóng stream riêng bằng event `auth-required`. Danh sách route tại [interfaces.md](interfaces.md#notes-api).
 
-GET route hỗ trợ HEAD; route biết trước hỗ trợ OPTIONS. ID hồ sơ ngoài hai ID trả 404. Không nhận role, userId, avatar hoặc field không được chốt. displayName trim, dài 1–80 ký tự; bio trim, tối đa 500. Không dùng cookie frontend/userId trong body để quyết định owner; backend luôn lấy ID từ session.
+GET route hỗ trợ HEAD; route biết trước hỗ trợ OPTIONS. ID hồ sơ ngoài hai ID trả 404. Không nhận role, userId hoặc field không được chốt; `avatar` chỉ đổi qua route ảnh riêng, không nhận trong PUT hồ sơ. displayName trim, dài 1–80 ký tự; bio trim, tối đa 500. Không dùng cookie frontend/userId trong body để quyết định owner; backend luôn lấy ID từ session.
 
 CORS cho origin chính xác, credentials true và Content-Type/X-Requested-With. Public read không cần Origin khi gọi trực tiếp. Khi gửi Origin, origin ngoài allowlist bị chặn; đó không biến hồ sơ công khai thành dữ liệu riêng.
 

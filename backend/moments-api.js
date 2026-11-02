@@ -111,7 +111,7 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     if (file.size) res.setHeader('Content-Length', String(file.size));
     res.writeHead(200);
-    if (req.method === 'HEAD') { file.stream.destroy(); await file.cancel?.(); res.end(); return; }
+    if (req.method === 'HEAD') { file.stream.destroy(); res.end(); return; }
     await pipeline(file.stream, res);
   }
 
