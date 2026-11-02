@@ -62,13 +62,15 @@ try {
       return zoomed!==before&&img.style.transform!==zoomed`);
     await clickText('Lưu ảnh');
     await until(`${status}==="Đã lưu ảnh."`);
-    await until('(()=>{const i=document.querySelector("img.profile-avatar");return i&&i.src.includes("?v=1")&&i.complete&&i.naturalWidth===512})()');
+    await until('(()=>{const i=document.querySelector("img.profile-avatar");return i&&/\\?v=\\d+$/.test(i.src)&&i.complete&&i.naturalWidth===512})()');
+    const savedSrc = await ev('document.querySelector("img.profile-avatar").src');
+    await check('focus returns to the change button after saving', 'document.activeElement?.textContent==="Đổi ảnh"');
     await check('cutter closes after saving', '!document.querySelector(".avatar-crop")');
     await check('the image has a name', 'document.querySelector("img.profile-avatar").alt==="Ảnh đại diện của Minh Lê"');
 
     await ev('const f=document.querySelector(".profile-edit-form");f.elements.bio.value="Thích trà";f.requestSubmit()');
     await until('document.querySelector(".profile-bio").textContent==="Thích trà"');
-    await check('a text edit keeps the picture', 'document.querySelector("img.profile-avatar").src.includes("?v=1")');
+    await check('a text edit keeps the picture', `document.querySelector("img.profile-avatar").src===${JSON.stringify(savedSrc)}`);
 
     // Leaving the page in the middle of a cut sends nothing and leaves nothing behind.
     await clickText('Edit');
@@ -99,6 +101,7 @@ try {
     await clickText('Xóa');
     await until('document.querySelector(".profile-avatar-initial")?.textContent==="M"');
     await check('picture gone after delete', '!document.querySelector("img.profile-avatar")');
+    await check('focus returns to the change button after deleting', 'document.activeElement?.textContent==="Đổi ảnh"');
 
     for (const [w, h] of [[320, 740], [390, 844], [768, 1024], [844, 390]]) {
       await viewport(w, h);

@@ -78,7 +78,9 @@ test('owner uploads, anyone reads, other member cannot write', async t => {
   const image = webp(512, 512, 3000);
   const saved = await call('PUT', URL_, part(image), minh);
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.body.profile.avatar, { version: 1, mime: 'image/webp' });
+  const { version } = saved.body.profile.avatar;
+  assert.deepEqual(saved.body.profile.avatar, { version, mime: 'image/webp' });
+  assert.ok(Number.isInteger(version) && version >= 1);
 
   const read = await call('GET', URL_, undefined, null, {});
   assert.equal(read.status, 200);
@@ -94,7 +96,7 @@ test('owner uploads, anyone reads, other member cannot write', async t => {
   assert.equal((await call('DELETE', URL_, undefined, yen)).status, 403);
 
   const profile = await call('GET', '/api/profiles/minhle', undefined, null, {});
-  assert.deepEqual(profile.body.profile.avatar, { version: 1, mime: 'image/webp' });
+  assert.deepEqual(profile.body.profile.avatar, { version, mime: 'image/webp' });
 });
 
 test('rejects bad images', async t => {
@@ -111,12 +113,13 @@ test('rejects bad images', async t => {
 
 test('replace with other format', async t => {
   const { call, remote, minh } = await fixture(t);
-  await call('PUT', URL_, part(webp(512, 512)), minh);
-  const next = await call('PUT', URL_, part(jpeg(256, 256)), minh);
-  assert.deepEqual(next.body.profile.avatar, { version: 2, mime: 'image/jpeg' });
-  const read = await call('GET', `${URL_}?v=2`, undefined, null, {});
+  const first = (await call('PUT', URL_, part(webp(512, 512)), minh)).body.profile.avatar.version;
+  const next = (await call('PUT', URL_, part(jpeg(256, 256)), minh)).body.profile.avatar;
+  assert.equal(next.mime, 'image/jpeg');
+  assert.ok(next.version > first);
+  const read = await call('GET', `${URL_}?v=${next.version}`, undefined, null, {});
   assert.equal(read.headers.get('content-type'), 'image/jpeg');
-  assert.deepEqual([...remote.files.keys()], ['avatars/minhle-2.jpg']);
+  assert.deepEqual([...remote.files.keys()], [`avatars/minhle-${next.version}.jpg`]);
 });
 
 test('delete returns to no avatar', async t => {
@@ -137,15 +140,23 @@ test('profile write failure keeps old avatar', async t => {
   remote.failProfiles = true;
   const failed = await call('PUT', URL_, part(webp(512, 512)), minh);
   assert.deepEqual([failed.status, failed.body.code], [503, 'storage_unavailable']);
-  assert.equal(remote.files.has('avatars/minhle-2.webp'), false);
+  assert.equal(remote.files.size, 1, 'only the first picture is stored');
   remote.failProfiles = false;
   assert.deepEqual((await call('GET', URL_, undefined, null, {})).body, first);
 });
 
 test('text PUT after avatar keeps avatar', async t => {
   const { call, minh } = await fixture(t);
-  await call('PUT', URL_, part(webp(512, 512)), minh);
+  const { avatar } = (await call('PUT', URL_, part(webp(512, 512)), minh)).body.profile;
   const text = await call('PUT', '/api/profiles/minhle', { displayName: 'Minh Lê', bio: 'chào' }, minh);
   assert.equal(text.status, 200);
-  assert.deepEqual(text.body.profile.avatar, { version: 1, mime: 'image/webp' });
+  assert.deepEqual(text.body.profile.avatar, avatar);
+});
+
+test('a picture uploaded after a delete gets a new version, so caches never show the old one', async t => {
+  const { call, minh } = await fixture(t);
+  const first = (await call('PUT', URL_, part(webp(512, 512)), minh)).body.profile.avatar.version;
+  await call('DELETE', URL_, undefined, minh);
+  const second = (await call('PUT', URL_, part(webp(512, 512)), minh)).body.profile.avatar.version;
+  assert.ok(second > first, `${second} > ${first}`);
 });

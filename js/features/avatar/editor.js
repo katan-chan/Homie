@@ -95,6 +95,7 @@ export function mountAvatarEditor(host, { profile, signal, onChange }) {
         showActions();
         status.textContent = 'Đã xóa ảnh.';
         onChange(current);
+        actions.querySelector('button')?.focus();
       } catch (error) {
         if (on.aborted) return;
         status.textContent = error.status === 401 ? 'Phiên đã hết hạn. Hãy đăng nhập lại.' : 'Chưa xóa được ảnh. Thử lại nhé.';
@@ -170,6 +171,7 @@ export function mountAvatarEditor(host, { profile, signal, onChange }) {
         showActions();
         status.textContent = 'Đã lưu ảnh.';
         onChange(current);
+        actions.querySelector('button')?.focus();
       } catch (error) {
         if (on.aborted) return;
         status.textContent = saveError(error);

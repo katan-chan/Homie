@@ -36,7 +36,8 @@ export function create({ auth, allowedOrigins, dataDir, remote, profiles }) {
     owner(req, id);
     const { buffer, mime } = image(await readJson(req, { limit: LIMITS.body }));
     const old = (await profiles.get(id)).avatar;
-    const avatar = { version: (old?.version ?? 0) + 1, mime };
+    // A time-based version never repeats, even after a delete, so a cached ?v= URL never shows another picture.
+    const avatar = { version: Math.max(Date.now(), (old?.version ?? 0) + 1), mime };
     const name = fileName(id, avatar);
     try {
       await files.put(name, buffer, mime);

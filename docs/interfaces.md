@@ -258,7 +258,7 @@ Hồ sơ có thêm trường tùy chọn `avatar: { version, mime }` (version ng
 
 | Route | Hợp đồng |
 | --- | --- |
-| PUT | Chỉ owner (Origin allowlist, `X-Requested-With: Homie`, session): `{ data }` base64, body ≤ 112 KiB → 200 `{ profile }` với version tăng 1, file cũ bị xóa. Không vuông hoặc không phải WebP/JPEG 400 `invalid_image`; > 80 KB hoặc cạnh > 512 400 `image_too_large`; cạnh < 64 400 `image_too_small`; người khác 403 `not_owner`; chưa đăng nhập 401; lỗi lưu 503 `storage_unavailable` (ảnh cũ vẫn dùng được) |
+| PUT | Chỉ owner (Origin allowlist, `X-Requested-With: Homie`, session): `{ data }` base64, body ≤ 112 KiB → 200 `{ profile }` với version mới (theo thời gian, lớn hơn bản cũ, không bao giờ lặp lại kể cả sau khi xóa), file cũ bị xóa. Không vuông hoặc không phải WebP/JPEG 400 `invalid_image`; > 80 KB hoặc cạnh > 512 400 `image_too_large`; cạnh < 64 400 `image_too_small`; người khác 403 `not_owner`; chưa đăng nhập 401; lỗi lưu 503 `storage_unavailable` (ảnh cũ vẫn dùng được) |
 | DELETE | Chỉ owner → 200 `{ profile }` không còn `avatar`; chưa có ảnh vẫn 200 |
 | GET/HEAD | Công khai, không cần Origin. Byte ảnh, `Content-Type` = mime, `Cache-Control: public, max-age=31536000, immutable` (client thêm `?v=<version>` để đổi URL khi đổi ảnh), `nosniff`; chưa có ảnh 404 `not_found` |
 
