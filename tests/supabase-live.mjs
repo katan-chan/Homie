@@ -70,8 +70,9 @@ try {
   assert.equal((await createDocStore({ key: 'visits-2026-11', dataDir, remote, empty: () => ({ items: [] }) }).read()).items.length, 1);
   console.log('PASS live Supabase: avatar field and file stream, location visits document');
 
-  // Full media pipeline in a real browser, with the backend storing everything under the same prefix.
-  const code = await new Promise(resolve => spawn(process.execPath, ['tests/browser-note-media.mjs'], { stdio: 'inherit', env: { ...process.env, SUPABASE_PREFIX: prefix } }).on('exit', resolve));
+  // Full media pipeline in a real browser. Its own sub-prefix keeps the boards made above out of its dashboard;
+  // cleanup still removes it (it starts with the same prefix).
+  const code = await new Promise(resolve => spawn(process.execPath, ['tests/browser-note-media.mjs'], { stdio: 'inherit', env: { ...process.env, SUPABASE_PREFIX: `${prefix}media-` } }).on('exit', resolve));
   assert.equal(code, 0, 'browser media test passes with Supabase storage');
   console.log('PASS live Supabase: browser media pipeline (upload, preview, publish, insert, serve)');
 } finally {
