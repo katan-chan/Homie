@@ -72,6 +72,17 @@
 .location-pin-line{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);white-space:nowrap;padding:2px 8px;border-radius:999px;background:rgba(255,250,245,.95);color:var(--ink);font-size:12px}
 .location-place-dot{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(59,42,51,.3)}
 
+/* Wide screens: the sheet is a card in the top right corner, under the modes, kept short enough that the zoom buttons
+   fit below it in the corner; the + and the map note move into the map left of it. 901 px matches cornerCard() in page.js. */
+@media(min-width:901px){
+ .location-sheet{left:auto;right:24px;top:84px;bottom:auto;width:380px;max-height:calc(100% - 84px - 140px);border:1px solid var(--line);border-radius:22px;box-shadow:0 8px 28px rgba(59,42,51,.18)}
+ .location-panel{grid-template-columns:minmax(0,1fr)}
+ .location-chip{flex-basis:100%}
+ .location-page .leaflet-bottom{bottom:0}
+ .location-page .leaflet-bottom.leaflet-right .leaflet-control{margin:0 14px 14px 0}
+ .location-cross{left:calc((100% - var(--sheet-w,380px) - 24px) / 2);top:50%}
+ .location-map-note{right:calc(var(--sheet-w,380px) + 48px)}
+}
 /* Phones: the floating title and modes sit under the site header's row. */
 @media(max-width:600px){
  .location-head{top:calc(68px + env(safe-area-inset-top,0px));right:14px;max-width:calc(100% - 28px)}

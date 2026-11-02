@@ -2,6 +2,9 @@ import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, home, work, walk, MIN } from './helpers/location-fixture.mjs';
 import { monthsOf } from '../backend/location-api.js';
+import { steadyClock } from './helpers/vn-clock.mjs';
+
+steadyClock();
 
 // Esri routing is faked by intercepting fetch to its host; everything else (the test's own HTTP calls) goes through.
 const realFetch = globalThis.fetch;
@@ -159,8 +162,9 @@ test('routes for a day are asked together, not one after another', async t => {
   await walk(call, minh, work, [60, 50, 40]);
   await walk(call, minh, cafe, [30, 20, 10]);
   esri.delay = 300;
-  const started = Date.now();
+  const started = performance.now();
   const legs = (await call('GET', `/api/timeline?user=minhle&date=${today()}`, undefined, minh)).body.legs;
   assert.equal(legs.length, 2);
-  assert.ok(Date.now() - started < 550, `took ${Date.now() - started} ms`);
+  const took = performance.now() - started;
+  assert.ok(took < 550, `took ${took} ms`);
 });

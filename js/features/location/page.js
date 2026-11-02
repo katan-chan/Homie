@@ -97,19 +97,26 @@ export function mountLocation(container, { signal }) {
   handle.addEventListener('click', () => setOpen(!open), { signal: on });
   more.addEventListener('click', () => setOpen(true), { signal: on });
 
-  // Points are centred in the part of the map the sheet leaves free; on a phone the sheet folds first.
+  // Points are centred in the part of the map the sheet leaves free: left of the corner card on wide screens (matches
+  // the 900 px break in location.css), above the bottom sheet otherwise. On a phone the sheet folds first.
   const narrow = () => matchMedia('(max-width: 600px)').matches;
+  const cornerCard = () => matchMedia('(min-width: 901px)').matches;
+  const covered = () => (cornerCard() ? [page.clientWidth - sheet.getBoundingClientRect().left + page.getBoundingClientRect().left, 0] : [0, sheet.offsetHeight]);
   function centerOn(latlng, zoom) {
     if (!map) return;
     if (narrow() && open) setOpen(false);
-    const point = map.project(latlng, zoom).add([0, sheet.offsetHeight / 2]);
+    const [x, y] = covered();
+    const point = map.project(latlng, zoom).add([x / 2, y / 2]);
     map.setView(map.unproject(point, zoom), zoom);
   }
   function visibleCenter() {
-    const size = map.getSize();
-    return map.containerPointToLatLng([size.x / 2, (size.y - sheet.offsetHeight) / 2]);
+    const size = map.getSize(), [x, y] = covered();
+    return map.containerPointToLatLng([(size.x - x) / 2, (size.y - y) / 2]);
   }
-  const sized = new ResizeObserver(() => page.style.setProperty('--sheet-h', `${sheet.offsetHeight}px`));
+  const sized = new ResizeObserver(() => {
+    page.style.setProperty('--sheet-h', `${sheet.offsetHeight}px`);
+    page.style.setProperty('--sheet-w', `${sheet.offsetWidth}px`);
+  });
   sized.observe(sheet);
 
   function showModes() {
@@ -163,7 +170,10 @@ export function mountLocation(container, { signal }) {
     if (!fitted && points.length) {
       fitted = true;
       if (points.length === 1) centerOn(points[0], 15);
-      else map.fitBounds(points, { paddingTopLeft: [60, 100], paddingBottomRight: [60, sheet.offsetHeight + 60], maxZoom: 16 });
+      else {
+        const [x, y] = covered();
+        map.fitBounds(points, { paddingTopLeft: [60, 100], paddingBottomRight: [x + 60, y + 60], maxZoom: 16 });
+      }
     }
   }
 

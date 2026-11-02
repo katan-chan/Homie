@@ -7,8 +7,11 @@ import { join } from 'node:path';
 import { withBrowser } from './helpers/notes-browser.mjs';
 import { createNotesFixture, fixturePasswords } from './helpers/notes-fixture.mjs';
 import { tabs } from '../js/tabs.js';
+import { steadyClock } from './helpers/vn-clock.mjs';
 
 const MIN = 60000;
+// The backend runs in this process; its clock (and the points below) stay clear of Vietnam midnight.
+const day = new Date(steadyClock()).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 const home = { lat: 21.0285, lng: 105.8542 }, work = { lat: 21.0365, lng: 105.8342 };
 const entry = tabs.find(tab => tab.id === 'location');
 assert.ok(entry && entry.requiresAuth && entry.label === 'Vị trí', 'Vị trí is a members-only tab');
@@ -36,8 +39,8 @@ try {
   await withBrowser(async (evaluate, { call }) => {
     const ev = expression => evaluate(expression.includes(';') && !expression.startsWith('(()=>') ? `(async()=>{${expression}})()` : `(async()=>(${expression}))()`);
     async function until(expression, timeout = 8000) {
-      const end = Date.now() + timeout; let last;
-      while (Date.now() < end) {
+      const end = performance.now() + timeout; let last;
+      while (performance.now() < end) {
         try { if (await ev(expression)) return; } catch (error) { last = error; }
         await new Promise(r => setTimeout(r, 50));
       }
@@ -50,8 +53,9 @@ try {
     const text = '(document.querySelector(".location-page")?.textContent??"")';
     const type = (selector, value) => ev(`const i=document.querySelector(${JSON.stringify(selector)});i.value=${JSON.stringify(value)};i.dispatchEvent(new Event("input",{bubbles:true}))`);
     const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-sheet button,.location-sheet input,.location-sheet select,.location-modes button,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
-    // The map covers the whole window; the sheet sits on its bottom edge; the zoom buttons stay above the sheet.
-    const fullMap = '(()=>{const m=document.querySelector(".location-map").getBoundingClientRect(),s=document.querySelector(".location-sheet").getBoundingClientRect(),z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),W=innerWidth,H=innerHeight;return m.left<=0&&m.top<=0&&m.right>=W&&m.bottom>=H&&s.left<=0&&s.right>=W&&Math.abs(s.bottom-H)<=1&&z.bottom<=s.top})()';
+    // The map covers the whole window. Up to 900 px the sheet sits on its bottom edge with the zoom buttons above it;
+    // wider, it is a card in the top right corner, under the modes, with the zoom buttons below it.
+    const fullMap = '(()=>{const m=document.querySelector(".location-map").getBoundingClientRect(),s=document.querySelector(".location-sheet").getBoundingClientRect(),z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),h=document.querySelector(".location-modes").getBoundingClientRect(),W=innerWidth,H=innerHeight;if(!(m.left<=0&&m.top<=0&&m.right>=W&&m.bottom>=H))return false;return W>900?s.left>W/2&&W-s.right>=16&&W-s.right<=32&&s.top>=h.bottom&&z.top>=s.bottom&&z.bottom<=H:s.left<=0&&s.right>=W&&Math.abs(s.bottom-H)<=1&&z.bottom<=s.top})()';
     const shown = selector => `(document.querySelector(${JSON.stringify(selector)})?.getClientRects().length>0)`;
     const handle = 'document.querySelector(".location-handle")';
 
@@ -71,7 +75,7 @@ try {
     await check('focus on a mode button is not clipped', '(()=>{const b=document.querySelector(".location-mode");return getComputedStyle(b.parentElement).overflow==="visible"})()');
     await check('without a key the map says so', `${text}.includes("Chưa cài khóa bản đồ Esri")`);
     await check('the web has no sharing switch', `!${text}.includes("Bật chia sẻ")&&${text}.includes("chỉ bật được trong app Android")`);
-    await check('the map fills the window under a bottom sheet', fullMap);
+    await check('the map fills the window, the sheet in the top right corner', fullMap);
     await check('the sheet starts folded: both people show, the note box does not', `${handle}.getAttribute("aria-expanded")==="false"&&document.querySelectorAll(".location-chip").length===2&&!${shown('.location-note')}`);
     await clickText('Note và chi tiết');
     await until(shown('.location-note'));
@@ -89,6 +93,8 @@ try {
 
     await clickText('Timeline');
     await clickText('Yến');
+    // The browser's own clock may be on the next day; read the backend's.
+    await ev(`const d=document.querySelector(".location-day input");if(d.value!==${JSON.stringify(day)}){d.value=${JSON.stringify(day)};d.dispatchEvent(new Event("change",{bubbles:true}))}`);
     await until('document.querySelectorAll(".location-stop").length===2');
     await check('the folded timeline line counts the day', `${shown('.location-stop')}&&${text}.includes("2 lần ghé · 1 lần di chuyển")`);
     await check('stops are listed with a move between them', `${text}.includes("Chưa đặt tên")&&${text}.includes("Di chuyển")`);
