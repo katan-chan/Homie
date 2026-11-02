@@ -76,7 +76,7 @@ export async function composeStrip(frames, layout, date) {
   return canvas;
 }
 
-const encoder = canvas => (type, quality) => new Promise((resolve, reject) =>
+export const encoder = canvas => (type, quality) => new Promise((resolve, reject) =>
   canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('encode'))), type, quality));
 
 export async function toBase64(blob) {
