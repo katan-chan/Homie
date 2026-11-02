@@ -57,6 +57,9 @@ test('timeline lists the day by place with a cached road route between them', as
   assert.equal(first.body.legs.length, 1);
   assert.deepEqual(first.body.legs[0].route, { path: [[home.lat, home.lng], [21.03123, 105.84512], [work.lat, work.lng]], minutes: 12, km: 3.21 });
   assert.match(esri.last, /token=test-route-key/);
+  // Pinned so the totals are always Total_TravelTime (minutes) and Total_Kilometers, whatever the account's defaults.
+  assert.match(esri.last, /impedanceAttributeName=TravelTime/);
+  assert.match(esri.last, /accumulateAttributeNames=Kilometers/);
   assert.match(esri.last, new RegExp(`stops=${home.lng}%2C${home.lat}%3B${work.lng}%2C${work.lat}`));
   await call('GET', `/api/timeline?user=minhle&date=${today()}`, undefined, yen);
   assert.equal(esri.calls, 1, 'the second timeline uses the cached route');

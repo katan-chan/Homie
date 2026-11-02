@@ -52,7 +52,9 @@ async function esriRoute(a, b) {
   const token = process.env.ESRI_ROUTE_KEY;
   if (!token) return null;
   try {
-    const query = new URLSearchParams({ f: 'json', token, stops: `${a.lng},${a.lat};${b.lng},${b.lat}`, outSR: '4326', returnRoutes: 'true' });
+    // Fixed cost names, so the totals are Total_TravelTime (minutes) and Total_Kilometers whatever the defaults are.
+    const query = new URLSearchParams({ f: 'json', token, stops: `${a.lng},${a.lat};${b.lng},${b.lat}`, outSR: '4326', returnRoutes: 'true',
+      impedanceAttributeName: 'TravelTime', accumulateAttributeNames: 'Kilometers' });
     const response = await fetch(`${ROUTE_URL}?${query}`, { signal: AbortSignal.timeout(10000) });
     const feature = response.ok ? (await response.json()).routes?.features?.[0] : null;
     const path = feature?.geometry?.paths?.[0];
