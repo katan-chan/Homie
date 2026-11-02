@@ -40,6 +40,8 @@ export function mountLocation(container, { signal }) {
     return b;
   };
 
+  // The map covers the window; title and modes float on it; everything else is in a sheet on the bottom edge that
+  // shows a short summary folded and the details opened.
   const page = el('section', 'location-page');
   const head = el('div', 'location-head');
   head.append(el('h1', 'location-title', 'Vị trí'));
@@ -47,22 +49,33 @@ export function mountLocation(container, { signal }) {
   modes.setAttribute('role', 'group');
   modes.setAttribute('aria-label', 'Chế độ xem');
   head.append(modes);
-  const body = el('div', 'location-body');
-  const mapBox = el('div', 'location-map-box');
   const mapEl = el('div', 'location-map');
   mapEl.setAttribute('role', 'application');
   mapEl.setAttribute('aria-label', 'Bản đồ vị trí');
   const mapNote = el('p', 'location-map-note');
   mapNote.hidden = true;
-  mapBox.append(mapEl, mapNote);
-  const panel = el('div', 'location-panel');
+  const cross = el('span', 'location-cross');
+  cross.hidden = true;
+  const sheet = el('section', 'location-sheet');
+  sheet.setAttribute('aria-label', 'Chi tiết vị trí');
+  const handle = el('button', 'location-handle');
+  handle.type = 'button';
+  handle.setAttribute('aria-controls', 'location-details');
+  handle.append(el('span'));
+  const sheetBody = el('div', 'location-sheet-body');
+  const peek = el('div', 'location-peek');
   const status = el('p', 'location-status form-message');
   status.setAttribute('role', 'status');
-  body.append(mapBox, panel);
-  page.append(head, body, status);
+  const more = el('button', 'secondary-button location-more');
+  more.type = 'button';
+  const panel = el('div', 'location-panel');
+  panel.id = 'location-details';
+  sheetBody.append(peek, status, more, panel);
+  sheet.append(handle, sheetBody);
+  page.append(mapEl, mapNote, cross, head, sheet);
   container.replaceChildren(page);
 
-  let L = null, map = null, layer = null;
+  let L = null, map = null, layer = null, open = false;
   let mode = 'now', people = null, profiles = {}, now = Date.now();
   let timelineUser = getUser()?.id === 'minhle' ? 'haiyen' : 'minhle', timelineDate = localDay(Date.now()), day = null;
   let sharing = null, timer = null, fitted = false;
@@ -72,6 +85,32 @@ export function mountLocation(container, { signal }) {
   const nameOf = id => profiles[id]?.displayName ?? (id === 'minhle' ? 'Minh Lê' : 'Hải Yến');
   const short = id => PEOPLE.find(p => p.id === id).short;
   const accent = id => PEOPLE.find(p => p.id === id).accent;
+
+  function setOpen(value) {
+    open = value;
+    panel.hidden = !open;
+    more.hidden = open;
+    more.textContent = mode === 'now' ? 'Note và chi tiết' : 'Xem từng chỗ';
+    handle.setAttribute('aria-expanded', String(open));
+    handle.setAttribute('aria-label', open ? 'Thu gọn' : 'Mở rộng');
+  }
+  handle.addEventListener('click', () => setOpen(!open), { signal: on });
+  more.addEventListener('click', () => setOpen(true), { signal: on });
+
+  // Points are centred in the part of the map the sheet leaves free; on a phone the sheet folds first.
+  const narrow = () => matchMedia('(max-width: 600px)').matches;
+  function centerOn(latlng, zoom) {
+    if (!map) return;
+    if (narrow() && open) setOpen(false);
+    const point = map.project(latlng, zoom).add([0, sheet.offsetHeight / 2]);
+    map.setView(map.unproject(point, zoom), zoom);
+  }
+  function visibleCenter() {
+    const size = map.getSize();
+    return map.containerPointToLatLng([size.x / 2, (size.y - sheet.offsetHeight) / 2]);
+  }
+  const sized = new ResizeObserver(() => page.style.setProperty('--sheet-h', `${sheet.offsetHeight}px`));
+  sized.observe(sheet);
 
   function showModes() {
     modes.replaceChildren(...[['now', 'Bây giờ'], ['timeline', 'Timeline']].map(([id, label]) => {
@@ -123,8 +162,8 @@ export function mountLocation(container, { signal }) {
     }
     if (!fitted && points.length) {
       fitted = true;
-      if (points.length === 1) map.setView(points[0], 15);
-      else map.fitBounds(points, { padding: [60, 60], maxZoom: 16 });
+      if (points.length === 1) centerOn(points[0], 15);
+      else map.fitBounds(points, { paddingTopLeft: [60, 100], paddingBottomRight: [60, sheet.offsetHeight + 60], maxZoom: 16 });
     }
   }
 
@@ -133,7 +172,9 @@ export function mountLocation(container, { signal }) {
     L = await import(new URL('../../../assets/vendor/leaflet.js', import.meta.url).href);
     if (on.aborted) return;
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    map = L.map(mapEl, { zoomControl: true, attributionControl: true, zoomAnimation: !still, fadeAnimation: !still, markerZoomAnimation: !still, inertia: !still }).setView(CENTER, 13);
+    map = L.map(mapEl, { zoomControl: false, attributionControl: true, zoomAnimation: !still, fadeAnimation: !still, markerZoomAnimation: !still, inertia: !still }).setView(CENTER, 13);
+    // Bottom right, lifted above the sheet by --sheet-h.
+    L.control.zoom({ position: 'bottomright', zoomInTitle: 'Phóng to', zoomOutTitle: 'Thu nhỏ' }).addTo(map);
     map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
     const key = config.ESRI_BASEMAP_KEY ?? '';
     if (key) {
@@ -150,7 +191,26 @@ export function mountLocation(container, { signal }) {
   }
 
   // ----- panel: now -----
+  /** Folded: one chip per person; a chip with a position moves the map there. */
+  function chips() {
+    peek.replaceChildren(...PEOPLE.map(({ id }) => {
+      const person = people[id];
+      const chip = el(person.lat === undefined ? 'div' : 'button', 'location-chip');
+      chip.style.setProperty('--profile-accent', accent(id));
+      const text = el('span', 'location-chip-text');
+      text.append(el('strong', '', nameOf(id)), el('span', 'location-chip-line', person.note ? `“${person.note.text}”` : personLine(person, now)));
+      chip.append(avatarNode(profiles[id] ?? { id }, nameOf(id)), text);
+      if (person.lat !== undefined) {
+        chip.type = 'button';
+        chip.dataset.key = `chip-${id}`;
+        chip.addEventListener('click', () => centerOn([person.lat, person.lng], 16), { signal: on });
+      }
+      return chip;
+    }));
+  }
+
   function showNow() {
+    chips();
     if (!nowParts || !panel.contains(nowParts.list)) {
       nowParts = { list: el('ul', 'location-people'), note: el('div') };
       noteShown = undefined;
@@ -168,7 +228,7 @@ export function mountLocation(container, { signal }) {
       if (person.note) text.append(el('span', 'location-person-note', `“${person.note.text}” · đến ${clock(person.note.expiresAt)}`));
       item.append(avatarNode(profiles[id] ?? { id }, nameOf(id)), text);
       if (person.lat !== undefined) {
-        item.append(button('Xem', 'secondary-button', () => map?.setView([person.lat, person.lng], 16)));
+        item.append(button('Xem', 'secondary-button', () => centerOn([person.lat, person.lng], 16)));
         item.lastChild.setAttribute('aria-label', `Xem ${nameOf(id)} trên bản đồ`);
       }
       list.append(item);
@@ -237,6 +297,11 @@ export function mountLocation(container, { signal }) {
     date.setAttribute('aria-label', 'Ngày');
     date.addEventListener('change', () => { if (date.value) { timelineDate = date.value; day = null; fitted = false; render(); refresh(); } }, { signal: on });
     controls.append(who, date);
+    if (day) {
+      const moves = day.stops.filter((s, i) => i && day.stops[i - 1].placeId !== s.placeId).length;
+      controls.append(el('span', 'location-hint', `${day.stops.length} lần ghé · ${moves} lần di chuyển`));
+    }
+    peek.replaceChildren(controls);
     const list = el('ol', 'location-stops');
     if (day && !day.stops.length) list.append(el('li', 'location-hint', 'Ngày này chưa ghé địa điểm nào.'));
     day?.stops.forEach((s, i) => {
@@ -247,9 +312,11 @@ export function mountLocation(container, { signal }) {
       }
       list.append(stopItem(s, i));
     });
-    panel.replaceChildren(controls, list, button('Thêm địa điểm ở đây', 'secondary-button location-add-here', () => showAddPlace(map?.getCenter())));
     const add = el('div', 'location-add');
-    panel.append(add);
+    const addBox = el('div', 'location-add-box');
+    addBox.append(button('Thêm địa điểm ở đây', 'secondary-button location-add-here', () => showAddPlace()), add);
+    panel.replaceChildren(list, addBox);
+    cross.hidden = true;
   }
 
   function stopItem(s, index) {
@@ -258,7 +325,7 @@ export function mountLocation(container, { signal }) {
     const time = el('span', 'location-stop-time', `${clock(s.arrivedAt)} – ${s.leftAt ? clock(s.leftAt) : 'bây giờ'} · ${duration((s.leftAt ?? now) - s.arrivedAt)}`);
     item.append(title, time);
     const actions = el('div', 'location-stop-actions');
-    actions.append(button('Xem', 'secondary-button', () => map?.setView([s.lat, s.lng], 16)));
+    actions.append(button('Xem', 'secondary-button', () => centerOn([s.lat, s.lng], 16)));
     actions.lastChild.setAttribute('aria-label', `Xem ${s.name ?? 'chỗ chưa đặt tên'} trên bản đồ`);
     actions.append(button(s.name ? 'Đổi tên' : 'Đặt tên', 'secondary-button', () => nameForm(item, s.name ?? '', name =>
       apiRequest(`/api/places/${s.placeId}`, { method: 'PUT', body: { name }, signal: on }))));
@@ -300,8 +367,8 @@ export function mountLocation(container, { signal }) {
     keep.focus();
   }
 
-  /** An inline name box in host; save(name) is the request. Refreshes on success. */
-  function nameForm(host, value, save) {
+  /** An inline name box in host; save(name) is the request. Refreshes on success. onCancel replaces the plain removal. */
+  function nameForm(host, value, save, onCancel) {
     host.querySelector('form')?.remove();
     const form = el('form', 'location-name');
     const input = el('input');
@@ -310,7 +377,7 @@ export function mountLocation(container, { signal }) {
     input.setAttribute('aria-label', 'Tên địa điểm');
     const ok = el('button', 'primary-button', 'Lưu');
     ok.type = 'submit';
-    form.append(input, ok, button('Hủy', 'secondary-button', () => form.remove()));
+    form.append(input, ok, button('Hủy', 'secondary-button', () => (onCancel ? onCancel() : form.remove())));
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (!input.value.trim()) { status.textContent = 'Đặt một cái tên nhé.'; return; }
@@ -330,11 +397,17 @@ export function mountLocation(container, { signal }) {
     input.focus();
   }
 
+  /** latlng from a long press; without one, the + over the map marks the spot, read when saving. */
   function showAddPlace(latlng) {
     const host = panel.querySelector('.location-add');
-    if (!host || !latlng) return;
-    host.replaceChildren(el('p', 'location-hint', 'Đặt tên cho chỗ đang ở giữa bản đồ:'));
-    nameForm(host, '', name => apiRequest('/api/places', { method: 'POST', body: { name, lat: latlng.lat, lng: latlng.lng }, signal: on }));
+    if (!host || !map) return;
+    setOpen(true);
+    cross.hidden = Boolean(latlng);
+    host.replaceChildren(el('p', 'location-hint', latlng ? 'Đặt tên cho chỗ bạn vừa giữ trên bản đồ:' : 'Kéo bản đồ để dấu + nằm đúng chỗ, rồi đặt tên:'));
+    nameForm(host, '', name => {
+      const at = latlng ?? visibleCenter();
+      return apiRequest('/api/places', { method: 'POST', body: { name, lat: at.lat, lng: at.lng }, signal: on });
+    }, () => { cross.hidden = true; host.replaceChildren(); });
   }
 
   // ----- data -----
@@ -342,6 +415,7 @@ export function mountLocation(container, { signal }) {
     if (on.aborted) return;
     if (mode === 'now' && people) showNow();
     if (mode === 'timeline') showTimeline();
+    setOpen(open);
     drawMap();
   }
 
@@ -363,10 +437,12 @@ export function mountLocation(container, { signal }) {
         now = Date.now();
       }
       if (failed) { failed = false; status.textContent = ''; }
-      // A refresh rebuilds the list; keep keyboard focus on the same button.
-      const focused = panel.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
+      // A refresh rebuilds the lists; keep keyboard focus on the same button.
+      const active = sheet.contains(document.activeElement) ? document.activeElement : null;
+      const focused = active?.getAttribute('aria-label') ? `[aria-label="${CSS.escape(active.getAttribute('aria-label'))}"]`
+        : active?.dataset.key ? `[data-key="${CSS.escape(active.dataset.key)}"]` : null;
       render();
-      if (focused) panel.querySelector(`[aria-label="${CSS.escape(focused)}"]`)?.focus();
+      if (focused) sheet.querySelector(focused)?.focus();
     } catch (error) {
       if (on.aborted || mine !== latest) return;
       failed = true;
@@ -379,6 +455,7 @@ export function mountLocation(container, { signal }) {
   // Coming back refreshes the live view only; a timeline being edited stays as it is.
   document.addEventListener('visibilitychange', () => { if (!on.aborted && mode === 'now' && document.visibilityState === 'visible') refresh(); }, { signal: on });
   showModes();
+  setOpen(false);
   sharing = mountSharing({ signal: on, onChange: refresh });
   Promise.all(PEOPLE.map(({ id }) => apiRequest(`/api/profiles/${id}`, { signal: on }).then(r => { profiles[id] = r.profile; }, () => {})))
     .then(() => { if (!on.aborted) render(); });
@@ -389,6 +466,7 @@ export function mountLocation(container, { signal }) {
     stop();
     signal.removeEventListener('abort', stop);
     clearTimeout(timer);
+    sized.disconnect();
     sharing?.cleanup();
     map?.remove();
     map = null;

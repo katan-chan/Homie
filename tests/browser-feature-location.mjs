@@ -49,7 +49,11 @@ try {
     const clickText = text => ev(`[...document.querySelectorAll(".location-page button")].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)}).click()`).catch(error => { throw Error(`no button ${text}: ${error.message}`); });
     const text = '(document.querySelector(".location-page")?.textContent??"")';
     const type = (selector, value) => ev(`const i=document.querySelector(${JSON.stringify(selector)});i.value=${JSON.stringify(value)};i.dispatchEvent(new Event("input",{bubbles:true}))`);
-    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-panel button,.location-panel input,.location-panel select,.location-modes button,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
+    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-sheet button,.location-sheet input,.location-sheet select,.location-modes button,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
+    // The map covers the whole window; the sheet sits on its bottom edge; the zoom buttons stay above the sheet.
+    const fullMap = '(()=>{const m=document.querySelector(".location-map").getBoundingClientRect(),s=document.querySelector(".location-sheet").getBoundingClientRect(),z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),W=innerWidth,H=innerHeight;return m.left<=0&&m.top<=0&&m.right>=W&&m.bottom>=H&&s.left<=0&&s.right>=W&&Math.abs(s.bottom-H)<=1&&z.bottom<=s.top})()';
+    const shown = selector => `(document.querySelector(${JSON.stringify(selector)})?.getClientRects().length>0)`;
+    const handle = 'document.querySelector(".location-handle")';
 
     await call('Network.enable'); await call('Network.clearBrowserCookies');
     await viewport(1440, 1000);
@@ -67,6 +71,13 @@ try {
     await check('focus on a mode button is not clipped', '(()=>{const b=document.querySelector(".location-mode");return getComputedStyle(b.parentElement).overflow==="visible"})()');
     await check('without a key the map says so', `${text}.includes("Chưa cài khóa bản đồ Esri")`);
     await check('the web has no sharing switch', `!${text}.includes("Bật chia sẻ")&&${text}.includes("chỉ bật được trong app Android")`);
+    await check('the map fills the window under a bottom sheet', fullMap);
+    await check('the sheet starts folded: both people show, the note box does not', `${handle}.getAttribute("aria-expanded")==="false"&&document.querySelectorAll(".location-chip").length===2&&!${shown('.location-note')}`);
+    await clickText('Note và chi tiết');
+    await until(shown('.location-note'));
+    // The zoom buttons follow the sheet's new height one frame later.
+    await until(`(()=>${handle}.getAttribute("aria-expanded")==="true"&&${fullMap})()`);
+    checks++;
 
     await type('.location-note input', 'Đi học');
     await ev('const s=document.querySelector(".location-note select");s.value="4";s.dispatchEvent(new Event("change",{bubbles:true}))');
@@ -79,6 +90,7 @@ try {
     await clickText('Timeline');
     await clickText('Yến');
     await until('document.querySelectorAll(".location-stop").length===2');
+    await check('the folded timeline line counts the day', `${shown('.location-stop')}&&${text}.includes("2 lần ghé · 1 lần di chuyển")`);
     await check('stops are listed with a move between them', `${text}.includes("Chưa đặt tên")&&${text}.includes("Di chuyển")`);
     await check('a leg without a road route is drawn straight', 'document.querySelectorAll(".location-route-straight").length===1');
     await ev('[...document.querySelectorAll(".location-stop button")].find(b=>b.textContent==="Đặt tên").click()');
@@ -128,10 +140,14 @@ try {
     await ev('document.querySelector(".location-person button").focus();document.dispatchEvent(new Event("visibilitychange"))');
     await new Promise(r => setTimeout(r, 600));
     await check('focus stays on "Xem" across a refresh', 'document.activeElement?.getAttribute("aria-label")==="Xem Hải Yến trên bản đồ"');
+    await ev(`${handle}.click()`);
+    await check('folding hides the details again', `${handle}.getAttribute("aria-expanded")==="false"&&!${shown('.location-note')}`);
     for (const [w, h] of [[320, 740], [390, 844], [768, 1024], [1440, 1000], [844, 390]]) {
       await viewport(w, h);
       await new Promise(r => setTimeout(r, 150));
       await check(`no sideways scroll and 44px targets at ${w}×${h}`, fits);
+      await until(fullMap);
+      checks++;
       // LOCATION_SHOTS=<dir> saves a screenshot per width for a visual check.
       if (process.env.LOCATION_SHOTS) {
         const { data } = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
