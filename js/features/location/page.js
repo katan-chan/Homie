@@ -345,30 +345,39 @@ export function mountLocation(container, { signal }) {
     drawMap();
   }
 
+  // Only the newest request may draw: quick taps on Minh/Yến or a date must not show an older answer.
+  let latest = 0, failed = false;
   async function refresh() {
     clearTimeout(timer);
+    const mine = ++latest;
     try {
       if (mode === 'now') {
         const result = await apiRequest('/api/location', { signal: on });
-        if (on.aborted) return;
+        if (on.aborted || mine !== latest) return;
         people = result.people;
         now = result.now;
       } else {
         const result = await apiRequest(`/api/timeline?user=${timelineUser}&date=${timelineDate}`, { signal: on });
-        if (on.aborted) return;
+        if (on.aborted || mine !== latest) return;
         day = result;
         now = Date.now();
       }
+      if (failed) { failed = false; status.textContent = ''; }
+      // A refresh rebuilds the list; keep keyboard focus on the same button.
+      const focused = panel.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
       render();
+      if (focused) panel.querySelector(`[aria-label="${CSS.escape(focused)}"]`)?.focus();
     } catch (error) {
-      if (on.aborted) return;
+      if (on.aborted || mine !== latest) return;
+      failed = true;
       status.textContent = error.status === 401 ? 'Phiên đã hết hạn. Hãy đăng nhập lại.' : 'Chưa tải được vị trí. Sẽ thử lại sau.';
     }
     // Only the live view refreshes itself; a timeline is a past day and stays still while a name is typed.
     if (!on.aborted && mode === 'now' && document.visibilityState !== 'hidden') timer = setTimeout(refresh, REFRESH_MS);
   }
 
-  document.addEventListener('visibilitychange', () => { if (!on.aborted && document.visibilityState === 'visible') refresh(); }, { signal: on });
+  // Coming back refreshes the live view only; a timeline being edited stays as it is.
+  document.addEventListener('visibilitychange', () => { if (!on.aborted && mode === 'now' && document.visibilityState === 'visible') refresh(); }, { signal: on });
   showModes();
   sharing = mountSharing({ signal: on, onChange: refresh });
   Promise.all(PEOPLE.map(({ id }) => apiRequest(`/api/profiles/${id}`, { signal: on }).then(r => { profiles[id] = r.profile; }, () => {})))

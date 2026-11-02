@@ -101,8 +101,33 @@ try {
     await until('fetch("/api/places",{credentials:"include"}).then(r=>r.json()).then(d=>d.places.some(p=>p.name==="Quán cà phê"))');
     checks++;
 
+    // Coming back to the app does not wipe a name being typed in the timeline.
+    await ev('[...document.querySelectorAll(".location-stop button")].find(b=>b.textContent==="Đổi tên").click()');
+    await type('.location-stop input', 'Nhà mình');
+    await ev('document.dispatchEvent(new Event("visibilitychange"))');
+    await new Promise(r => setTimeout(r, 600));
+    await check('a typed name survives returning to the app', 'document.querySelector(".location-stop input")?.value==="Nhà mình"');
+    await clickText('Hủy');
+
+    // Quick taps: a slow answer for Minh never replaces Yến's.
+    await ev(`window.__slow=true;const f=window.fetch;window.fetch=async(u,o)=>{if(__slow&&String(u).includes("user=minhle"))await new Promise(r=>setTimeout(r,800));return f(u,o)};`);
+    await clickText('Minh');
+    await clickText('Yến');
+    await new Promise(r => setTimeout(r, 1300));
+    await check('the pressed person’s timeline is shown', '[...document.querySelectorAll(".location-who button")].find(b=>b.getAttribute("aria-pressed")==="true").textContent==="Yến"&&document.querySelectorAll(".location-stop").length===1');
+    await ev('window.__slow=false');
+
     await clickText('Bây giờ');
     await until('document.querySelectorAll(".location-pin").length===1');
+    // A failed refresh says so; the next good one clears it.
+    await ev(`window.__fail=1;const g=window.fetch;window.fetch=async(u,o)=>{if(__fail&&String(u).endsWith("/api/location")){__fail--;throw new TypeError("offline")}return g(u,o)};document.dispatchEvent(new Event("visibilitychange"))`);
+    await until('document.querySelector(".location-status").textContent.includes("Chưa tải được")');
+    await ev('document.dispatchEvent(new Event("visibilitychange"))');
+    await until('!document.querySelector(".location-status").textContent.includes("Chưa tải được")');
+    // A refresh keeps keyboard focus on the button it was on.
+    await ev('document.querySelector(".location-person button").focus();document.dispatchEvent(new Event("visibilitychange"))');
+    await new Promise(r => setTimeout(r, 600));
+    await check('focus stays on "Xem" across a refresh', 'document.activeElement?.getAttribute("aria-label")==="Xem Hải Yến trên bản đồ"');
     for (const [w, h] of [[320, 740], [390, 844], [768, 1024], [1440, 1000], [844, 390]]) {
       await viewport(w, h);
       await new Promise(r => setTimeout(r, 150));
