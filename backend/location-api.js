@@ -6,7 +6,7 @@ import { handleErrors, httpError, readJson, requireMember, requireWrite, sendJso
 import { createDocStore } from './doc-store.js';
 import { isDate, localDate } from './dates.js';
 import { accountIds } from './profiles.js';
-import { advance, end } from './stops.js';
+import { STOP, advance, end } from './stops.js';
 
 export const LIMITS = Object.freeze({ placeName: 40, note: 60, futureMs: 5 * 60000, accuracy: 200, staleMs: 10 * 60000 });
 const HOURS = [1, 4, 24];
@@ -94,7 +94,9 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     const names = new Map(placeList.map(p => [p.id, p]));
     return Object.fromEntries(accountIds.map(id => {
       const { point: p, sharing, note: n, stop } = doc[id];
-      const place = stop?.placeId && !names.get(stop.placeId)?.ignored ? names.get(stop.placeId) : null;
+      // A stop the phone went quiet on is not shown as where the person is now.
+      const current = stop?.placeId && now - stop.lastAt <= STOP.gapMs;
+      const place = current && !names.get(stop.placeId)?.ignored ? names.get(stop.placeId) : null;
       return [id, {
         ...(p ?? {}), sharing,
         note: n && n.expiresAt > now ? n : null,
@@ -110,6 +112,8 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
       const me = doc[user];
       const next = advance(me.stop, p, placeList);
       if (!me.point || p.at > me.point.at) me.point = p;
+      // The phone's "on" may have been lost (cold start, bad network); a point proves sharing is on.
+      if (!me.sharing.on) me.sharing = { on: true, since: p.at };
       me.stop = next.stop;
       return next;
     });
@@ -154,7 +158,7 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     const keys = [...new Set([localDate(start).slice(0, 7), localDate(start - DAY_MS).slice(0, 7)])];
     const [placeDoc, doc, ...monthDocs] = await Promise.all([places.read(), location.read(), ...keys.map(key => visits(key).read())]);
     const stop = doc[user].stop;
-    const open = stop?.placeId ? [{ placeId: stop.placeId, arrivedAt: stop.since, leftAt: null }] : [];
+    const open = stop?.placeId ? [{ placeId: stop.placeId, arrivedAt: stop.since, leftAt: now - stop.lastAt > STOP.gapMs ? stop.lastAt : null }] : [];
     const byId = new Map(placeDoc.items.map(p => [p.id, p]));
     const stops = [...monthDocs.flatMap(m => m.items.filter(v => v.user === user)), ...open]
       .filter(v => v.arrivedAt < finish && (v.leftAt ?? now) > start && byId.has(v.placeId) && !byId.get(v.placeId).ignored)

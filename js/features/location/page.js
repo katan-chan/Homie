@@ -132,7 +132,8 @@ export function mountLocation(container, { signal }) {
     loadLeafletCss();
     L = await import(new URL('../../../assets/vendor/leaflet.js', import.meta.url).href);
     if (on.aborted) return;
-    map = L.map(mapEl, { zoomControl: true, attributionControl: true }).setView(CENTER, 13);
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map = L.map(mapEl, { zoomControl: true, attributionControl: true, zoomAnimation: !still, fadeAnimation: !still, markerZoomAnimation: !still, inertia: !still }).setView(CENTER, 13);
     map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
     const key = config.ESRI_BASEMAP_KEY ?? '';
     if (key) {
@@ -261,8 +262,42 @@ export function mountLocation(container, { signal }) {
     actions.lastChild.setAttribute('aria-label', `Xem ${s.name ?? 'chỗ chưa đặt tên'} trên bản đồ`);
     actions.append(button(s.name ? 'Đổi tên' : 'Đặt tên', 'secondary-button', () => nameForm(item, s.name ?? '', name =>
       apiRequest(`/api/places/${s.placeId}`, { method: 'PUT', body: { name }, signal: on }))));
+    const remove = button('Xóa', 'secondary-button', () => confirmDelete(item, s));
+    remove.dataset.action = 'place-delete';
+    remove.setAttribute('aria-label', `Xóa ${s.name ?? 'chỗ chưa đặt tên'}`);
+    actions.append(remove);
     item.append(actions);
     return item;
+  }
+
+  /** Deleting a place means never recording that spot again; its stops leave every timeline. */
+  function confirmDelete(item, s) {
+    item.querySelector('form,[role=alertdialog]')?.remove();
+    const box = el('div', 'location-warning');
+    box.setAttribute('role', 'alertdialog');
+    const id = `location-delete-${s.placeId}`;
+    box.setAttribute('aria-labelledby', id);
+    const question = el('p', '', 'Không ghi nhận chỗ này nữa? Các lần ghé ở đây sẽ ẩn khỏi timeline.');
+    question.id = id;
+    const row = el('div', 'form-actions');
+    const keep = button('Giữ lại', 'secondary-button', () => { box.remove(); item.querySelector('[data-action=place-delete]')?.focus(); });
+    const yes = button('Xóa', 'primary-button', async () => {
+      yes.disabled = keep.disabled = true;
+      try {
+        await apiRequest(`/api/places/${s.placeId}`, { method: 'DELETE', signal: on });
+        if (on.aborted) return;
+        status.textContent = 'Đã xóa địa điểm.';
+        refresh();
+      } catch {
+        if (on.aborted) return;
+        status.textContent = 'Chưa xóa được. Thử lại nhé.';
+        yes.disabled = keep.disabled = false;
+      }
+    });
+    row.append(yes, keep);
+    box.append(question, row);
+    item.append(box);
+    keep.focus();
   }
 
   /** An inline name box in host; save(name) is the request. Refreshes on success. */

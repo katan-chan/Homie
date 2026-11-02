@@ -49,7 +49,7 @@ try {
     const clickText = text => ev(`[...document.querySelectorAll(".location-page button")].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)}).click()`).catch(error => { throw Error(`no button ${text}: ${error.message}`); });
     const text = '(document.querySelector(".location-page")?.textContent??"")';
     const type = (selector, value) => ev(`const i=document.querySelector(${JSON.stringify(selector)});i.value=${JSON.stringify(value)};i.dispatchEvent(new Event("input",{bubbles:true}))`);
-    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-panel button,.location-panel input,.location-panel select,.location-modes button")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
+    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-panel button,.location-panel input,.location-panel select,.location-modes button,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
 
     await call('Network.enable'); await call('Network.clearBrowserCookies');
     await viewport(1440, 1000);
@@ -64,6 +64,7 @@ try {
     await check('Yến’s pin shows her note and how long ago', '(()=>{const p=document.querySelector(".location-pin");return p.textContent.includes("đang ăn bún chả 🍜")&&p.textContent.includes("3 phút trước")})()');
     await check('the pin carries her initial without a picture', 'document.querySelector(".location-pin .profile-avatar-initial")?.textContent==="H"');
     await check('Minh, who never shared, is listed without a pin', `${text}.includes("Chưa chia sẻ vị trí")`);
+    await check('focus on a mode button is not clipped', '(()=>{const b=document.querySelector(".location-mode");return getComputedStyle(b.parentElement).overflow==="visible"})()');
     await check('without a key the map says so', `${text}.includes("Chưa cài khóa bản đồ Esri")`);
     await check('the web has no sharing switch', `!${text}.includes("Bật chia sẻ")&&${text}.includes("chỉ bật được trong app Android")`);
 
@@ -86,6 +87,13 @@ try {
     await clickText('Lưu');
     await until('document.querySelector(".location-stop")?.textContent.includes("Nhà")');
 
+    // Deleting a place means "never record this spot": its stop leaves the timeline.
+    await ev('[...document.querySelectorAll(".location-stop")][1].querySelector("button[data-action=place-delete]").click()');
+    await until('document.querySelector(".location-stop [role=alertdialog]")?.textContent.includes("Không ghi nhận chỗ này nữa?")');
+    await ev('[...document.querySelectorAll(".location-stop [role=alertdialog] button")].find(b=>b.textContent==="Xóa").click()');
+    await until('document.querySelectorAll(".location-stop").length===1');
+    await check('the named place stays', 'document.querySelector(".location-stop").textContent.includes("Nhà")');
+
     await clickText('Thêm địa điểm ở đây');
     await until('document.querySelector(".location-add input")');
     await type('.location-add input', 'Quán cà phê');
@@ -105,6 +113,22 @@ try {
         await writeFile(join(process.env.LOCATION_SHOTS, `location-${w}.png`), Buffer.from(data, 'base64'));
       }
     }
+
+    // The phone's switch, with a fake LocationShare plugin: notifications denied blocks it with a reason that stays.
+    await ev(`window.__started=0;window.__perm={location:"granted",notifications:"denied"};window.Capacitor={isNativePlatform:()=>true,Plugins:{LocationShare:{
+      status:async()=>({running:window.__started>0,permission:"granted",battery:80,charging:false,ignoringBatteryOptimizations:true,manufacturer:"Xiaomi",sdk:34}),
+      requestPermissions:async()=>window.__perm,start:async()=>{window.__started++},stop:async()=>{window.__started=0},openBatterySettings:async()=>{},openAppSettings:async()=>{}}}};
+      window.cleanup();window.controller.abort();window.controller=new AbortController();
+      window.cleanup=(await import("/js/tabs/location.js")).render(document.querySelector("#host"),{signal:controller.signal})`);
+    await until('[...document.querySelectorAll(".location-share button")].some(b=>b.textContent==="Bật chia sẻ")');
+    await ev('[...document.querySelectorAll(".location-share button")].find(b=>b.textContent==="Bật chia sẻ").click()');
+    await until('[...document.querySelectorAll(".location-share button")].some(b=>b.textContent==="Đồng ý, bật")');
+    await ev('[...document.querySelectorAll(".location-share button")].find(b=>b.textContent==="Đồng ý, bật").click()');
+    await new Promise(r => setTimeout(r, 500));
+    await check('denied notifications block sharing and say why', '__started===0&&document.querySelector(".location-share p").textContent.includes("quyền thông báo")');
+    await ev('window.__perm={location:"granted",notifications:"granted"};[...document.querySelectorAll(".location-share button")].find(b=>b.textContent==="Bật chia sẻ").click()');
+    await until('__started===1&&document.querySelector(".location-share").textContent.includes("Đang chia sẻ")');
+    await check('Poco tips after starting', 'document.querySelector(".location-share").textContent.includes("Tự khởi chạy")');
 
     await check('leaving stops refreshing', 'window.cleanup();window.cleanup();window.controller.abort();const before=__locationCalls;document.dispatchEvent(new Event("visibilitychange"));await new Promise(r=>setTimeout(r,300));return __locationCalls===before&&!document.querySelector(".location-page")');
     assert.deepEqual(await ev('__errors'), [], 'No page errors');

@@ -29,7 +29,7 @@ import com.getcapacitor.annotation.Permission;
     }
 )
 public class LocationSharePlugin extends Plugin {
-    /** { running, permission, battery, charging, ignoringBatteryOptimizations, manufacturer } */
+    /** { running, permission, battery, charging, ignoringBatteryOptimizations, manufacturer, sdk } */
     @PluginMethod
     public void status(PluginCall call) {
         Context context = getContext();
@@ -42,6 +42,7 @@ public class LocationSharePlugin extends Plugin {
         result.put("charging", battery.isCharging());
         result.put("ignoringBatteryOptimizations", power.isIgnoringBatteryOptimizations(context.getPackageName()));
         result.put("manufacturer", Build.MANUFACTURER);
+        result.put("sdk", Build.VERSION.SDK_INT);
         call.resolve(result);
     }
 

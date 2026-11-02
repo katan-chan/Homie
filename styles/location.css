@@ -5,7 +5,11 @@
 .location-page [hidden]{display:none!important}
 .location-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
 .location-title{font:500 40px/1.2 var(--font-head);letter-spacing:-1px;margin:0;flex:1 1 auto;color:var(--ink)}
-.location-modes,.location-who{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fffdf9}
+.location-modes,.location-who{display:inline-flex;border:1px solid var(--line);border-radius:12px;background:#fffdf9}
+.location-mode:first-child{border-radius:11px 0 0 11px}
+.location-mode:last-child{border-radius:0 11px 11px 0}
+/* Leaflet's zoom buttons, at the 44 px touch size. */
+.location-page .location-map .leaflet-bar a{width:44px;height:44px;line-height:44px;font-size:22px}
 .location-mode{min-height:44px;min-width:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);white-space:nowrap}
 .location-mode[aria-pressed=true]{background:var(--accent);color:#fff}
 .location-body{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}

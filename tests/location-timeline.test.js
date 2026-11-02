@@ -108,3 +108,12 @@ test('visits at a deleted place are hidden; bad queries are refused', async t =>
   assert.equal((await call('GET', '/api/timeline?user=bob&date=2026-11-02', undefined, minh)).body.code, 'invalid_query');
   assert.equal((await call('GET', '/api/timeline?user=minhle&date=2026-02-30', undefined, minh)).body.code, 'invalid_query');
 });
+
+test('an open stop with no point for over 30 minutes ends at its last point', async t => {
+  const { call, minh } = await fixture(t);
+  await call('PUT', '/api/location/sharing', { on: true }, minh);
+  await walk(call, minh, home, [60, 50, 40]);
+  const stops = (await call('GET', `/api/timeline?user=minhle&date=${today()}`, undefined, minh)).body.stops;
+  assert.equal(stops.length, 1);
+  assert.ok(stops[0].leftAt && Date.now() - stops[0].leftAt >= 40 * MIN - 5000, 'left at the last point, not "bây giờ"');
+});

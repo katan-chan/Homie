@@ -17,6 +17,15 @@ export function batteryTips(manufacturer = '') {
   return 'Nếu vị trí hay bị dừng: vào Cài đặt › Ứng dụng › Homie › Pin và chọn không hạn chế.';
 }
 
+/** Why sharing cannot start yet, or null. permission: Capacitor's { location, notifications }; status: the plugin's. */
+export function startBlock(permission, status) {
+  if (permission.location !== 'granted') return 'Cần quyền vị trí để chia sẻ. Mở cài đặt và cho Homie dùng vị trí nhé.';
+  // Without it Android 13+ hides the ongoing notification, its stop button and the low-battery alert.
+  if (status.sdk >= 33 && permission.notifications !== 'granted') return 'Cần quyền thông báo để luôn hiện “Homie đang chia sẻ vị trí” và nút dừng. Mở cài đặt và bật thông báo nhé.';
+  if (status.battery < 20 && !status.charging) return 'Pin dưới 20%. Sạc thêm rồi bật lại nhé.';
+  return null;
+}
+
 const warned = () => { try { return localStorage.getItem(WARNED) === '1'; } catch { return false; } };
 const remember = () => { try { localStorage.setItem(WARNED, '1'); } catch {} };
 
@@ -37,7 +46,8 @@ export function mountSharing({ signal, onChange }) {
   actions.className = 'form-actions';
   const extra = document.createElement('div');
   root.append(title, line, actions, extra);
-  let state = null, busy = false;
+  // A reason sharing did not start stays on screen until the next try, instead of the plain on/off line.
+  let state = null, busy = false, notice = '';
 
   const button = (text, className, onClick) => {
     const b = document.createElement('button');
@@ -47,7 +57,7 @@ export function mountSharing({ signal, onChange }) {
     b.addEventListener('click', onClick, { signal });
     return b;
   };
-  const say = text => { line.textContent = text; };
+  const say = text => { notice = text; line.textContent = text; };
 
   function show() {
     if (signal.aborted) return;
@@ -55,7 +65,7 @@ export function mountSharing({ signal, onChange }) {
       ? button('Dừng chia sẻ', 'secondary-button', stop)
       : button('Bật chia sẻ', 'primary-button', ask));
     actions.firstChild.disabled = busy;
-    say(state?.running ? 'Đang chia sẻ, khoảng 2 phút một lần. Tự tắt khi pin dưới 20%.' : 'Đang tắt.');
+    line.textContent = state?.running ? 'Đang chia sẻ, khoảng 2 phút một lần. Tự tắt khi pin dưới 20%.' : notice || 'Đang tắt.';
   }
 
   async function load() {
@@ -82,21 +92,21 @@ export function mountSharing({ signal, onChange }) {
   }
 
   async function start() {
-    busy = true; show();
+    busy = true; notice = ''; extra.replaceChildren(); show();
     try {
       const permission = await share.requestPermissions();
-      if (signal.aborted) return;
-      if (permission.location !== 'granted') {
-        say('Cần quyền vị trí để chia sẻ. Mở cài đặt và cho Homie dùng vị trí nhé.');
-        extra.replaceChildren(button('Mở cài đặt', 'secondary-button', () => share.openAppSettings()));
-        return;
-      }
       const current = await share.status();
       if (signal.aborted) return;
-      if (current.battery < 20 && !current.charging) { say('Pin dưới 20%. Sạc thêm rồi bật lại nhé.'); return; }
-      if (!current.ignoringBatteryOptimizations) await share.openBatterySettings().catch(() => {});
+      const blocked = startBlock(permission, current);
+      if (blocked) {
+        say(blocked);
+        if (!/Pin/.test(blocked)) extra.replaceChildren(button('Mở cài đặt', 'secondary-button', () => share.openAppSettings()));
+        return;
+      }
+      // Start while Homie is still in front (Android 14+ background-start rules), then offer the battery prompt.
       await share.start({ serverUrl: location.origin });
       if (signal.aborted) return;
+      if (!current.ignoringBatteryOptimizations) await share.openBatterySettings().catch(() => {});
       const tips = document.createElement('p');
       tips.className = 'location-hint';
       tips.textContent = batteryTips(current.manufacturer);
@@ -111,7 +121,7 @@ export function mountSharing({ signal, onChange }) {
   }
 
   async function stop() {
-    busy = true; show();
+    busy = true; notice = ''; show();
     try { await share.stop(); onChange(); }
     catch { if (!signal.aborted) say('Chưa dừng được. Thử lại nhé.'); }
     finally { busy = false; if (!signal.aborted) await load(); }

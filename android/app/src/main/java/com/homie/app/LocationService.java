@@ -15,6 +15,7 @@ import android.content.pm.ServiceInfo;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.LocationRequest;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -105,7 +106,13 @@ public class LocationService extends Service {
         ContextCompat.registerReceiver(this, batteryWatch, new IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED);
         locations = (LocationManager) getSystemService(LOCATION_SERVICE);
         try {
-            locations.requestLocationUpdates(provider(), INTERVAL_MS, 0f, listener, Looper.getMainLooper());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // The default (balanced) quality skips GPS and gives nothing where network location is off or weak.
+                LocationRequest request = new LocationRequest.Builder(INTERVAL_MS).setQuality(LocationRequest.QUALITY_HIGH_ACCURACY).build();
+                locations.requestLocationUpdates(provider(), request, ContextCompat.getMainExecutor(this), listener);
+            } else {
+                locations.requestLocationUpdates(provider(), INTERVAL_MS, 0f, listener, Looper.getMainLooper());
+            }
         } catch (SecurityException | IllegalArgumentException e) {
             shutdown("permission");
             return START_NOT_STICKY;

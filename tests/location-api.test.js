@@ -94,3 +94,20 @@ test('both stopping at the same new spot share one place', async t => {
   assert.equal((await call('GET', '/api/places', undefined, minh)).body.places.length, 1);
 });
 
+
+test('a point turns sharing on when the phone could not say so', async t => {
+  const { call, minh, yen } = await fixture(t);
+  await walk(call, minh, home, [1]);
+  const person = (await call('GET', '/api/location', undefined, yen)).body.people.minhle;
+  assert.equal(person.sharing.on, true);
+  assert.equal(person.stale, false);
+});
+
+test('a stop with no point for over 30 minutes is no longer "here"', async t => {
+  const { call, minh, yen } = await fixture(t);
+  await call('PUT', '/api/location/sharing', { on: true }, minh);
+  await walk(call, minh, home, [60, 50, 40]);
+  const person = (await call('GET', '/api/location', undefined, yen)).body.people.minhle;
+  assert.equal(person.place, null, 'the place is not shown as current');
+  assert.equal(person.stale, true);
+});
