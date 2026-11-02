@@ -34,6 +34,12 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
+        <!-- Vị trí: shares the position about every 2 minutes while sharing is on (started from the app). -->
+        <service
+            android:name=".LocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <!-- Phone notifications (Firebase Cloud Messaging): status bar icon and accent colour. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
@@ -50,4 +56,11 @@
     <!-- Khoảnh khắc: the in-app camera, and saving downloads to Pictures/Homie on Android 9 and older. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Vị trí: position while sharing (a foreground service started from the app keeps "while using" access),
+         the service itself, and the battery-optimisation prompt Xiaomi/Poco and Samsung phones need. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>
