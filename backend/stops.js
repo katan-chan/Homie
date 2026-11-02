@@ -31,7 +31,9 @@ function nearest(places, point) {
  */
 export function advance(stop, point, places) {
   if (stop && point.at <= stop.lastAt) return { stop, closed: null, place: null };
-  if (!stop || point.at - stop.lastAt > STOP.gapMs || distance(stop, point) > STOP.radius) {
+  // A point only ends the stop when even its accuracy circle lies outside it: one fuzzy indoor fix is not a trip.
+  const away = stop && distance(stop, point) - (point.accuracy ?? 0) > STOP.radius;
+  if (!stop || point.at - stop.lastAt > STOP.gapMs || away) {
     return { stop: startAt(point), closed: visitOf(stop), place: null };
   }
   const next = { ...stop, lastAt: point.at };

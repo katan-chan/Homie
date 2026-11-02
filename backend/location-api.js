@@ -40,7 +40,7 @@ function point(input, now) {
 
 function placeInput(input, { withPosition }) {
   const name = typeof input?.name === 'string' ? input.name.trim() : '';
-  const badPosition = withPosition && (!finite(input.lat) || !finite(input.lng) || Math.abs(input.lat) > 90 || Math.abs(input.lng) > 180);
+  const badPosition = withPosition && (!finite(input?.lat) || !finite(input?.lng) || Math.abs(input.lat) > 90 || Math.abs(input.lng) > 180);
   if (!name || /[\r\n]/.test(name) || [...name].length > LIMITS.placeName || badPosition) {
     throw invalid('invalid_place', `A place needs a one-line name of 1–${LIMITS.placeName} characters`);
   }
@@ -75,6 +75,13 @@ function note(input, now) {
   return { text, expiresAt: now + input.hours * 3600000 };
 }
 
+/** 'YYYY-MM' (Vietnam time) of every month from arrivedAt to leftAt. */
+export function monthsOf(arrivedAt, leftAt) {
+  const keys = new Set();
+  for (let day = arrivedAt; day < leftAt + DAY_MS; day += DAY_MS) keys.add(localDate(Math.min(day, leftAt)).slice(0, 7));
+  return [...keys];
+}
+
 export function create({ auth, allowedOrigins, dataDir, remote }) {
   const location = createDocStore({ key: 'location', dataDir, remote, empty: emptyLocation, validate: validLocation });
   const places = createDocStore({ key: 'places', dataDir, remote, empty: emptyItems, validate: validItems });
@@ -84,8 +91,11 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     if (!months.has(month)) months.set(month, createDocStore({ key: `visits-${month}`, dataDir, remote, empty: emptyItems, validate: validItems }));
     return months.get(month);
   };
-  const record = (user, visit) => visits(localDate(visit.arrivedAt).slice(0, 7))
-    .update(doc => { doc.items.push({ id: randomUUID(), user, ...visit }); });
+  // A visit is filed under every month it touches, so a day's timeline only reads its own month and the one before.
+  const record = async (user, visit) => {
+    const item = { id: randomUUID(), user, ...visit };
+    for (const key of monthsOf(visit.arrivedAt, visit.leftAt)) await visits(key).update(doc => { doc.items.push(item); });
+  };
   // ponytail: one queue for every point and sharing change, so two phones never create the same place twice; fine for two people.
   let queue = Promise.resolve();
   const serial = fn => { const run = queue.then(fn); queue = run.catch(() => {}); return run; };
@@ -144,7 +154,8 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
       const found = await esriRoute(a, b);
       if (!found) return null;
       cached = { from: a.id, ...found, at: Date.now() };
-      await routes.update(doc => { doc.routes[key] = cached; });
+      // A route that could not be saved is still shown; it is asked again next time.
+      await routes.update(doc => { doc.routes[key] = cached; }).catch(() => {});
     }
     const { from, at, ...route } = cached;
     return from === a.id ? route : { ...route, path: [...route.path].reverse() };
@@ -160,15 +171,15 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     const stop = doc[user].stop;
     const open = stop?.placeId ? [{ placeId: stop.placeId, arrivedAt: stop.since, leftAt: now - stop.lastAt > STOP.gapMs ? stop.lastAt : null }] : [];
     const byId = new Map(placeDoc.items.map(p => [p.id, p]));
-    const stops = [...monthDocs.flatMap(m => m.items.filter(v => v.user === user)), ...open]
+    const filed = new Map(monthDocs.flatMap(m => m.items.filter(v => v.user === user)).map(v => [v.id, v]));
+    const stops = [...filed.values(), ...open]
       .filter(v => v.arrivedAt < finish && (v.leftAt ?? now) > start && byId.has(v.placeId) && !byId.get(v.placeId).ignored)
       .sort((a, b) => a.arrivedAt - b.arrivedAt)
       .map(v => { const p = byId.get(v.placeId); return { placeId: p.id, name: p.name, lat: p.lat, lng: p.lng, arrivedAt: v.arrivedAt, leftAt: v.leftAt }; });
-    const legs = [];
-    for (let i = 1; i < stops.length; i++) {
-      if (stops[i - 1].placeId === stops[i].placeId) continue;
-      legs.push({ from: stops[i - 1].placeId, to: stops[i].placeId, route: await routeBetween(byId.get(stops[i - 1].placeId), byId.get(stops[i].placeId)) });
-    }
+    const pairs = stops.slice(1).map((s, i) => [stops[i], s]).filter(([a, b]) => a.placeId !== b.placeId);
+    // All legs at once: each uncached one may wait on Esri for up to 10 s.
+    const legs = await Promise.all(pairs.map(async ([a, b]) =>
+      ({ from: a.placeId, to: b.placeId, route: await routeBetween(byId.get(a.placeId), byId.get(b.placeId)) })));
     return { user, date, stops, legs };
   }
 

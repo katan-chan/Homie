@@ -78,3 +78,12 @@ test('end closes an open visit and ignores a short stop', () => {
   assert.equal(end(run([at(home, 0), at(home, 4)]).stop), null);
   assert.equal(end(null), null);
 });
+
+test('a far point whose accuracy still reaches the stop does not end it', () => {
+  // About 150 m from home, but only accurate to 80 m: it may still be home.
+  const fuzzy = { lat: home.lat + 0.00135, lng: home.lng };
+  const result = run([at(home, 0), at(home, 12), at(fuzzy, 14, { accuracy: 80 }), at(home, 16)]);
+  assert.deepEqual(result.closed, []);
+  assert.equal(result.stop.since, at(home, 0).at);
+  assert.equal(result.stop.lastAt, at(home, 16).at);
+});

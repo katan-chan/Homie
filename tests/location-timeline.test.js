@@ -1,6 +1,7 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, home, work, walk, MIN } from './helpers/location-fixture.mjs';
+import { monthsOf } from '../backend/location-api.js';
 
 // Esri routing is faked by intercepting fetch to its host; everything else (the test's own HTTP calls) goes through.
 const realFetch = globalThis.fetch;
@@ -9,6 +10,7 @@ globalThis.fetch = async (url, options) => {
   if (!String(url).startsWith('https://route-api.arcgis.com/')) return realFetch(url, options);
   esri.calls++;
   esri.last = String(url);
+  if (esri.delay) await new Promise(r => setTimeout(r, esri.delay));
   if (esri.fail) return new Response('{"error":{"code":498}}', { status: 200, headers: { 'content-type': 'application/json' } });
   return Response.json({ routes: { features: [{ attributes: { Total_TravelTime: 12.4, Total_Kilometers: 3.21 },
     geometry: { paths: [[[home.lng, home.lat], [105.845123456, 21.031234567], [work.lng, work.lat]]] } }] } });
@@ -116,4 +118,46 @@ test('an open stop with no point for over 30 minutes ends at its last point', as
   const stops = (await call('GET', `/api/timeline?user=minhle&date=${today()}`, undefined, minh)).body.stops;
   assert.equal(stops.length, 1);
   assert.ok(stops[0].leftAt && Date.now() - stops[0].leftAt >= 40 * MIN - 5000, 'left at the last point, not "bây giờ"');
+});
+
+test('a visit is filed under every month it touches', () => {
+  // 30/10 20:00 to 2/11 08:00 Vietnam time.
+  assert.deepEqual(monthsOf(Date.UTC(2026, 9, 30, 13), Date.UTC(2026, 10, 2, 1)), ['2026-10', '2026-11']);
+  assert.deepEqual(monthsOf(Date.UTC(2026, 10, 2, 1), Date.UTC(2026, 10, 2, 3)), ['2026-11']);
+  // 31/12 23:00 to 1/1 01:00.
+  assert.deepEqual(monthsOf(Date.UTC(2026, 11, 31, 16), Date.UTC(2026, 11, 31, 18)), ['2026-12', '2027-01']);
+});
+
+test('a visit spanning several days and a month boundary shows on each day, once', async t => {
+  const { call, remote, minh } = await fixture(t);
+  await call('POST', '/api/places', { name: 'Nhà', ...home }, minh);
+  const placeId = (await call('GET', '/api/places', undefined, minh)).body.places[0].id;
+  const visit = { id: 'v1', user: 'minhle', placeId, arrivedAt: Date.UTC(2026, 9, 30, 13), leftAt: Date.UTC(2026, 10, 2, 1) };
+  remote.docs.set('visits-2026-10', { items: [visit] });
+  remote.docs.set('visits-2026-11', { items: [visit] });
+  for (const date of ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02']) {
+    const stops = (await call('GET', `/api/timeline?user=minhle&date=${date}`, undefined, minh)).body.stops;
+    assert.deepEqual(stops.map(s => s.name), ['Nhà'], date);
+  }
+});
+
+test('a body of null is a bad request, not a crash', async t => {
+  const { call, minh } = await fixture(t);
+  assert.deepEqual([(await call('POST', '/api/places', null, minh)).status], [400]);
+  assert.deepEqual([(await call('PUT', '/api/location/note', null, minh)).status], [400]);
+  assert.deepEqual([(await call('POST', '/api/location/point', null, minh)).status], [400]);
+});
+
+test('routes for a day are asked together, not one after another', async t => {
+  const { call, minh } = await fixture(t);
+  const cafe = { lat: 21.0405, lng: 105.8442 };
+  await call('PUT', '/api/location/sharing', { on: true }, minh);
+  await walk(call, minh, home, [90, 80, 70]);
+  await walk(call, minh, work, [60, 50, 40]);
+  await walk(call, minh, cafe, [30, 20, 10]);
+  esri.delay = 300;
+  const started = Date.now();
+  const legs = (await call('GET', `/api/timeline?user=minhle&date=${today()}`, undefined, minh)).body.legs;
+  assert.equal(legs.length, 2);
+  assert.ok(Date.now() - started < 550, `took ${Date.now() - started} ms`);
 });
