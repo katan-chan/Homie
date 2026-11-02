@@ -29,8 +29,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Vị trí: a foreground service that posts the phone's position to /api/location/point about every 2 minutes, with the
@@ -49,13 +50,20 @@ public class LocationService extends Service {
     private static final long INTERVAL_MS = 120_000;
     private static final int MIN_BATTERY = 20;
     private static final int TIMEOUT_MS = 60_000;
+    private static final long RETRY_S = 30;
+    private static final int UNAUTHORIZED_LIMIT = 3;
 
     // Lives as long as the process: a killed process means a stopped service, which a saved flag would not show.
     private static volatile boolean running;
-    private final ExecutorService network = Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService network = Executors.newSingleThreadScheduledExecutor();
     private LocationManager locations;
     private String serverUrl;
-    private boolean stopping;
+    private volatile boolean stopping;
+    // Bumped by every stop and every start, so a stop still in flight never ends a sharing session started after it.
+    private volatile int generation;
+    private volatile int lastStartId;
+    private volatile long newestAt;
+    private int unauthorized;
 
     private final LocationListener listener = this::send;
 
@@ -87,6 +95,7 @@ public class LocationService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        lastStartId = startId;
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             shutdown("user");
@@ -96,6 +105,9 @@ public class LocationService extends Service {
         // Every startForegroundService() must be answered with startForeground(), even when already sharing.
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
         ServiceCompat.startForeground(this, ONGOING_ID, ongoing(), type);
+        synchronized (this) {
+            if (stopping) { stopping = false; generation++; }
+        }
         if (locations != null) return START_NOT_STICKY;
         serverUrl = intent.getStringExtra(EXTRA_SERVER);
         if (serverUrl == null || !hasPermission()) {
@@ -133,15 +145,27 @@ public class LocationService extends Service {
     }
 
     private void send(Location location) {
+        long at = location.getTime();
         String body = String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"accuracy\":%.1f,\"at\":%d}",
-            location.getLatitude(), location.getLongitude(), location.hasAccuracy() ? location.getAccuracy() : 100f, location.getTime());
-        // Only the newest point matters: a failed one is simply replaced by the next.
-        network.execute(() -> {
-            if (request("POST", "/api/location/point", body) == 401) {
+            location.getLatitude(), location.getLongitude(), location.hasAccuracy() ? location.getAccuracy() : 100f, at);
+        newestAt = at;
+        network.execute(() -> post(body, at));
+    }
+
+    /** Network thread. A failed point is tried again in 30 s while it is still the newest one. */
+    private void post(String body, long at) {
+        if (stopping || at < newestAt) return;
+        int code = request("POST", "/api/location/point", body);
+        if (code == 401) {
+            // One 401 can be a backend restart that briefly lost sessions; three in a row means signed out.
+            if (++unauthorized >= UNAUTHORIZED_LIMIT) {
                 alert("Đăng nhập lại để tiếp tục chia sẻ vị trí.");
                 shutdown("auth");
             }
-        });
+            return;
+        }
+        if (code >= 200 && code < 300) { unauthorized = 0; return; }
+        if (code != 400 && !stopping) network.schedule(() -> post(body, at), RETRY_S, TimeUnit.SECONDS);
     }
 
     /** Status code, or -1 when the request did not complete. Runs on the network thread. */
@@ -172,7 +196,9 @@ public class LocationService extends Service {
     private synchronized void shutdown(String reason) {
         if (stopping) return;
         stopping = true;
+        int token = ++generation, startId = lastStartId;
         if (locations != null) locations.removeUpdates(listener);
+        locations = null;
         try { unregisterReceiver(batteryWatch); } catch (IllegalArgumentException ignored) { }
         setRunning(false);
         if (serverUrl == null) serverUrl = getSharedPreferences(PREFS, MODE_PRIVATE).getString("server", null);
@@ -180,16 +206,20 @@ public class LocationService extends Service {
             network.execute(() -> request("PUT", "/api/location/sharing", "{\"on\":false,\"reason\":\"" + reason + "\"}"));
         }
         network.execute(() -> {
+            if (token != generation) return;
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            // Only stops when no start came after this stop; a newer start keeps the service.
+            stopSelfResult(startId);
         });
     }
 
     @Override
     public void onDestroy() {
-        if (!stopping && locations != null) locations.removeUpdates(listener);
+        if (locations != null) locations.removeUpdates(listener);
+        try { unregisterReceiver(batteryWatch); } catch (IllegalArgumentException ignored) { }
         setRunning(false);
-        network.shutdown();
+        // Drops waiting retries; the "sharing off" request already went out before stopSelf().
+        network.shutdownNow();
         super.onDestroy();
     }
 
