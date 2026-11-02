@@ -23,8 +23,8 @@ js/
   tabs/
     garden.js             # tiêu đề và lettering homepage
     dashboard.js          # danh sách bảng, tab bảng, thùng rác bảng, thư viện
-    minhle.js              # cấu hình bố cục/ảnh Minh Lê bằng code
-    haiyen.js              # cấu hình bố cục/ảnh Hải Yến bằng code
+    minhle.js              # cấu hình bố cục Minh Lê bằng code
+    haiyen.js              # cấu hình bố cục Hải Yến bằng code
   notes/
     model.js              # schema, command metadata, dùng chung với backend
     client.js             # fetch/SSE, hàng đợi IndexedDB, lease, presence

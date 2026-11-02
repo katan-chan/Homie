@@ -68,6 +68,7 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/background.js | Hai canvas dùng chung, tải ảnh độc lập, image retry, resize và cleanup của shell |
 | js/tabs/garden.js | Tiêu đề, lettering fallback và cleanup nội dung homepage |
 | js/profile.js | Nội dung hồ sơ công khai và form sửa chữ của owner |
+| js/features/avatar/* | Ảnh đại diện: `avatarUrl(profile)`, `avatarNode(profile, name)`, `mountAvatarEditor(host, { profile, signal, onChange }) -> cleanup` (editor.js); cắt/nén `cropRect`, `panBy`, `zoomTo`, `renderAvatar` (crop.js); chỉ gọi /api/profiles/:id/avatar |
 | js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
 | js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
 | js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules,psi}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar, /api/ideas/sessions và /api/moments) |

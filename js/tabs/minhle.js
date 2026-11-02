@@ -1,6 +1,6 @@
 import { renderProfile } from '../profile.js';
 
-// Bố cục/ảnh của Minh Lê được thay đổi trong code, không qua nút Edit.
+// Bố cục của Minh Lê được thay đổi trong code; chữ và ảnh đại diện sửa qua nút Edit.
 const definition = {
   id: 'minhle',
   displayName: 'Minh Lê',

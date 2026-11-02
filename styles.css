@@ -38,6 +38,16 @@ button:disabled{cursor:wait;opacity:.6}
 .profile--minhle .account-card{border-color:#ccd4bd}
 .profile-editor .auth-page{margin:24px 0 0}
 .profile-editor .account-card{padding:20px;box-shadow:none}
+.profile-avatar{display:block;width:112px;height:112px;border-radius:50%;object-fit:cover;border:3px solid var(--profile-accent,var(--accent));margin-bottom:12px}
+.profile-avatar-initial{display:grid;place-items:center;background:var(--profile-accent,var(--accent));color:#fff;font:500 48px/1 var(--font-head)}
+.avatar-editor{margin:8px 0 20px}
+.avatar-actions{display:flex;flex-wrap:wrap;gap:10px}
+.avatar-crop{display:grid;gap:12px;margin-top:16px;max-width:280px}
+.avatar-crop-frame{position:relative;width:min(280px,100%);aspect-ratio:1;border-radius:50%;overflow:hidden;background:#f3e6ea;touch-action:none;cursor:grab}
+.avatar-crop-frame:focus-visible{outline:3px solid var(--profile-accent,var(--accent));outline-offset:3px}
+.avatar-crop-frame img{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;user-select:none;pointer-events:none}
+.avatar-crop input[type=range]{width:100%;min-height:44px;accent-color:var(--profile-accent,var(--accent))}
+.avatar-confirm{margin-top:16px}
 @media(max-width:600px){
  .auth-page,.profile-page{margin:100px auto 32px}
  .account-card{padding:24px 20px;border-radius:20px}

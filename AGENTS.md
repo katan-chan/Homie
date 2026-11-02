@@ -5,7 +5,7 @@
 ## Phạm vi và trải nghiệm
 
 - Chỉ triển khai yêu cầu đã được người dùng chốt. Dashboard đang giữ chỗ; không tự thêm ghi chú mẫu, CRUD note, tài khoản khác hoặc đồng bộ.
-- Đã triển khai local hai tài khoản minhle (Minh Lê), haiyen (Hải Yến), đăng nhập bằng mật khẩu. Garden và hai tab hồ sơ công khai; dashboard riêng tư. Chỉ owner sửa tên hiển thị/bio của mình bằng Edit; bố cục/ảnh chỉnh trong module code riêng. Xem docs/authentication.md. Không thêm đăng ký; không đưa mật khẩu thật vào code, tài liệu hoặc test được commit.
+- Đã triển khai local hai tài khoản minhle (Minh Lê), haiyen (Hải Yến), đăng nhập bằng mật khẩu. Garden và hai tab hồ sơ công khai; dashboard riêng tư. Chỉ owner sửa tên hiển thị/bio và ảnh đại diện của mình bằng Edit; bố cục chỉnh trong module code riêng. Xem docs/authentication.md. Không thêm đăng ký; không đưa mật khẩu thật vào code, tài liệu hoặc test được commit.
 - Giữ homepage vườn hoa vẽ tay, tông hồng hoàng hôn và hai Loopy đã duyệt. Không tự thay asset hoặc bố cục. Không tạo hoa bằng SVG.
 - Tab nằm trong sidebar trái; chọn tab giữ sidebar mở. Không blur nền. Logo chỉ nhận diện, không liên kết về trang chủ.
 - Giữ focus bàn phím, touch target ít nhất 44 px, responsive và prefers-reduced-motion.

@@ -1,6 +1,6 @@
 # Phạm vi hiện tại
 
-Đã triển khai local: vườn hoa, hai hồ sơ công khai, bảng ghi chú dùng chung trong Góc ghi chép (kèm tab Nội quy), Hũ, Lịch, Khoảnh khắc, Gợi ý chủ đề seminar và Hoạt động chung. Garden và hồ sơ xem công khai; bảng ghi chú chọn ai xem được (chỉ mình tôi, hai đứa mình hoặc công khai); Hũ, Lịch, Khoảnh khắc, Seminar, Hoạt động chung và Nội quy chỉ dành cho hai thành viên đã đăng nhập; mọi thao tác ghi cần đăng nhập. Chỉ minhle sửa chữ hồ sơ Minh Lê, haiyen sửa chữ hồ sơ Hải Yến; bố cục/ảnh chỉnh code trong module riêng. Xem [tài khoản](authentication.md). Không có đăng ký công khai.
+Đã triển khai local: vườn hoa, hai hồ sơ công khai, bảng ghi chú dùng chung trong Góc ghi chép (kèm tab Nội quy), Hũ, Lịch, Khoảnh khắc, Gợi ý chủ đề seminar và Hoạt động chung. Garden và hồ sơ xem công khai; bảng ghi chú chọn ai xem được (chỉ mình tôi, hai đứa mình hoặc công khai); Hũ, Lịch, Khoảnh khắc, Seminar, Hoạt động chung và Nội quy chỉ dành cho hai thành viên đã đăng nhập; mọi thao tác ghi cần đăng nhập. Chỉ minhle sửa hồ sơ Minh Lê, haiyen sửa hồ sơ Hải Yến (chữ và ảnh đại diện); bố cục chỉnh code trong module riêng. Xem [tài khoản](authentication.md). Không có đăng ký công khai.
 
 Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầu.
 
@@ -13,8 +13,10 @@ Không tự thêm backlog ngoài các không gian và tính năng đã yêu cầ
 | Khoảnh khắc | `moments` | Photobooth trên máy tính, chụp nhanh kiểu Locket trên điện thoại, một album chung. Chi tiết bên dưới. |
 | Gợi ý chủ đề seminar | `seminar` | Kho chủ đề và lượt bốc chung để hai đứa tìm hiểu rồi kể cho nhau nghe. Chi tiết bên dưới. |
 | Hoạt động chung | `activity` | Kho ý tưởng theo bảy loại và lượt bốc chung. Chi tiết bên dưới. |
-| Minh Lê | `minhle` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. Khi đã đăng nhập, dưới hồ sơ có tờ PSI (Minh nghĩ gì về Minh). |
-| Hải Yến | `haiyen` | Hồ sơ công khai; owner dùng Edit sửa tên hiển thị/giới thiệu. |
+| Minh Lê | `minhle` | Hồ sơ công khai có ảnh đại diện; owner dùng Edit sửa tên hiển thị/giới thiệu và đổi/xóa ảnh. Khi đã đăng nhập, dưới hồ sơ có tờ PSI (Minh nghĩ gì về Minh). |
+| Hải Yến | `haiyen` | Hồ sơ công khai có ảnh đại diện; owner dùng Edit sửa tên hiển thị/giới thiệu và đổi/xóa ảnh. |
+
+Ảnh đại diện: trong Edit, "Đổi ảnh" chọn ảnh JPG/PNG/WebP, cắt khung tròn bằng cách kéo (hoặc phím mũi tên) và thanh "Phóng to", rồi "Lưu ảnh". Ảnh được nén trên máy (512×512, dưới 80 KB, mất EXIF/GPS) và hiện công khai đầu trang hồ sơ; chưa có ảnh thì hiện chữ cái đầu tên. "Xóa ảnh" hỏi lại trước khi xóa. Sửa tên/giới thiệu không ảnh hưởng ảnh.
 
 ## Bảng ghi chú (Góc ghi chép)
 

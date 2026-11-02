@@ -1,5 +1,6 @@
 import { apiRequest, authEvents, getUser, updateUserProfile } from './auth.js';
 import { renderLogin } from './login.js';
+import { avatarNode, mountAvatarEditor } from './features/avatar/editor.js';
 
 export function renderProfile(container, { signal }, definition) {
   if (signal.aborted) return () => {};
@@ -9,6 +10,7 @@ export function renderProfile(container, { signal }, definition) {
   section.style.setProperty('--profile-accent', definition.accent);
   section.innerHTML = `
     <div class="account-card profile-card">
+      <div class="profile-avatar-slot"></div>
       <p class="page-eyebrow">Một góc trong vườn</p>
       <h1 class="profile-name"></h1>
       <p class="profile-bio"></p>
@@ -23,7 +25,15 @@ export function renderProfile(container, { signal }, definition) {
   const actions = section.querySelector('.profile-actions');
   const editor = section.querySelector('.profile-editor');
   const status = section.querySelector('.profile-status');
+  const avatarSlot = section.querySelector('.profile-avatar-slot');
   let profile = null;
+  let avatarCleanup = null;
+  // The picture editor lives inside the text editor and goes away with it.
+  function clearEditor() {
+    avatarCleanup?.();
+    avatarCleanup = null;
+    editor.replaceChildren();
+  }
   let editing = false;
   let draft = null;
   let loginCleanup = null;
@@ -47,6 +57,7 @@ export function renderProfile(container, { signal }, definition) {
   function showActions() {
     if (disposed || signal.aborted) return;
     title.textContent = profile?.displayName ?? definition.displayName;
+    avatarSlot.replaceChildren(avatarNode(profile ?? { id: definition.id }, title.textContent));
     bio.textContent = profile?.bio || 'Chưa có giới thiệu.';
     actions.replaceChildren();
     const viewer = getUser();
@@ -70,13 +81,13 @@ export function renderProfile(container, { signal }, definition) {
         if (form) draft = { displayName: form.elements.displayName.value, bio: form.elements.bio.value };
         editing = false;
         loginCleanup?.();
-        editor.replaceChildren();
+        clearEditor();
         loginCleanup = renderLogin(editor, {
           signal,
           onSuccess: () => {
             loginCleanup?.();
             loginCleanup = null;
-            editor.replaceChildren();
+            clearEditor();
             status.textContent = getUser()?.id === definition.id ? '' : 'Bạn chỉ có thể sửa hồ sơ của mình.';
             showActions();
             if (getUser()?.id === definition.id && draft) showEditor();
@@ -92,7 +103,9 @@ export function renderProfile(container, { signal }, definition) {
     if (!profile || getUser()?.id !== definition.id || signal.aborted) return;
     editing = true;
     status.textContent = '';
+    clearEditor();
     editor.innerHTML = `
+      <div class="profile-avatar-edit"></div>
       <form class="profile-edit-form">
         <label for="profile-display-name">Tên hiển thị</label>
         <input id="profile-display-name" name="displayName" maxlength="80" required autocomplete="name">
@@ -103,6 +116,15 @@ export function renderProfile(container, { signal }, definition) {
           <button class="secondary-button" type="button" data-action="cancel-edit">Hủy</button>
         </div>
       </form>`;
+    avatarCleanup = mountAvatarEditor(editor.querySelector('.profile-avatar-edit'), {
+      profile, signal,
+      onChange: next => {
+        if (disposed || signal.aborted) return;
+        profile = next;
+        updateUserProfile(profile);
+        showActions();
+      },
+    });
     const form = editor.querySelector('form');
     form.elements.displayName.value = draft?.displayName ?? profile.displayName;
     form.elements.bio.value = draft?.bio ?? profile.bio;
@@ -110,7 +132,7 @@ export function renderProfile(container, { signal }, definition) {
     cancel.addEventListener('click', () => {
       editing = false;
       draft = null;
-      editor.replaceChildren();
+      clearEditor();
       showActions();
       actions.querySelector('button')?.focus();
     }, { signal });
@@ -130,7 +152,7 @@ export function renderProfile(container, { signal }, definition) {
         profile = result.profile;
         editing = false;
         draft = null;
-        editor.replaceChildren();
+        clearEditor();
         updateUserProfile(profile);
         showActions();
         status.textContent = 'Đã lưu hồ sơ.';
@@ -174,7 +196,7 @@ export function renderProfile(container, { signal }, definition) {
     if (getUser()?.id !== definition.id && !expired) {
       editing = false;
       draft = null;
-      editor.replaceChildren();
+      clearEditor();
     }
     showActions();
     syncPsi();
@@ -186,6 +208,7 @@ export function renderProfile(container, { signal }, definition) {
     psi?.controller.abort();
     disposed = true;
     loginCleanup?.();
+    avatarCleanup?.();
     section.remove();
   };
 }
