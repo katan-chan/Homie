@@ -1,46 +1,68 @@
-/* Vị trí: the map covers the window; title and modes float on it; a sheet on the bottom edge holds the rest. The site
-   header (menu, logo) stays above it at the top left. --sheet-h is the sheet's height, set from page.js. */
+/* Vị trí: the map covers the window; one bar holds everything else. Wide screens (901 px and up, as wide() in page.js):
+   the bar is fixed to the right edge, full height, and slides out and back by the handle on its edge. Narrower: it is a
+   sheet on the bottom edge that page.js moves between open, half and hidden. page.js sets --bar-x / --bar-y, how much of
+   the map the bar covers, so the zoom buttons and the + stay in the free part. The site header stays at the top left. */
 .location-page{position:fixed;inset:0;z-index:2;overflow:hidden}
 .location-page button{font:inherit;cursor:pointer}
 .location-page button:disabled{opacity:.5;cursor:default}
 .location-page [hidden]{display:none!important}
 .location-map{position:absolute;inset:0;background:#f3e6ea;z-index:0}
-.location-head{position:absolute;top:20px;right:24px;z-index:1;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 10px;max-width:calc(100% - 48px)}
-.location-title{font:500 34px/1.15 var(--font-head);letter-spacing:-1px;margin:0;padding:0 14px 4px;border-radius:14px;background:rgba(255,250,245,.94);color:var(--ink);box-shadow:0 2px 8px rgba(59,42,51,.12)}
-.location-modes,.location-who{display:inline-flex;border:1px solid var(--line);border-radius:12px;background:#fffdf9}
-.location-modes{box-shadow:0 2px 8px rgba(59,42,51,.12)}
-.location-mode:first-child{border-radius:11px 0 0 11px}
-.location-mode:last-child{border-radius:0 11px 11px 0}
-.location-mode{min-height:44px;min-width:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);white-space:nowrap}
-.location-mode[aria-pressed=true]{background:var(--accent);color:#fff}
-.location-map-note{position:absolute;left:16px;right:16px;top:96px;margin:0 auto;max-width:520px;padding:10px 12px;border-radius:12px;background:rgba(255,250,245,.94);color:var(--muted);font-size:14px;z-index:1;pointer-events:none}
-/* Leaflet: zoom buttons at the 44 px touch size; the bottom controls ride above the sheet. */
+.location-map-note{position:absolute;left:16px;right:calc(var(--bar-x,0px) + 16px);top:96px;margin:0 auto;max-width:520px;padding:10px 12px;border-radius:12px;background:rgba(255,250,245,.94);color:var(--muted);font-size:14px;z-index:1;pointer-events:none}
+/* Leaflet: zoom buttons at the 44 px touch size, beside or above the bar. */
 .location-page .location-map .leaflet-bar a{width:44px;height:44px;line-height:44px;font-size:22px}
-.location-page .leaflet-bottom{bottom:var(--sheet-h,0px)}
-/* The + that marks a new place, centred in the part of the map above the sheet. */
-.location-cross{position:absolute;left:50%;top:calc((100% - var(--sheet-h,0px)) / 2);width:36px;height:36px;transform:translate(-50%,-50%);z-index:1;pointer-events:none}
+.location-page .leaflet-bottom{bottom:var(--bar-y,0px);transition:bottom .3s ease}
+.location-page .leaflet-right{right:var(--bar-x,0px);transition:right .3s ease}
+/* The + that marks a new place, centred in the free part of the map. */
+.location-cross{position:absolute;left:calc((100% - var(--bar-x,0px)) / 2);top:calc((100% - var(--bar-y,0px)) / 2);width:36px;height:36px;transform:translate(-50%,-50%);z-index:1;pointer-events:none}
 .location-cross::before,.location-cross::after{content:"";position:absolute;background:var(--accent);border-radius:2px;box-shadow:0 0 0 2px #fff}
 .location-cross::before{left:17px;top:0;width:2px;height:36px}
 .location-cross::after{top:17px;left:0;width:36px;height:2px}
 
-/* The sheet. */
-.location-sheet{position:absolute;left:0;right:0;bottom:0;z-index:1;display:flex;flex-direction:column;max-height:72%;border-radius:24px 24px 0 0;border-top:1px solid var(--line);background:rgba(255,250,245,.96);box-shadow:0 -6px 24px rgba(59,42,51,.15)}
-/* Top row: the handle centred, × (map only) on the right. */
-.location-sheet-top{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;flex:none;padding:0 6px}
-.location-handle{grid-column:2;display:grid;place-items:center;width:100%;min-height:44px;border:0;background:transparent}
-.location-close{grid-column:3;width:44px;height:44px;border:0;border-radius:12px;background:transparent;color:var(--ink);font:400 32px/1 system-ui,sans-serif}
-.location-close:hover{background:rgba(152,90,116,.1);color:var(--ink)}
-.location-show{position:absolute;top:20px;right:24px;z-index:1;box-shadow:0 2px 8px rgba(59,42,51,.15)}
-.location-handle span{width:44px;height:5px;border-radius:3px;background:#d9b6c1}
-.location-sheet-body{display:grid;gap:12px;min-height:0;overflow:auto;padding:0 max(18px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px))}
-.location-peek{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+/* The bar. */
+.location-bar{position:absolute;z-index:1;display:flex;flex-direction:column;background:rgba(255,250,245,.97);transition:transform .3s ease}
+.location-bar.is-dragging,.location-page:has(.is-dragging) .leaflet-bottom{transition:none}
+.location-bar-content{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+.location-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;flex:none;padding:16px 18px 10px}
+.location-title{flex:1 1 auto;margin:0;font:500 34px/1.15 var(--font-head);letter-spacing:-1px;color:var(--ink)}
+.location-modes,.location-who{display:inline-flex;border:1px solid var(--line);border-radius:12px;background:#fffdf9}
+.location-mode:first-child{border-radius:11px 0 0 11px}
+.location-mode:last-child{border-radius:0 11px 11px 0}
+.location-mode{min-height:44px;min-width:44px;padding:0 14px;border:0;background:transparent;color:var(--ink);white-space:nowrap}
+.location-mode[aria-pressed=true]{background:var(--accent);color:#fff}
+.location-bar-body{display:grid;gap:14px;align-content:start;min-height:0;overflow:auto;padding:4px max(18px,env(safe-area-inset-right,0px)) max(18px,env(safe-area-inset-bottom,0px)) 18px}
+/* Handle (wide) and grip (narrow): only one of them shows. */
+.location-handle{position:absolute;display:none;align-items:center;justify-content:center;gap:4px;border:0;background:var(--accent);color:#fff;font-weight:700;box-shadow:0 4px 14px rgba(59,42,51,.25)}
+.location-handle:hover{filter:brightness(1.08)}
+.location-handle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;transition:transform .3s ease}
+.location-grip{display:grid;place-items:center;flex:none;width:100%;min-height:44px;margin-bottom:-14px;border:0;background:transparent;touch-action:none;cursor:grab}
+.location-grip span{width:44px;height:5px;border-radius:3px;background:#d9b6c1}
+
+/* Narrow: a sheet on the bottom edge; the grip and the title row take swipes. */
+.location-bar{left:0;right:0;bottom:0;max-height:78%;border-top:1px solid var(--line);border-radius:22px 22px 0 0;box-shadow:0 -6px 24px rgba(59,42,51,.15)}
+.location-head{touch-action:none}
+.location-title{font-size:28px}
+
+/* Wide: fixed to the right edge, full height; the handle sits on its left edge and stays in view when it slides out. */
+@media(min-width:901px){
+ .location-bar{left:auto;top:0;right:0;bottom:0;width:380px;max-height:none;border-top:0;border-left:1px solid var(--line);border-radius:0;box-shadow:-6px 0 24px rgba(59,42,51,.12)}
+ .location-head{touch-action:auto;padding-top:20px}
+ .location-title{font-size:36px}
+ .location-grip{display:none}
+ .location-handle{display:flex;flex-direction:column;right:calc(100% + 1px);top:50%;width:48px;height:96px;margin-top:-48px;border-radius:16px 0 0 16px;font-size:13px}
+ .location-handle[aria-expanded=false] svg{transform:rotate(180deg)}
+ /* The people list below says the same as the chips. */
+ .location-half .location-chip{display:none}
+}
+
+/* What the bar holds. */
+.location-half{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.location-half:empty{display:none}
 .location-chip{display:flex;align-items:center;gap:10px;flex:1 1 140px;min-width:0;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:16px;background:#fffdf9;color:var(--ink);text-align:left}
 .location-chip .profile-avatar{width:44px;height:44px;margin:0;flex:none;border-width:2px}
 .location-chip .profile-avatar-initial{font-size:20px}
 .location-chip-text{display:grid;min-width:0}
 .location-chip-line{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.location-more{justify-self:start}
-.location-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:16px 28px;align-items:start;min-width:0}
+.location-panel{display:grid;gap:18px;align-items:start;min-width:0}
 .location-panel h2{margin:0;font-size:18px;color:var(--ink)}
 .location-hint{margin:0;color:var(--muted);font-size:14px}
 .location-status:empty{display:none}
@@ -52,8 +74,7 @@
 .location-person-text{display:grid;flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
 .location-person-line,.location-person-place,.location-stop-time{color:var(--muted);font-size:14px}
 .location-person-note{font-size:14px}
-.location-note,.location-add-box{display:grid;gap:8px;justify-items:start}
-.location-note>*,.location-add-box>*{justify-self:stretch}
+.location-note,.location-add-box{display:grid;gap:8px}
 .location-note>button,.location-add-here{justify-self:start}
 .location-note label{font-weight:600}
 .location-note-row,.location-name{display:flex;flex-wrap:wrap;gap:8px}
@@ -77,26 +98,11 @@
 .location-pin-line{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);white-space:nowrap;padding:2px 8px;border-radius:999px;background:rgba(255,250,245,.95);color:var(--ink);font-size:12px}
 .location-place-dot{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(59,42,51,.3)}
 
-/* Wide screens: the sheet is a card in the top right corner, under the modes, kept short enough that the zoom buttons
-   fit below it in the corner; the + and the map note move into the map left of it. 901 px matches cornerCard() in page.js. */
-@media(min-width:901px){
- .location-sheet{left:auto;right:24px;top:84px;bottom:auto;width:380px;max-height:calc(100% - 84px - 140px);border:1px solid var(--line);border-radius:22px;box-shadow:0 8px 28px rgba(59,42,51,.18)}
- .location-panel{grid-template-columns:minmax(0,1fr)}
- .location-chip{flex-basis:100%}
- .location-page .leaflet-bottom{bottom:0}
- .location-page .leaflet-bottom.leaflet-right .leaflet-control{margin:0 14px 14px 0}
- .location-cross{left:calc((100% - var(--sheet-w,380px) - 24px) / 2);top:50%}
- .location-map-note{right:calc(var(--sheet-w,380px) + 48px)}
-}
-/* Phones: the floating title and modes sit under the site header's row. */
+/* Phones: the bar starts under the site header's row when pulled all the way up. */
 @media(max-width:600px){
- .location-head{top:calc(68px + env(safe-area-inset-top,0px));right:14px;max-width:calc(100% - 28px)}
- .location-show{top:calc(68px + env(safe-area-inset-top,0px));right:14px}
- .location-title{font-size:28px}
- .location-map-note{top:calc(128px + env(safe-area-inset-top,0px))}
- .location-sheet{max-height:78%}
+ .location-bar{max-height:calc(100% - 72px - env(safe-area-inset-top,0px))}
+ .location-map-note{top:calc(72px + env(safe-area-inset-top,0px))}
 }
-@media(max-height:500px){
- .location-head,.location-show{top:14px}
- .location-sheet{max-height:86%}
+@media(prefers-reduced-motion:reduce){
+ .location-bar,.location-handle svg,.location-page .leaflet-bottom,.location-page .leaflet-right{transition:none}
 }

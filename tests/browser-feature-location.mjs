@@ -52,12 +52,25 @@ try {
     const clickText = text => ev(`[...document.querySelectorAll(".location-page button")].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)}).click()`).catch(error => { throw Error(`no button ${text}: ${error.message}`); });
     const text = '(document.querySelector(".location-page")?.textContent??"")';
     const type = (selector, value) => ev(`const i=document.querySelector(${JSON.stringify(selector)});i.value=${JSON.stringify(value)};i.dispatchEvent(new Event("input",{bubbles:true}))`);
-    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-sheet button,.location-sheet input,.location-sheet select,.location-modes button,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=44&&r.width>=44;})})()';
-    // The map covers the whole window. Up to 900 px the sheet sits on its bottom edge with the zoom buttons above it;
-    // wider, it is a card in the top right corner, under the modes, with the zoom buttons below it.
-    const fullMap = '(()=>{const m=document.querySelector(".location-map").getBoundingClientRect(),s=document.querySelector(".location-sheet").getBoundingClientRect(),z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),h=document.querySelector(".location-modes").getBoundingClientRect(),W=innerWidth,H=innerHeight;if(!(m.left<=0&&m.top<=0&&m.right>=W&&m.bottom>=H))return false;return W>900?s.left>W/2&&W-s.right>=16&&W-s.right<=32&&s.top>=h.bottom&&z.top>=s.bottom&&z.bottom<=H:s.left<=0&&s.right>=W&&Math.abs(s.bottom-H)<=1&&z.bottom<=s.top})()';
+    const fits = '(()=>{const w=document.documentElement.clientWidth;return document.documentElement.scrollWidth<=w&&[...document.querySelectorAll(".location-bar button,.location-bar input,.location-bar select,.leaflet-bar a")].filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.height>=43.5&&r.width>=43.5;})})()';
+    const rect = selector => `document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect()`;
+    // The map covers the whole window. Wider than 900 px the bar is fixed to the right edge, full height, the zoom
+    // buttons left of it; narrower it is a sheet on the bottom edge with the zoom buttons above it.
+    const fullMap = `(()=>{const m=${rect('.location-map')},b=${rect('.location-bar')},z=${rect('.leaflet-control-zoom')},W=innerWidth,H=innerHeight;if(!(m.left<=0&&m.top<=0&&m.right>=W&&m.bottom>=H))return false;return W>900?Math.abs(b.right-W)<=1&&b.top<=0&&b.bottom>=H&&b.width>=360&&b.width<=400&&z.right<=b.left:b.left<=0&&b.right>=W&&b.top<H&&b.bottom>=H-1&&z.bottom<=b.top})()`;
     const shown = selector => `(document.querySelector(${JSON.stringify(selector)})?.getClientRects().length>0)`;
+    const onScreen = selector => `(()=>{const r=${rect(selector)};return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth})()`;
     const handle = 'document.querySelector(".location-handle")';
+    const grip = 'document.querySelector(".location-grip")';
+    // A finger on the grip moved by dy pixels, in steps, then lifted.
+    async function swipe(dy) {
+      const g = await ev(`(()=>{const r=${rect('.location-grip')};return [r.left+r.width/2,r.top+r.height/2]})()`);
+      await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: g[0], y: g[1], button: 'left', buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= 6; i++) await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: g[0], y: g[1] + dy * i / 6, button: 'left', buttons: 1 });
+      await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: g[0], y: g[1] + dy, button: 'left', buttons: 0, clickCount: 1 });
+    }
+    // Joins conditions into one expression (ev runs anything with a ";" not starting "(()=>" as statements).
+    const all = (...parts) => `(()=>(${parts.join("&&")}))()`;
+    const snapIs = name => `${grip}.getAttribute("aria-label").endsWith(${JSON.stringify({ open: 'mở hết', half: 'mở một nửa', hidden: 'ẩn' }[name])})`;
 
     await call('Network.enable'); await call('Network.clearBrowserCookies');
     await viewport(1440, 1000);
@@ -75,12 +88,14 @@ try {
     await check('focus on a mode button is not clipped', '(()=>{const b=document.querySelector(".location-mode");return getComputedStyle(b.parentElement).overflow==="visible"})()');
     await check('without a key the map says so', `${text}.includes("Chưa cài khóa bản đồ Esri")`);
     await check('the web has no sharing switch', `!${text}.includes("Bật chia sẻ")&&${text}.includes("chỉ bật được trong app Android")`);
-    await check('the map fills the window, the sheet in the top right corner', fullMap);
-    await check('the sheet starts folded: both people show, the note box does not', `${handle}.getAttribute("aria-expanded")==="false"&&document.querySelectorAll(".location-chip").length===2&&!${shown('.location-note')}`);
-    await clickText('Note và chi tiết');
-    await until(shown('.location-note'));
-    // The zoom buttons follow the sheet's new height one frame later.
-    await until(`(()=>${handle}.getAttribute("aria-expanded")==="true"&&${fullMap})()`);
+    await check('the map fills the window beside the bar on the right', fullMap);
+    await check("a wide bar shows title, modes, people and note at once", all(onScreen(".location-title"), onScreen(".location-modes"), onScreen(".location-people"), onScreen(".location-note")));
+    // The handle slides the bar out (only the map and the handle stay) and back.
+    await ev(`${handle}.click()`);
+    await until(`(()=>{const b=${rect('.location-bar')},h=${rect('.location-handle')},z=${rect('.leaflet-control-zoom')};return b.left>=innerWidth-1&&h.right<=innerWidth&&h.left>=innerWidth-49&&h.height>=88&&innerWidth-z.right<=24})()`);
+    await check('the slid-out bar says how to bring it back and cannot be tabbed into', `${handle}.getAttribute("aria-expanded")==="false"&&${handle}.textContent==="Hiện"&&document.querySelector(".location-bar-content").inert`);
+    await ev(`${handle}.click()`);
+    await until(all(fullMap, `${handle}.textContent==="Ẩn"`));
     checks++;
 
     await type('.location-note input', 'Đi học');
@@ -149,25 +164,37 @@ try {
     await ev('document.querySelector(".location-person button").focus();document.dispatchEvent(new Event("visibilitychange"))');
     await new Promise(r => setTimeout(r, 600));
     await check('focus stays on "Xem" across a refresh', 'document.activeElement?.getAttribute("aria-label")==="Xem Hải Yến trên bản đồ"');
-    await ev(`${handle}.click()`);
-    await check('folding hides the details again', `${handle}.getAttribute("aria-expanded")==="false"&&!${shown('.location-note')}`);
-    // × leaves only the map (and its zoom buttons); "Hiện thông tin" brings back the sheet as it was.
-    await ev('document.querySelector(".location-close").click()');
-    await until(`!${shown('.location-sheet')}&&!${shown('.location-head')}&&${shown('.location-show')}&&document.activeElement===document.querySelector(".location-show")`);
-    await check('with everything hidden the zoom buttons drop to the corner', '(()=>{const z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect();return innerHeight-z.bottom<=60&&innerWidth-z.right<=32})()');
-    await clickText('Hiện thông tin');
-    await until(`${shown('.location-sheet')}&&${shown('.location-head')}&&!${shown('.location-show')}&&${handle}.getAttribute("aria-expanded")==="false"`);
+    // Phone: no handle; the sheet starts half open (both people in view, the rest below the edge) and is swiped.
+    await viewport(390, 844);
+    await until(all(fullMap, snapIs("half"), `!${shown(".location-handle")}`));
+    // Once it has slid into place: the two people in view, the rest below the edge.
+    await until(all(onScreen(".location-chip"), `${rect(".location-panel")}.top>=innerHeight-1`, `document.querySelector(".location-panel").inert`));
     checks++;
+    await swipe(160);
+    await until(all(snapIs("hidden"), `${rect(".location-bar")}.top>=innerHeight-47`, fullMap));
+    await check("swiped down, only the map and the grip strip are left", all(`document.querySelector(".location-half").inert`, onScreen(".location-grip")));
+    await swipe(-120);
+    await until(all(snapIs("half"), onScreen(".location-chip")));
+    await swipe(-200);
+    await until(all(snapIs("open"), onScreen(".location-note"), `!document.querySelector(".location-panel").inert`, fullMap));
+    checks++;
+    // Two swipes down from open: map only.
+    await swipe(120); await until(snapIs('half'));
+    await swipe(120); await until(snapIs('hidden'));
+    // The click that ends a swipe is ignored for 300 ms, so a swipe never also counts as a tap.
+    await new Promise(r => setTimeout(r, 350));
+    // A tap on the grip (or Enter) steps up without a swipe.
+    await ev(`${grip}.click()`);
+    await until(snapIs('half'));
+    await ev(`${grip}.click()`);
+    await check('a tap on the grip opens the sheet', snapIs('open'));
+    await ev(`${grip}.click()`);
     for (const [w, h] of [[320, 740], [390, 844], [768, 1024], [1440, 1000], [844, 390]]) {
       await viewport(w, h);
       await new Promise(r => setTimeout(r, 150));
       await check(`no sideways scroll and 44px targets at ${w}×${h}`, fits);
       await until(fullMap);
       checks++;
-      // Map only, at this size too: × hides, "Hiện thông tin" fits and brings everything back.
-      await ev('document.querySelector(".location-close").click()');
-      await check(`map only at ${w}×${h}`, `(()=>{const z=document.querySelector(".leaflet-control-zoom").getBoundingClientRect(),s=document.querySelector(".location-show").getBoundingClientRect();return !${shown('.location-sheet')}&&${shown('.location-show')}&&innerHeight-z.bottom<=60&&s.right<=innerWidth&&s.height>=44})()`);
-      await ev('document.querySelector(".location-show").click()');
       // LOCATION_SHOTS=<dir> saves a screenshot per width for a visual check.
       if (process.env.LOCATION_SHOTS) {
         const { data } = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });

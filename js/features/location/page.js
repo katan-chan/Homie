@@ -40,15 +40,9 @@ export function mountLocation(container, { signal }) {
     return b;
   };
 
-  // The map covers the window; title and modes float on it; everything else is in a sheet on the bottom edge that
-  // shows a short summary folded and the details opened.
+  // The map covers the window. Everything else is in one bar: on wide screens fixed to the right edge, full height, slid
+  // out and back with a handle on its edge; on phones fixed to the bottom edge, swiped between open, half and hidden.
   const page = el('section', 'location-page');
-  const head = el('div', 'location-head');
-  head.append(el('h1', 'location-title', 'Vị trí'));
-  const modes = el('div', 'location-modes');
-  modes.setAttribute('role', 'group');
-  modes.setAttribute('aria-label', 'Chế độ xem');
-  head.append(modes);
   const mapEl = el('div', 'location-map');
   mapEl.setAttribute('role', 'application');
   mapEl.setAttribute('aria-label', 'Bản đồ vị trí');
@@ -56,35 +50,38 @@ export function mountLocation(container, { signal }) {
   mapNote.hidden = true;
   const cross = el('span', 'location-cross');
   cross.hidden = true;
-  const sheet = el('section', 'location-sheet');
-  sheet.setAttribute('aria-label', 'Chi tiết vị trí');
+  const bar = el('aside', 'location-bar');
+  bar.setAttribute('aria-label', 'Vị trí');
   const handle = el('button', 'location-handle');
   handle.type = 'button';
-  handle.setAttribute('aria-controls', 'location-details');
-  handle.append(el('span'));
-  const close = el('button', 'location-close', '×');
-  close.type = 'button';
-  close.setAttribute('aria-label', 'Ẩn hết, chỉ xem bản đồ');
-  const sheetTop = el('div', 'location-sheet-top');
-  sheetTop.append(handle, close);
-  // Shown instead of the head and the sheet when only the map is wanted.
-  const show = el('button', 'secondary-button location-show', 'Hiện thông tin');
-  show.type = 'button';
-  show.hidden = true;
-  const sheetBody = el('div', 'location-sheet-body');
-  const peek = el('div', 'location-peek');
+  handle.setAttribute('aria-controls', 'location-bar-content');
+  handle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg><span></span>';
+  const content = el('div', 'location-bar-content');
+  content.id = 'location-bar-content';
+  const grip = el('button', 'location-grip');
+  grip.type = 'button';
+  grip.append(el('span'));
+  const head = el('div', 'location-head');
+  head.append(el('h1', 'location-title', 'Vị trí'));
+  const modes = el('div', 'location-modes');
+  modes.setAttribute('role', 'group');
+  modes.setAttribute('aria-label', 'Chế độ xem');
+  head.append(modes);
+  const barBody = el('div', 'location-bar-body');
+  // What a half-open sheet shows: the two people, or the timeline's who and day.
+  const half = el('div', 'location-half');
   const status = el('p', 'location-status form-message');
   status.setAttribute('role', 'status');
-  const more = el('button', 'secondary-button location-more');
-  more.type = 'button';
   const panel = el('div', 'location-panel');
-  panel.id = 'location-details';
-  sheetBody.append(peek, status, more, panel);
-  sheet.append(sheetTop, sheetBody);
-  page.append(mapEl, mapNote, cross, head, sheet, show);
+  barBody.append(half, status, panel);
+  content.append(grip, head, barBody);
+  bar.append(handle, content);
+  page.append(mapEl, mapNote, cross, bar);
   container.replaceChildren(page);
 
-  let L = null, map = null, layer = null, open = false;
+  let L = null, map = null, layer = null;
+  // closed: the wide bar slid out. snap: the phone sheet at 'open', 'half' or 'hidden'.
+  let closed = false, snap = 'half';
   let mode = 'now', people = null, profiles = {}, now = Date.now();
   let timelineUser = getUser()?.id === 'minhle' ? 'haiyen' : 'minhle', timelineDate = localDay(Date.now()), day = null;
   let sharing = null, timer = null, fitted = false;
@@ -95,47 +92,88 @@ export function mountLocation(container, { signal }) {
   const short = id => PEOPLE.find(p => p.id === id).short;
   const accent = id => PEOPLE.find(p => p.id === id).accent;
 
-  function setOpen(value) {
-    open = value;
-    panel.hidden = !open;
-    more.hidden = open;
-    more.textContent = mode === 'now' ? 'Note và chi tiết' : 'Xem từng chỗ';
-    handle.setAttribute('aria-expanded', String(open));
-    handle.setAttribute('aria-label', open ? 'Thu gọn' : 'Mở rộng');
+  // ----- the bar -----
+  // 901 px matches the break in location.css. The phone sheet's snaps are measured from the sheet itself; hidden leaves
+  // only the grip strip.
+  const wide = () => matchMedia('(min-width: 901px)').matches;
+  const SNAPS = ['open', 'half', 'hidden'], STRIP = 46;
+  function offsetOf(name) {
+    const height = bar.offsetHeight;
+    if (name === 'open') return 0;
+    if (name === 'hidden') return height - STRIP;
+    return Math.max(0, height - (half.getBoundingClientRect().bottom - content.getBoundingClientRect().top + 14));
   }
-  handle.addEventListener('click', () => setOpen(!open), { signal: on });
-  more.addEventListener('click', () => setOpen(true), { signal: on });
-  function setBare(bare) {
-    head.hidden = sheet.hidden = bare;
-    show.hidden = !bare;
-    // Drop the zoom buttons at once; the size observer catches up when the sheet comes back.
-    if (bare) page.style.setProperty('--sheet-h', '0px');
-    (bare ? show : close).focus();
+  let shown = [0, 0];
+  /** Puts the bar where its state says (offset: a phone sheet held by a finger) and tells the map how much it covers. */
+  function layout(offset) {
+    if (wide()) {
+      bar.style.transform = closed ? 'translateX(100%)' : '';
+      shown = [closed ? 0 : bar.offsetWidth, 0];
+      content.inert = closed;
+      head.inert = half.inert = panel.inert = false;
+    } else {
+      const y = offset ?? offsetOf(snap);
+      bar.style.transform = `translateY(${y}px)`;
+      shown = [0, bar.offsetHeight - y];
+      content.inert = false;
+      head.inert = half.inert = offset === undefined && snap === 'hidden';
+      panel.inert = offset === undefined && snap !== 'open';
+    }
+    page.style.setProperty('--bar-x', `${shown[0]}px`);
+    page.style.setProperty('--bar-y', `${shown[1]}px`);
+    handle.lastChild.textContent = closed ? 'Hiện' : 'Ẩn';
+    handle.setAttribute('aria-label', closed ? 'Hiện thanh Vị trí' : 'Ẩn thanh, chỉ xem bản đồ');
+    handle.setAttribute('aria-expanded', String(!closed));
+    grip.setAttribute('aria-label', `Kéo lên hoặc xuống. Đang ${snap === 'open' ? 'mở hết' : snap === 'half' ? 'mở một nửa' : 'ẩn'}`);
+    grip.setAttribute('aria-expanded', String(snap !== 'hidden'));
   }
-  close.addEventListener('click', () => setBare(true), { signal: on });
-  show.addEventListener('click', () => setBare(false), { signal: on });
+  const setSnap = name => { snap = name; layout(); };
+  handle.addEventListener('click', () => { closed = !closed; layout(); }, { signal: on });
+  // A tap on the grip (or Enter) steps hidden → half → open → half; a swipe moves one snap, a long quick one to the end.
+  let swipe = null, swiped = 0;
+  grip.addEventListener('click', () => { if (performance.now() - swiped > 300) setSnap(snap === 'hidden' ? 'half' : snap === 'half' ? 'open' : 'half'); }, { signal: on });
+  content.addEventListener('pointerdown', event => {
+    if (wide() || !(event.target.closest('.location-grip') || (event.target.closest('.location-head') && !event.target.closest('button,input,select')))) return;
+    swipe = { y: event.clientY, t: performance.now(), base: offsetOf(snap), max: bar.offsetHeight - STRIP, moved: false };
+    event.target.setPointerCapture?.(event.pointerId);
+  }, { signal: on });
+  content.addEventListener('pointermove', event => {
+    if (!swipe) return;
+    const dy = event.clientY - swipe.y;
+    if (Math.abs(dy) > 6 && !swipe.moved) { swipe.moved = true; bar.classList.add('is-dragging'); }
+    if (swipe.moved) layout(Math.min(swipe.max, Math.max(0, swipe.base + dy)));
+  }, { signal: on });
+  const release = event => {
+    if (!swipe) return;
+    const s = swipe;
+    swipe = null;
+    bar.classList.remove('is-dragging');
+    if (!s.moved) return;
+    swiped = performance.now();
+    const dy = event.clientY - s.y, fast = Math.abs(dy) > 160 && Math.abs(dy) / (swiped - s.t) > 1.2;
+    let i = SNAPS.indexOf(snap);
+    if (dy > 40) i = fast ? 2 : Math.min(2, i + 1);
+    else if (dy < -40) i = fast ? 0 : Math.max(0, i - 1);
+    setSnap(SNAPS[i]);
+  };
+  content.addEventListener('pointerup', release, { signal: on });
+  content.addEventListener('pointercancel', release, { signal: on });
 
-  // Points are centred in the part of the map the sheet leaves free: left of the corner card on wide screens (matches
-  // the 900 px break in location.css), above the bottom sheet otherwise. On a phone the sheet folds first.
-  const narrow = () => matchMedia('(max-width: 600px)').matches;
-  const cornerCard = () => matchMedia('(min-width: 901px)').matches;
-  const covered = () => (sheet.hidden ? [0, 0] : cornerCard() ? [page.clientWidth - sheet.getBoundingClientRect().left + page.getBoundingClientRect().left, 0] : [0, sheet.offsetHeight]);
+  // Points are centred in the part of the map the bar leaves free. On a phone an open sheet drops to half first.
   function centerOn(latlng, zoom) {
     if (!map) return;
-    if (narrow() && open) setOpen(false);
-    const [x, y] = covered();
-    const point = map.project(latlng, zoom).add([x / 2, y / 2]);
+    if (!wide() && snap === 'open') setSnap('half');
+    const point = map.project(latlng, zoom).add([shown[0] / 2, shown[1] / 2]);
     map.setView(map.unproject(point, zoom), zoom);
   }
   function visibleCenter() {
-    const size = map.getSize(), [x, y] = covered();
-    return map.containerPointToLatLng([(size.x - x) / 2, (size.y - y) / 2]);
+    const size = map.getSize();
+    return map.containerPointToLatLng([(size.x - shown[0]) / 2, (size.y - shown[1]) / 2]);
   }
-  const sized = new ResizeObserver(() => {
-    page.style.setProperty('--sheet-h', `${sheet.offsetHeight}px`);
-    page.style.setProperty('--sheet-w', `${sheet.offsetWidth}px`);
-  });
-  sized.observe(sheet);
+  // The bar's size changes with its content and the window: keep it in place (without sliding when the window changes).
+  const sized = new ResizeObserver(() => { if (!swipe) layout(); });
+  sized.observe(bar);
+  sized.observe(half);
 
   function showModes() {
     modes.replaceChildren(...[['now', 'Bây giờ'], ['timeline', 'Timeline']].map(([id, label]) => {
@@ -189,8 +227,7 @@ export function mountLocation(container, { signal }) {
       fitted = true;
       if (points.length === 1) centerOn(points[0], 15);
       else {
-        const [x, y] = covered();
-        map.fitBounds(points, { paddingTopLeft: [60, 100], paddingBottomRight: [x + 60, y + 60], maxZoom: 16 });
+        map.fitBounds(points, { paddingTopLeft: [60, 100], paddingBottomRight: [shown[0] + 60, shown[1] + 60], maxZoom: 16 });
       }
     }
   }
@@ -201,7 +238,7 @@ export function mountLocation(container, { signal }) {
     if (on.aborted) return;
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
     map = L.map(mapEl, { zoomControl: false, attributionControl: true, zoomAnimation: !still, fadeAnimation: !still, markerZoomAnimation: !still, inertia: !still }).setView(CENTER, 13);
-    // Bottom right, lifted above the sheet by --sheet-h.
+    // Bottom right, beside or above the bar (--bar-x, --bar-y).
     L.control.zoom({ position: 'bottomright', zoomInTitle: 'Phóng to', zoomOutTitle: 'Thu nhỏ' }).addTo(map);
     map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
     const key = config.ESRI_BASEMAP_KEY ?? '';
@@ -221,7 +258,7 @@ export function mountLocation(container, { signal }) {
   // ----- panel: now -----
   /** Folded: one chip per person; a chip with a position moves the map there. */
   function chips() {
-    peek.replaceChildren(...PEOPLE.map(({ id }) => {
+    half.replaceChildren(...PEOPLE.map(({ id }) => {
       const person = people[id];
       const chip = el(person.lat === undefined ? 'div' : 'button', 'location-chip');
       chip.style.setProperty('--profile-accent', accent(id));
@@ -329,7 +366,7 @@ export function mountLocation(container, { signal }) {
       const moves = day.stops.filter((s, i) => i && day.stops[i - 1].placeId !== s.placeId).length;
       controls.append(el('span', 'location-hint', `${day.stops.length} lần ghé · ${moves} lần di chuyển`));
     }
-    peek.replaceChildren(controls);
+    half.replaceChildren(controls);
     const list = el('ol', 'location-stops');
     if (day && !day.stops.length) list.append(el('li', 'location-hint', 'Ngày này chưa ghé địa điểm nào.'));
     day?.stops.forEach((s, i) => {
@@ -429,8 +466,8 @@ export function mountLocation(container, { signal }) {
   function showAddPlace(latlng) {
     const host = panel.querySelector('.location-add');
     if (!host || !map) return;
-    if (sheet.hidden) setBare(false);
-    setOpen(true);
+    if (wide()) closed = false; else snap = 'open';
+    layout();
     cross.hidden = Boolean(latlng);
     host.replaceChildren(el('p', 'location-hint', latlng ? 'Đặt tên cho chỗ bạn vừa giữ trên bản đồ:' : 'Kéo bản đồ để dấu + nằm đúng chỗ, rồi đặt tên:'));
     nameForm(host, '', name => {
@@ -444,7 +481,7 @@ export function mountLocation(container, { signal }) {
     if (on.aborted) return;
     if (mode === 'now' && people) showNow();
     if (mode === 'timeline') showTimeline();
-    setOpen(open);
+    layout();
     drawMap();
   }
 
@@ -467,11 +504,11 @@ export function mountLocation(container, { signal }) {
       }
       if (failed) { failed = false; status.textContent = ''; }
       // A refresh rebuilds the lists; keep keyboard focus on the same button.
-      const active = sheet.contains(document.activeElement) ? document.activeElement : null;
+      const active = bar.contains(document.activeElement) ? document.activeElement : null;
       const focused = active?.getAttribute('aria-label') ? `[aria-label="${CSS.escape(active.getAttribute('aria-label'))}"]`
         : active?.dataset.key ? `[data-key="${CSS.escape(active.dataset.key)}"]` : null;
       render();
-      if (focused) sheet.querySelector(focused)?.focus();
+      if (focused) bar.querySelector(focused)?.focus();
     } catch (error) {
       if (on.aborted || mine !== latest) return;
       failed = true;
@@ -484,7 +521,10 @@ export function mountLocation(container, { signal }) {
   // Coming back refreshes the live view only; a timeline being edited stays as it is.
   document.addEventListener('visibilitychange', () => { if (!on.aborted && mode === 'now' && document.visibilityState === 'visible') refresh(); }, { signal: on });
   showModes();
-  setOpen(false);
+  // First placement without sliding in.
+  bar.classList.add('is-dragging');
+  layout();
+  requestAnimationFrame(() => bar.classList.remove('is-dragging'));
   sharing = mountSharing({ signal: on, onChange: refresh });
   Promise.all(PEOPLE.map(({ id }) => apiRequest(`/api/profiles/${id}`, { signal: on }).then(r => { profiles[id] = r.profile; }, () => {})))
     .then(() => { if (!on.aborted) render(); });
