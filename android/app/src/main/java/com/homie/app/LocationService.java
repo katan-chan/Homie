@@ -10,7 +10,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
@@ -50,6 +49,8 @@ public class LocationService extends Service {
     private static final int MIN_BATTERY = 20;
     private static final int TIMEOUT_MS = 60_000;
 
+    // Lives as long as the process: a killed process means a stopped service, which a saved flag would not show.
+    private static volatile boolean running;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private LocationManager locations;
     private String serverUrl;
@@ -70,7 +71,7 @@ public class LocationService extends Service {
     };
 
     static boolean isRunning(Context context) {
-        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("running", false);
+        return running;
     }
 
     static boolean batteryTooLow(Context context) {
@@ -78,10 +79,9 @@ public class LocationService extends Service {
         return battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) < MIN_BATTERY && !battery.isCharging();
     }
 
-    private void setRunning(boolean running) {
-        SharedPreferences.Editor prefs = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("running", running);
-        if (serverUrl != null) prefs.putString("server", serverUrl);
-        prefs.apply();
+    private void setRunning(boolean value) {
+        running = value;
+        if (serverUrl != null) getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("server", serverUrl).apply();
     }
 
     @Override
@@ -91,10 +91,12 @@ public class LocationService extends Service {
             shutdown("user");
             return START_NOT_STICKY;
         }
-        if (!ACTION_START.equals(action) || locations != null) return START_NOT_STICKY;
-        serverUrl = intent.getStringExtra(EXTRA_SERVER);
+        if (!ACTION_START.equals(action)) return START_NOT_STICKY;
+        // Every startForegroundService() must be answered with startForeground(), even when already sharing.
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
         ServiceCompat.startForeground(this, ONGOING_ID, ongoing(), type);
+        if (locations != null) return START_NOT_STICKY;
+        serverUrl = intent.getStringExtra(EXTRA_SERVER);
         if (serverUrl == null || !hasPermission()) {
             shutdown("permission");
             return START_NOT_STICKY;
