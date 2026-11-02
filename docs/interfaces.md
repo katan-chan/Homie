@@ -269,15 +269,15 @@ Chỉ hai thành viên (khách 401); ghi cần Origin allowlist, `X-Requested-Wi
 
 | Route | Hợp đồng |
 | --- | --- |
-| GET /api/location | `{ people: { minhle, haiyen }, now }`; mỗi người `{ lat?, lng?, accuracy?, at?, sharing: { on, since?, stoppedAt?, reason? }, note: { text, expiresAt } \| null, stale, place: { id, name } \| null }`. `stale` = đang chia sẻ mà điểm cũ hơn 10 phút; note hết hạn trả null |
-| POST /api/location/point | `{ lat, lng, accuracy, at }` → 204. Sai miền/kiểu, accuracy âm hoặc `at` quá tương lai 5 phút 400 `invalid_point`; accuracy > 200 m bỏ qua (204) |
+| GET /api/location | `{ people: { minhle, haiyen }, now }`; mỗi người `{ lat?, lng?, accuracy?, at?, sharing: { on, since?, stoppedAt?, reason? }, note: { text, expiresAt } \| null, stale, place: { id, name } \| null }`. `stale` = đang chia sẻ mà điểm cũ hơn 10 phút; `place` chỉ có khi điểm dừng còn trong 30 phút; note hết hạn trả null |
+| POST /api/location/point | `{ lat, lng, accuracy, at }` → 204. Đang tắt chia sẻ thì điểm này bật lại (`since = at`), vì thông báo "bật" của điện thoại có thể đã mất. Sai miền/kiểu, accuracy âm hoặc `at` quá tương lai 5 phút 400 `invalid_point`; accuracy > 200 m bỏ qua (204) |
 | PUT /api/location/sharing | `{ on, reason? }` (`user`, `battery`, `auth`, `permission`) → 200 như GET; tắt thì đóng lượt ghé đang mở. Sai 400 `invalid_sharing` |
 | PUT/DELETE /api/location/note | `{ text, hours }`: một dòng 1–60 ký tự, hours 1, 4 hoặc 24 → 200 như GET; sai 400 `invalid_note`. DELETE xóa note |
 | GET /api/places | `{ places }` (không gồm địa điểm đã xóa); mỗi mục `{ id, name \| null, lat, lng, radius, createdBy, createdAt }` |
 | POST /api/places | `{ name, lat, lng }` → 201 `{ place }`; tên một dòng 1–40 ký tự, sai 400 `invalid_place` |
 | PUT /api/places/:id | `{ name }` → 200 `{ place }`; không có hoặc đã xóa 404 |
 | DELETE /api/places/:id | → 200 `{ place }` với `ignored: true`: không hiện nữa, lượt ghé ở đó bị ẩn và chỗ đó không bị tạo lại |
-| GET /api/timeline?user=&date=YYYY-MM-DD | `{ user, date, stops: [{ placeId, name, lat, lng, arrivedAt, leftAt \| null }], legs: [{ from, to, route: { path: [[lat, lng]…], minutes, km } \| null }] }`. Ngày theo giờ VN; lượt ghé qua nửa đêm hiện ở cả hai ngày; lượt đang mở có `leftAt: null`. Route ngắn nhất từ Esri (`ESRI_ROUTE_KEY`, chỉ backend) được hỏi một lần mỗi cặp địa điểm rồi lưu; thiếu key hoặc lỗi trả `route: null` (không lưu), client vẽ đường thẳng. Sai user/date 400 `invalid_query` |
+| GET /api/timeline?user=&date=YYYY-MM-DD | `{ user, date, stops: [{ placeId, name, lat, lng, arrivedAt, leftAt \| null }], legs: [{ from, to, route: { path: [[lat, lng]…], minutes, km } \| null }] }`. Ngày theo giờ VN; lượt ghé qua nửa đêm hiện ở cả hai ngày; lượt đang mở có `leftAt: null` (im lặng quá 30 phút thì `leftAt` = lần có vị trí cuối). Route ngắn nhất từ Esri (`ESRI_ROUTE_KEY`, chỉ backend) được hỏi một lần mỗi cặp địa điểm rồi lưu; thiếu key hoặc lỗi trả `route: null` (không lưu), client vẽ đường thẳng. Sai user/date 400 `invalid_query` |
 
 ### Tờ PSI: /api/psi
 
