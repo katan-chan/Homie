@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { createSupabase } from '../backend/supabase.js';
 import { createProfiles } from '../backend/profiles.js';
 import { createNotesStore } from '../backend/notes-store.js';
+import { createFiles } from '../backend/files.js';
+import { createDocStore } from '../backend/doc-store.js';
 
 const { SUPABASE_URL: url, SUPABASE_SECRET_KEY: key } = process.env;
 if (!url || !key) { console.log('SKIP: set SUPABASE_URL and SUPABASE_SECRET_KEY (e.g. in .env) to run the live Supabase check.'); process.exit(0); }
@@ -37,7 +39,7 @@ try {
   const boardId = randomUUID();
   await store.applyCommand('minhle', { operationId: randomUUID(), accountId: 'minhle', boardId, baseRevision: 0, type: 'board.create', payload: { name: 'Bảng thử' } });
   await store.close(); store = await createNotesStore({ dataDir, remote });
-  assert.equal(store.privateBoard(boardId).name, 'Bảng thử', 'notes survive a restart');
+  assert.equal(store.privateBoard(boardId, 'minhle').name, 'Bảng thử', 'notes survive a restart');
   await store.close();
 
   const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
@@ -48,6 +50,25 @@ try {
   const anonymous = await fetch(`${url}/storage/v1/object/public/note-media/${prefix}probe.png`);
   assert.notEqual(anonymous.status, 200, 'bucket is not public');
   console.log('PASS live Supabase: documents, profiles, notes snapshot, private bucket upload/download/remove');
+
+  // Ảnh đại diện: the profile's avatar field survives a restart; a file read through files.js streams and a HEAD-style
+  // early destroy does not throw.
+  await createProfiles(dataDir, remote).setAvatar('minhle', { version: 1730000000000, mime: 'image/webp' });
+  assert.deepEqual((await createProfiles(dataDir, remote).get('minhle')).avatar, { version: 1730000000000, mime: 'image/webp' });
+  const files = createFiles({ dataDir, remote });
+  await files.put('avatars/minhle-1730000000000.webp', bytes, 'image/webp');
+  const opened = await files.open('avatars/minhle-1730000000000.webp');
+  const chunks = [];
+  for await (const chunk of opened.stream) chunks.push(chunk);
+  assert.deepEqual(Buffer.concat(chunks), bytes);
+  (await files.open('avatars/minhle-1730000000000.webp')).stream.destroy();
+  await files.remove(['avatars/minhle-1730000000000.webp']);
+  assert.equal(await files.open('avatars/minhle-1730000000000.webp'), null);
+  // Vị trí: the location and month-of-visits documents round trip.
+  const visits = createDocStore({ key: 'visits-2026-11', dataDir, remote, empty: () => ({ items: [] }) });
+  await visits.update(doc => { doc.items.push({ id: 'v1', user: 'minhle', placeId: 'p1', arrivedAt: 1, leftAt: 2 }); });
+  assert.equal((await createDocStore({ key: 'visits-2026-11', dataDir, remote, empty: () => ({ items: [] }) }).read()).items.length, 1);
+  console.log('PASS live Supabase: avatar field and file stream, location visits document');
 
   // Full media pipeline in a real browser, with the backend storing everything under the same prefix.
   const code = await new Promise(resolve => spawn(process.execPath, ['tests/browser-note-media.mjs'], { stdio: 'inherit', env: { ...process.env, SUPABASE_PREFIX: prefix } }).on('exit', resolve));
