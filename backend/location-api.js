@@ -4,15 +4,18 @@
 import { randomUUID } from 'node:crypto';
 import { handleErrors, httpError, readJson, requireMember, requireWrite, sendJson } from './http.js';
 import { createDocStore } from './doc-store.js';
-import { localDate } from './dates.js';
+import { isDate, localDate } from './dates.js';
 import { accountIds } from './profiles.js';
 import { advance, end } from './stops.js';
 
-export const LIMITS = Object.freeze({ note: 60, futureMs: 5 * 60000, accuracy: 200, staleMs: 10 * 60000 });
+export const LIMITS = Object.freeze({ placeName: 40, note: 60, futureMs: 5 * 60000, accuracy: 200, staleMs: 10 * 60000 });
 const HOURS = [1, 4, 24];
 const REASONS = ['user', 'battery', 'auth', 'permission'];
+const DAY_MS = 86400000;
+const ROUTE_URL = 'https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve';
 
 export const route = path => /^\/api\/(location|places|timeline)(?:\/|$)/.test(path);
+const round5 = n => Math.round(n * 1e5) / 1e5;
 
 const person = () => ({ point: null, sharing: { on: false }, note: null, stop: null });
 export const emptyLocation = () => Object.fromEntries(accountIds.map(id => [id, person()]));
@@ -35,6 +38,35 @@ function point(input, now) {
   return { lat: input.lat, lng: input.lng, accuracy: input.accuracy, at: input.at };
 }
 
+function placeInput(input, { withPosition }) {
+  const name = typeof input?.name === 'string' ? input.name.trim() : '';
+  const badPosition = withPosition && (!finite(input.lat) || !finite(input.lng) || Math.abs(input.lat) > 90 || Math.abs(input.lng) > 180);
+  if (!name || /[\r\n]/.test(name) || [...name].length > LIMITS.placeName || badPosition) {
+    throw invalid('invalid_place', `A place needs a one-line name of 1–${LIMITS.placeName} characters`);
+  }
+  return withPosition ? { name, lat: input.lat, lng: input.lng } : { name };
+}
+
+/** Shortest road route between two places from Esri, or null (no key, quota, network): the client then draws a line. */
+async function esriRoute(a, b) {
+  const token = process.env.ESRI_ROUTE_KEY;
+  if (!token) return null;
+  try {
+    const query = new URLSearchParams({ f: 'json', token, stops: `${a.lng},${a.lat};${b.lng},${b.lat}`, outSR: '4326', returnRoutes: 'true' });
+    const response = await fetch(`${ROUTE_URL}?${query}`, { signal: AbortSignal.timeout(10000) });
+    const feature = response.ok ? (await response.json()).routes?.features?.[0] : null;
+    const path = feature?.geometry?.paths?.[0];
+    if (!Array.isArray(path) || !path.length) return null;
+    return {
+      path: path.map(([x, y]) => [round5(y), round5(x)]),
+      minutes: Math.round(feature.attributes?.Total_TravelTime ?? 0),
+      km: Math.round((feature.attributes?.Total_Kilometers ?? 0) * 100) / 100,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function note(input, now) {
   const text = typeof input?.text === 'string' ? input.text.trim() : '';
   if (!text || /[\r\n]/.test(text) || [...text].length > LIMITS.note || !HOURS.includes(input.hours)) {
@@ -46,6 +78,7 @@ function note(input, now) {
 export function create({ auth, allowedOrigins, dataDir, remote }) {
   const location = createDocStore({ key: 'location', dataDir, remote, empty: emptyLocation, validate: validLocation });
   const places = createDocStore({ key: 'places', dataDir, remote, empty: emptyItems, validate: validItems });
+  const routes = createDocStore({ key: 'routes', dataDir, remote, empty: () => ({ routes: {} }), validate: doc => { if (!isObject(doc?.routes)) throw new Error('Invalid routes'); return doc; } });
   const months = new Map();
   const visits = month => {
     if (!months.has(month)) months.set(month, createDocStore({ key: `visits-${month}`, dataDir, remote, empty: emptyItems, validate: validItems }));
@@ -61,7 +94,7 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     const names = new Map(placeList.map(p => [p.id, p]));
     return Object.fromEntries(accountIds.map(id => {
       const { point: p, sharing, note: n, stop } = doc[id];
-      const place = stop?.placeId ? names.get(stop.placeId) : null;
+      const place = stop?.placeId && !names.get(stop.placeId)?.ignored ? names.get(stop.placeId) : null;
       return [id, {
         ...(p ?? {}), sharing,
         note: n && n.expiresAt > now ? n : null,
@@ -99,8 +132,51 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
     if (closed) await record(user, closed);
   });
 
+  /** Cached road route between two places, oriented from a to b; asks Esri once per pair and never caches a failure. */
+  async function routeBetween(a, b) {
+    const key = [a.id, b.id].sort().join('|');
+    let cached = (await routes.read()).routes[key];
+    if (!cached) {
+      const found = await esriRoute(a, b);
+      if (!found) return null;
+      cached = { from: a.id, ...found, at: Date.now() };
+      await routes.update(doc => { doc.routes[key] = cached; });
+    }
+    const { from, at, ...route } = cached;
+    return from === a.id ? route : { ...route, path: [...route.path].reverse() };
+  }
+
+  async function timeline(url, now) {
+    const user = url.searchParams.get('user'), date = url.searchParams.get('date');
+    if (!accountIds.includes(user) || !isDate(date)) throw invalid('invalid_query', 'user and date (YYYY-MM-DD) are required');
+    const start = Date.parse(`${date}T00:00:00+07:00`), finish = start + DAY_MS;
+    // A visit that began late on the last day of last month still reaches into this day.
+    const keys = [...new Set([localDate(start).slice(0, 7), localDate(start - DAY_MS).slice(0, 7)])];
+    const [placeDoc, doc, ...monthDocs] = await Promise.all([places.read(), location.read(), ...keys.map(key => visits(key).read())]);
+    const stop = doc[user].stop;
+    const open = stop?.placeId ? [{ placeId: stop.placeId, arrivedAt: stop.since, leftAt: null }] : [];
+    const byId = new Map(placeDoc.items.map(p => [p.id, p]));
+    const stops = [...monthDocs.flatMap(m => m.items.filter(v => v.user === user)), ...open]
+      .filter(v => v.arrivedAt < finish && (v.leftAt ?? now) > start && byId.has(v.placeId) && !byId.get(v.placeId).ignored)
+      .sort((a, b) => a.arrivedAt - b.arrivedAt)
+      .map(v => { const p = byId.get(v.placeId); return { placeId: p.id, name: p.name, lat: p.lat, lng: p.lng, arrivedAt: v.arrivedAt, leftAt: v.leftAt }; });
+    const legs = [];
+    for (let i = 1; i < stops.length; i++) {
+      if (stops[i - 1].placeId === stops[i].placeId) continue;
+      legs.push({ from: stops[i - 1].placeId, to: stops[i].placeId, route: await routeBetween(byId.get(stops[i - 1].placeId), byId.get(stops[i].placeId)) });
+    }
+    return { user, date, stops, legs };
+  }
+
+  const changePlace = (id, change) => serial(() => places.update(doc => {
+    const place = doc.items.find(p => p.id === id && !p.ignored);
+    if (!place) throw httpError(404, 'not_found', 'Not found');
+    change(place);
+    return place;
+  }));
+
   async function handle(req, res) {
-    const path = new URL(req.url, 'http://localhost').pathname;
+    const url = new URL(req.url, 'http://localhost'), path = url.pathname;
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     const now = Date.now();
     const respond = async status => {
@@ -130,6 +206,25 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
       requireMember(req, auth);
       return sendJson(res, 200, { places: (await places.read()).items.filter(p => !p.ignored) });
     }
+    if (path === '/api/places' && method === 'POST') {
+      const user = requireWrite(req, { auth, allowedOrigins });
+      const input = placeInput(await readJson(req), { withPosition: true });
+      const place = { id: randomUUID(), ...input, radius: 100, createdBy: user, createdAt: now };
+      await serial(() => places.update(doc => { doc.items.push(place); }));
+      return sendJson(res, 201, { place });
+    }
+    const placeId = /^\/api\/places\/([^/]+)$/.exec(path)?.[1];
+    if (placeId && method === 'PUT') {
+      requireWrite(req, { auth, allowedOrigins });
+      const { name } = placeInput(await readJson(req), { withPosition: false });
+      return sendJson(res, 200, { place: await changePlace(placeId, place => { place.name = name; }) });
+    }
+    if (placeId && method === 'DELETE') {
+      requireWrite(req, { auth, allowedOrigins });
+      // Deleting means "never record this spot": the row stays, ignored, so stops there are not turned into a new place.
+      return sendJson(res, 200, { place: await changePlace(placeId, place => { place.ignored = true; }) });
+    }
+    if (path === '/api/timeline' && method === 'GET') { requireMember(req, auth); return sendJson(res, 200, await timeline(url, now)); }
     requireMember(req, auth);
     throw httpError(404, 'not_found', 'Not found');
   }
@@ -137,6 +232,6 @@ export function create({ auth, allowedOrigins, dataDir, remote }) {
   return {
     // An early refusal leaves the body unread; drain it so the connection can answer.
     handle: (req, res) => handleErrors(res, () => handle(req, res).catch(error => { req.resume(); throw error; })),
-    close: () => Promise.all([location.close(), places.close(), ...[...months.values()].map(store => store.close())]),
+    close: () => Promise.all([location.close(), places.close(), routes.close(), ...[...months.values()].map(store => store.close())]),
   };
 }

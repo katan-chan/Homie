@@ -142,6 +142,7 @@ Các tính năng v5 thêm API qua `backend/features.js`: mảng module, mỗi mo
 | /api/psi | backend/psi-api.js | Tờ PSI của Minh Lê |
 | /api/moments | backend/moments-api.js | Khoảnh khắc |
 | /api/profiles/:id/avatar | backend/avatar-api.js | Ảnh đại diện |
+| /api/location, /api/places, /api/timeline | backend/location-api.js | Vị trí, địa điểm, timeline |
 
 Prefix khớp đúng ranh giới path (`/api/jar` và `/api/jar/...`, không khớp `/api/jarx`). Prefix không có module thật thì trả 404 `{ error: "Not implemented", code: "not_implemented" }`.
 
@@ -260,6 +261,22 @@ Hồ sơ có thêm trường tùy chọn `avatar: { version, mime }` (version ng
 | PUT | Chỉ owner (Origin allowlist, `X-Requested-With: Homie`, session): `{ data }` base64, body ≤ 112 KiB → 200 `{ profile }` với version tăng 1, file cũ bị xóa. Không vuông hoặc không phải WebP/JPEG 400 `invalid_image`; > 80 KB hoặc cạnh > 512 400 `image_too_large`; cạnh < 64 400 `image_too_small`; người khác 403 `not_owner`; chưa đăng nhập 401; lỗi lưu 503 `storage_unavailable` (ảnh cũ vẫn dùng được) |
 | DELETE | Chỉ owner → 200 `{ profile }` không còn `avatar`; chưa có ảnh vẫn 200 |
 | GET/HEAD | Công khai, không cần Origin. Byte ảnh, `Content-Type` = mime, `Cache-Control: public, max-age=31536000, immutable` (client thêm `?v=<version>` để đổi URL khi đổi ảnh), `nosniff`; chưa có ảnh 404 `not_found` |
+
+### Vị trí: /api/location, /api/places, /api/timeline
+
+Chỉ hai thành viên (khách 401); ghi cần Origin allowlist, `X-Requested-With: Homie` và session; mỗi người chỉ ghi điểm/chia sẻ/note của chính mình (id lấy từ session, body không chọn người). Thời gian là ms epoch. Tài liệu: `location` (mỗi người `{ point, sharing, note, stop }`), `places` `{ items }`, `visits-YYYY-MM` `{ items: [{ id, user, placeId, arrivedAt, leftAt }] }` (tháng theo giờ VN của `arrivedAt`, chỉ ghi khi lượt ghé đóng), `routes` `{ routes: { "<idA>|<idB>": { from, path, minutes, km, at } } }`. Không lưu tọa độ thô: mỗi điểm ghi đè điểm trước và chỉ cập nhật điểm dừng đang theo dõi (`backend/stops.js`: trong 100 m từ 10 phút trở lên → lượt ghé tại địa điểm gần nhất hoặc tạo "chưa đặt tên"; rời xa hoặc trống > 30 phút → đóng).
+
+| Route | Hợp đồng |
+| --- | --- |
+| GET /api/location | `{ people: { minhle, haiyen }, now }`; mỗi người `{ lat?, lng?, accuracy?, at?, sharing: { on, since?, stoppedAt?, reason? }, note: { text, expiresAt } \| null, stale, place: { id, name } \| null }`. `stale` = đang chia sẻ mà điểm cũ hơn 10 phút; note hết hạn trả null |
+| POST /api/location/point | `{ lat, lng, accuracy, at }` → 204. Sai miền/kiểu, accuracy âm hoặc `at` quá tương lai 5 phút 400 `invalid_point`; accuracy > 200 m bỏ qua (204) |
+| PUT /api/location/sharing | `{ on, reason? }` (`user`, `battery`, `auth`, `permission`) → 200 như GET; tắt thì đóng lượt ghé đang mở. Sai 400 `invalid_sharing` |
+| PUT/DELETE /api/location/note | `{ text, hours }`: một dòng 1–60 ký tự, hours 1, 4 hoặc 24 → 200 như GET; sai 400 `invalid_note`. DELETE xóa note |
+| GET /api/places | `{ places }` (không gồm địa điểm đã xóa); mỗi mục `{ id, name \| null, lat, lng, radius, createdBy, createdAt }` |
+| POST /api/places | `{ name, lat, lng }` → 201 `{ place }`; tên một dòng 1–40 ký tự, sai 400 `invalid_place` |
+| PUT /api/places/:id | `{ name }` → 200 `{ place }`; không có hoặc đã xóa 404 |
+| DELETE /api/places/:id | → 200 `{ place }` với `ignored: true`: không hiện nữa, lượt ghé ở đó bị ẩn và chỗ đó không bị tạo lại |
+| GET /api/timeline?user=&date=YYYY-MM-DD | `{ user, date, stops: [{ placeId, name, lat, lng, arrivedAt, leftAt \| null }], legs: [{ from, to, route: { path: [[lat, lng]…], minutes, km } \| null }] }`. Ngày theo giờ VN; lượt ghé qua nửa đêm hiện ở cả hai ngày; lượt đang mở có `leftAt: null`. Route ngắn nhất từ Esri (`ESRI_ROUTE_KEY`, chỉ backend) được hỏi một lần mỗi cặp địa điểm rồi lưu; thiếu key hoặc lỗi trả `route: null` (không lưu), client vẽ đường thẳng. Sai user/date 400 `invalid_query` |
 
 ### Tờ PSI: /api/psi
 
