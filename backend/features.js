@@ -11,5 +11,6 @@ import * as pushDevices from './push-api.js';
 import * as psi from './psi-api.js';
 import * as moments from './moments-api.js';
 import * as avatar from './avatar-api.js';
+import * as location from './location-api.js';
 
-export const features = [jar, calendar, ideas, rules, garden, pushDevices, psi, moments, avatar];
+export const features = [jar, calendar, ideas, rules, garden, pushDevices, psi, moments, avatar, location];
