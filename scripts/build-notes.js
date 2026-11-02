@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
@@ -54,6 +54,15 @@ export async function buildNotes() {
   }));
   await writeFile(resolve(root, 'assets/vendor/notes.LICENSES.txt'), notices.join('\n\n---\n\n'));
   console.log(`Notes vendor built: ${outfile} (${(await stat(outfile)).size} bytes)`);
+  await copyLeaflet();
+}
+
+// Leaflet (map in the Vị trí tab) ships as one ES module plus its stylesheet; it is only minified.
+async function copyLeaflet() {
+  const from = name => resolve(root, 'node_modules/leaflet', name), to = name => resolve(root, 'assets/vendor', name);
+  await build({ entryPoints: [from('dist/leaflet-src.esm.js')], outfile: to('leaflet.js'), format: 'esm', minify: true, legalComments: 'inline', logLevel: 'error' });
+  await copyFile(from('dist/leaflet.css'), to('leaflet.css'));
+  await copyFile(from('LICENSE'), to('leaflet.LICENSE.txt'));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
