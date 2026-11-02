@@ -53,6 +53,16 @@ Một tab cho ảnh của hai đứa, mỗi tấm kèm một dòng chữ tùy ch
 
 Hai đứa cùng thấy mọi ảnh trong một album (lọc Tất cả / Của Minh / Của Yến); chỉ người chụp sửa dòng chữ hoặc xóa hẳn (có hỏi lại). Ngày của ảnh là ngày lưu, ảnh hiện trong Lịch đúng ngày đó. Tải về ghép dòng chữ vào ảnh JPEG; trong app Android ảnh vào thư viện ảnh (Pictures/Homie). Ảnh được nén ngay trên máy (WebP, khoảng 150–300 KB một tấm kèm ảnh nhỏ), mất EXIF/GPS; server chỉ kiểm tra và lưu. Không có thông báo, widget hay khách xem. Camera tắt khi rời tab, khi trang ẩn hoặc khi đang xem lại.
 
+## Vị trí
+
+Tab "Vị trí" (chỉ hai thành viên đã đăng nhập). Bản đồ Esri (không dùng OpenStreetMap hay Google Maps) hiện hai người bằng ảnh đại diện (hoặc chữ cái đầu), kèm bong bóng note phía trên và dòng thời gian phía dưới ("3 phút trước", "Đã tắt lúc 14:32", "Mất tín hiệu từ 14:32" khi đang chia sẻ mà hơn 10 phút không có vị trí mới). Danh sách cạnh bản đồ ghi thêm "Đang ở <địa điểm>" và nút "Xem" để bay tới. Bản đồ tự làm mới 30 giây một lần khi đang mở.
+
+Note: mỗi người đặt một dòng tối đa 60 ký tự, giữ 1 giờ, 4 giờ hoặc 24 giờ, "Xóa note" để gỡ sớm; đặt được trên web và app.
+
+Chia sẻ vị trí: chỉ app Android gửi vị trí; web chỉ xem. Lần đầu bật, app cảnh báo (chạy ngầm cả khi đóng app, tốn pin hơn, luôn có thông báo "Homie đang chia sẻ vị trí", tự tắt dưới 20% pin, người kia thấy vị trí, note và địa điểm đã ghé), xin quyền vị trí và thông báo, xin bỏ tối ưu pin, rồi hướng dẫn theo hãng (Xiaomi/Poco: Tự khởi chạy + pin Không giới hạn; Samsung: pin Không hạn chế + bỏ khỏi Ứng dụng ngủ). Điện thoại gửi vị trí khoảng 2 phút một lần; thông báo cố định có nút "Dừng chia sẻ". Pin dưới 20% và không sạc thì tự tắt và báo; không tự bật lại, kể cả sau khởi động lại máy.
+
+Timeline: chọn Minh hoặc Yến và ngày; danh sách các địa điểm đã ghé (giờ đến–rời, thời lượng), giữa hai địa điểm là "Di chuyển x phút". Ở yên trong 100 m từ 10 phút trở lên là một lượt ghé; chỗ chưa có tên hiện "Chưa đặt tên" với nút "Đặt tên". Địa điểm dùng chung hai người; "Thêm địa điểm ở đây" (hoặc nhấn giữ trên bản đồ) để thêm. Bản đồ đánh số các địa điểm và nối bằng đường ngắn nhất theo đường phố (không phải đường đi thật); chưa tìm được đường thì vẽ nét đứt thẳng. Không lưu tọa độ thô: chỉ giữ danh sách địa điểm và các lượt ghé (dưới 1 KB/ngày), lưu mãi.
+
 ## Gợi ý chủ đề seminar và Hoạt động chung
 
 Hai trang cùng một kiểu: kho ý tưởng (mặt bảng giấy kéo đổi chỗ hoặc danh sách), lượt bốc chung cho cả hai máy, lịch sử đã làm. Seminar là chủ đề để hai đứa tìm hiểu rồi kể cho nhau nghe; Hoạt động chung có bảy loại (Trò chuyện, Sáng tạo, Khám phá, Chơi, Tự làm, Tụi mình, Nhảm nhí) và lọc theo loại. Mỗi tờ có nút "Cho vào pool"/"Bỏ khỏi pool" (tờ mới và tờ cũ mặc định trong pool); bốc ngẫu nhiên đều trong pool, bốc, bỏ qua hay "Xong rồi" đều không đưa tờ ra khỏi pool. Tờ làm trong 14 ngày gần nhất chỉ được gắn nhãn "Vừa làm". "Xong rồi" ghi ngày, vài dòng và điểm 1–5 cho niềm vui của chính mình; người kia tự chấm phần mình. Cả hai sửa được mọi ý tưởng; chỉ người tạo lưu trữ; lưu trữ giữ lịch sử.

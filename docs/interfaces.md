@@ -72,6 +72,7 @@ App dùng số thứ tự điều hướng và signal để chặn import cũ gh
 | js/tabs/dashboard.js | Danh sách/tab bảng, tạo bảng, thùng rác bảng, mở Thư viện hình; sở hữu client của bảng đang chọn |
 | js/notes/*.js, styles/notes*.css | Bảng, editor, thư viện và client ghi chú (chi tiết bên dưới) |
 | js/tabs/{jar,calendar,seminar,activity}.js, js/features/*, styles/{jar,calendar,roulette,rules,psi}.css | Trang Hũ, Lịch, Seminar/Hoạt động chung và panel Nội quy; mỗi phần chỉ gọi Feature API của mình (Lịch đọc thêm /api/jar, /api/ideas/sessions và /api/moments) |
+| js/tabs/location.js, js/features/location/*, styles/location.css | Trang Vị trí; gọi /api/location, /api/places, /api/timeline và hồ sơ công khai. Leaflet ở `assets/vendor/leaflet.js` (build copy từ npm), tile Esri với `ESRI_BASEMAP_KEY` từ js/config.js (trống thì báo chưa cài). `share.js` điều khiển plugin Android `LocationShare` (chỉ khi `Capacitor.isNativePlatform()`); `format.js` các chữ thời gian giờ VN |
 | js/tabs/moments.js, js/features/moments/*, styles/moments.css | Trang Khoảnh khắc; chỉ gọi /api/moments. `FOCUS_KEY` (sessionStorage `homie.moments.focus`, giá trị id) để Lịch mở đúng tấm |
 | styles.css | Theme chung, responsive, trạng thái menu và transition |
 | assets/ | Asset production; giữ PNG/prompt nguồn khi có |
