@@ -37,7 +37,10 @@ export function render(container, { signal }) {
   const visual=window.visualViewport,followScreen=()=>root.style.setProperty("--notes-vh",`${visual.height}px`);if(visual){followScreen();visual.addEventListener('resize',followScreen,{signal});addEventListener('resize',followScreen,{signal});}
   function alive() { return !disposed && !signal.aborted; }
   function button(label, action) { const control=document.createElement('button');control.type='button';control.className='notes-button';control.textContent=label;control.dataset.action=action;control.dataset.mutation='';return control; }
-  function stopCurrent() {generation++;closeGlobalLibrary?.();closeGlobalLibrary=null;if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
+  function closeLibrary() {closeGlobalLibrary?.();closeGlobalLibrary=null;}
+  // A library on the open board's client closes with that board. One opened before any board has its own client and
+  // stays: on Supabase the board list arrives after login and selects a board while the member is already uploading.
+  function stopCurrent() {generation++;if(!closeGlobalLibrary?.ownClient)closeLibrary();if(current){current.controller.abort();current.cleanup?.();current.client?.close();current=null;}host.replaceChildren();}
   function showError(error) { if(alive())status.textContent=error?.message || 'Chưa thể mở bảng. Hãy kiểm tra kết nối.'; }
   function available() {return [...boards,...pending.filter(p=>!boards.some(b=>b.id===p.id)).map(p=>({...p,pending:true})),...(account?[{id:RULES,name:'Nội quy',visibility:'shared'}]:[])];}
   function renderTabs() {
@@ -107,7 +110,7 @@ export function render(container, { signal }) {
     // The "+" sits after the tablist (not inside it) so arrow keys and tab roles only cover real boards.
     const create=button('+','board-new'),trash=button('Bảng đã xóa','boards-trash'),library=button('Thư viện hình','library-open');create.className='notes-tab-new';create.setAttribute('aria-label','Tạo bảng mới');strip.append(create);
     create.onclick=askNewBoard;
-    library.onclick=async()=>{closeGlobalLibrary?.();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||request!==generation){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});const closer=()=>{cleanup();if(temporary){temporary.abort();client.close();}};closeGlobalLibrary=closer;root.querySelector('.note-library')?.addEventListener('close',()=>{/* A replaced dialog's close event fires later; ignore it. */if(closeGlobalLibrary!==closer)return;closer();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
+    library.onclick=async()=>{closeLibrary();const owner=account,request=generation;let temporary,client=current?.client;try{if(!client){temporary=new AbortController();client=await openBoardClient({boardId:'00000000-0000-4000-8000-000000000007',accountId:owner,signal:temporary.signal});}if(!alive()||owner!==account||(!temporary&&request!==generation)){temporary?.abort();if(temporary)client.close();return;}const cleanup=openLibrary(root,{client,signal:temporary?.signal || current?.controller.signal || signal});const closer=()=>{cleanup();if(temporary){temporary.abort();client.close();}};closer.ownClient=Boolean(temporary);closeGlobalLibrary=closer;root.querySelector('.note-library')?.addEventListener('close',()=>{/* A replaced dialog's close event fires later; ignore it. */if(closeGlobalLibrary!==closer)return;closer();closeGlobalLibrary=null;},{once:true});}catch(error){temporary?.abort();if(temporary)client?.close();showError(error);}};
     trash.onclick=showBoardTrash;actions.append(trash,library);
   }
   tabs.addEventListener('keydown',event=>{const list=[...tabs.children];let index=list.indexOf(event.target);if(index<0)return;if(event.key==='ArrowRight')index=(index+1)%list.length;else if(event.key==='ArrowLeft')index=(index-1+list.length)%list.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=list.length-1;else return;event.preventDefault();list[index].focus();selectBoard(list[index].dataset.boardTab);},{signal});
@@ -118,8 +121,8 @@ export function render(container, { signal }) {
     boards=result.boards;catalogLoaded=true;pending=pending.filter(p=>!boards.some(b=>b.id===p.id));if(account)save(pendingKey(account),pending);reconcile();
   };
   let unsubscribe=subscribeBoards({signal},onCatalog);
-  function authChanged(){const next=getUser()?.id||null;if(next===account)return;stopCurrent();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();account=next;pending=account?stored(pendingKey(account),[]):[];explicitTrash=false;unsubscribe();boards=[];catalogLoaded=false;unsubscribe=subscribeBoards({signal},onCatalog);renderActions();reconcile();}
+  function authChanged(){const next=getUser()?.id||null;if(next===account)return;closeLibrary();stopCurrent();for(const dialog of root.querySelectorAll('dialog'))dialog.remove();account=next;pending=account?stored(pendingKey(account),[]):[];explicitTrash=false;unsubscribe();boards=[];catalogLoaded=false;unsubscribe=subscribeBoards({signal},onCatalog);renderActions();reconcile();}
   authEvents.addEventListener('change',authChanged,{signal});renderActions();renderTabs();
-  function cleanup(){if(disposed)return;disposed=true;stopCurrent();unsubscribe();authEvents.removeEventListener('change',authChanged);signal.removeEventListener('abort',cleanup);root.remove();}
+  function cleanup(){if(disposed)return;disposed=true;closeLibrary();stopCurrent();unsubscribe();authEvents.removeEventListener('change',authChanged);signal.removeEventListener('abort',cleanup);root.remove();}
   signal.addEventListener('abort',cleanup,{once:true});return cleanup;
 }
